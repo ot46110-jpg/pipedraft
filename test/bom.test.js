@@ -135,8 +135,8 @@ PD.load({
   caps: [[8, 0, 0, 'plug']], equip: [{ k: 'pump', p: [-2, 0, 0], r: 0 }]
 });
 const iso = PD.iso();
-check('iso sheet tags each item', ['GL-1', 'GV-1', 'FCV-1', 'FL-1', 'ST-1', 'P-1'].every(t => iso.includes('>' + t + '<')), iso.match(/>[A-Z]+-\d+</g) + '');
-check('iso sheet legend lists used symbols only', iso.includes('Globe valve') && iso.includes('Reducer') && iso.includes('Plug, threaded') && iso.includes('Olet or stub-in') && !iso.includes('Butterfly valve'));
+check('iso sheet keeps the tags in its material list and under equipment', ['GL-1', 'GV-1', 'FCV-1', 'FL-1', 'ST-1', 'P-1'].every(t => iso.includes(t)), iso.match(/>[A-Z]+-\d+</g) + '');
+check('iso sheet material list names what is drawn and nothing else', iso.includes('MATERIAL LIST') && iso.includes('Globe valve flanged 150#') && iso.includes('Reducer concentric') && iso.includes('Plug, round head, THD') && !iso.includes('Butterfly'));
 check('symbol reference sheet lists everything', PD.legend().includes('PIPING SYMBOLS') && ['Butterfly valve', 'Lap-joint flange pair', 'Expansion joint', 'Spectacle blind', 'Vertical vessel', 'Butt weld'].every(n => PD.legend().includes(n)));
 if (process.env.PD_WRITE_SVG) {                                        // optional: write the sheets out for a visual check
   fs.writeFileSync(path.join(process.env.PD_WRITE_SVG, 'sheet.svg'), iso);
@@ -158,10 +158,10 @@ const loop = {
 PD.load(loop);
 check('instruments in BOM', has('Flow transmitter FT-101 | 1') && has('Flow controller FIC-101 | 1') && has('Pressure safety valve PSV-101 | 1') && has('Level transmitter LT-101 | 1'), rows());
 const isoI = PD.iso();
-check('iso sheet draws bubbles, PSV symbol and the signal line', isoI.includes('>FIC<') && isoI.includes('>PSV-101<') && isoI.includes('stroke-dasharray="4 3"') && isoI.includes('Signal line') && isoI.includes('Field instrument'));
+check('iso sheet tags instruments, draws the PSV and the signal line', isoI.includes('>FIC-101<') && isoI.includes('>PSV-101<') && isoI.includes('stroke-dasharray="4 3"'));
 const pid = PD.pid();
 check('P&ID sheet renders', /^<svg/.test(pid) && pid.includes('P&amp;ID (SCHEMATIC)') && !pid.includes('NaN'));
-check('P&ID uses the same tags as the iso sheet', ['P-1', 'V-1', 'FCV-1', 'GV-1'].every(t => pid.includes('>' + t + '<') && isoI.includes('>' + t + '<')), pid.match(/>[A-Z]+-\d+</g) + '');
+check('P&ID uses the same tags as the iso sheet', ['P-1', 'V-1', 'FCV-1', 'GV-1'].every(t => pid.includes('>' + t + '<') && isoI.includes(t)), pid.match(/>[A-Z]+-\d+</g) + '');
 check('P&ID shows instrument bubbles, loop numbers and a signal line', pid.includes('>FT<') && pid.includes('>FIC<') && pid.includes('>LT<') && pid.includes('>101<') && pid.includes('Signal line'));
 check('P&ID shows line number and size', pid.includes('L-001 · NPS 3'));
 check('P&ID puts the branch on its own row', new Set([...pid.matchAll(/<line x1="[\d.]+" y1="([\d.]+)" x2="[\d.]+" y2="\1" stroke="#14191c" stroke-width="1.8"/g)].map(m => m[1])).size >= 2);
@@ -183,7 +183,7 @@ check('check valve against the flow is reported', PD.warns().some(w => w.include
 PD.load(chk(false));
 check('check valve with the flow is fine', !PD.warns().some(w => w.includes('faces against')));
 PD.load(Object.assign(chk(false), { pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, fl: 1 }] }));
-check('flow arrows appear on the iso sheet and P&ID', PD.iso().includes('Flow direction') && PD.pid().includes('Flow direction'));
+check('flow arrows appear on the iso sheet and P&ID', PD.iso().includes('class="flow"') && PD.pid().includes('Flow direction'));
 
 // Supports.
 const longPipe = sup => ({ pipes: [{ a: [0, 1, 0], b: [9, 1, 0], n: 4 }], valves: [], supports: sup });
@@ -195,7 +195,7 @@ check('support BOM names', has('Pipe shoe, NPS 4 | 1') && has('Pipe guide, NPS 4
 PD.load(longPipe([{ p: [3, 1, 0], d: [1, 0, 0], n: 4, t: 'anchor' }, { p: [6, 1, 0], d: [1, 0, 0], n: 4, t: 'hanger' }, { p: [8, 1, 0], d: [1, 0, 0], n: 4, t: 'spring' }]));
 check('anchor, hanger and spring hanger', has('Pipe anchor, NPS 4 | 1') && has('Rod hanger, NPS 4 | 1') && has('Spring hanger, NPS 4 | 1'), rows());
 const isoS = PD.iso();
-check('supports are tagged on the iso sheet', ['AN-1', 'HG-1', 'SPH-1'].every(t => isoS.includes('>' + t + '<')) && isoS.includes('Rod hanger'), isoS.match(/>[A-Z]+-\d+</g) + '');
+check('supports are listed with their tags on the iso sheet', ['AN-1', 'HG-1', 'SPH-1'].every(t => isoS.includes(t)) && isoS.includes('Rod hanger'));
 PD.load({ pipes: [{ a: [0, 0, 0], b: [0, 3, 0], n: 4 }], valves: [], supports: [{ p: [0, 1.5, 0], d: [0, 1, 0], n: 4, t: 'guide' }] });
 check('guide on a vertical pipe', has('Pipe guide, NPS 4 | 1'), rows());
 PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], valves: [], supports: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, t: 'bogus' }] });
@@ -385,6 +385,24 @@ PD.startAtNozzle(PD.nozzles().find(z => z.e === -1)); PD.rebuild();
 check('a pipe starts on the port along its axis, with P&ID still working', PD.model.pipes.length === 2 && near(PD.model.pipes[1].a, arr(PD.nozzles().find(z => z.e === -1))) && /^<svg/.test(PD.pid()) && PD.warns().length === 0, PD.warns().join());
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], items: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'nipple' }] });
 check('pipe nipple', has('Pipe nipple, 150 mm, PBE, NPS 4 | 1'), rows());
+
+// Isometric drawing practice: skewed symbols, balloons, dimension lines, elevations, equipment outlines.
+PD.load(loop);
+const isoP = PD.iso();
+const compRows = PD.rows().filter(r => !/^Pipe (stock|weight)/.test(r[0])), rowsN = compRows.length;
+check('the iso sheet has no NaN coordinates', !isoP.includes('NaN') && !PD.pid().includes('NaN'));
+check('stock and weight are notes under the list, not numbered items', isoP.includes('Pipe weight, steel, empty: ') && !isoP.includes('>' + (rowsN + 1) + '</text>'));
+check('symbols are skewed into the plane of their pipe', (isoP.match(/class="sy" transform="matrix\(/g) || []).length >= 6);
+check('no P&ID bubbles on the iso sheet', !isoP.includes('r="14"') && !isoP.includes('>FT<') && !isoP.includes('SYMBOLS'));
+check('item balloons point at the material list', (isoP.match(/r="9.5"/g) || []).length >= 8 && isoP.includes('>' + rowsN + '</text>'), String((isoP.match(/r="9.5"/g) || []).length));
+check('dimension lines run along the pipe with the centreline length', (isoP.match(/class="dim"/g) || []).length >= 3 && isoP.includes('>4150<'), (isoP.match(/class="dim"/g) || []).length + '');
+check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
+check('equipment is a dashed outline with its nozzles and tag', isoP.includes('stroke-dasharray="6 3"') && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
+check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
+check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y<') && isoP.includes('>Z<'));
+check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('skewed into the plane of its pipe'));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
+check('a bare pipe has a balloon for its pipe row', PD.iso().includes('r="9.5"') && PD.iso().includes('Pipe, NPS 4 SCH 40, BE'));
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });

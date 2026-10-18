@@ -537,9 +537,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- model -> meshes ----------
   var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, item: 11, instr: 12, support: 13, weight: 14 };
   var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {};
+  var compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }, curRef = null;
   function add(cat, desc, qty, unit) {
     var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit });
     l.qty += qty;
+    if (curRef && qty > 0 && !compDesc[curRef[0]][curRef[1]]) compDesc[curRef[0]][curRef[1]] = desc;   // first row a component adds is its own
+    return desc;
   }
   function sizeText(a, b) { return a === b ? 'NPS ' + nl(a) : 'NPS ' + nl(a) + '×' + nl(b); }
   function equipNozzles(e) {
@@ -558,6 +561,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
     }
     lines = {}; warns = []; nozList = []; pipeLen = {};
+    compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }; curRef = null;
     var weight = 0;
 
     // 1. Equipment and its nozzles. A nozzle turns green once a pipe ends on it.
@@ -570,6 +574,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     model.equip.forEach(function (e, i) {
       var def = EQUIP[e.k]; if (!def) return;
+      curRef = ['equip', i];
       var g = new T.Group(), m = mat(0x5f7a88, 0.6), zs = equipNozzles(e);
       def.build(g, m);
       def.noz.forEach(function (z, k) {
@@ -657,6 +662,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // 4. Pipes, trimmed to their fittings.
     var pipeMesh = {}, total = 0;
     model.pipes.forEach(function (p, i) {
+      curRef = ['pipe', i];
       var a = V(p.a), b = V(p.b), d = b.clone().sub(a), Lp = d.length();
       if (Lp < 0.001) return;
       var dir = d.clone().normalize(), ta = trims[i + 'a'] || 0, tb = trims[i + 'b'] || 0, len = Lp - ta - tb;
@@ -732,6 +738,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     Object.keys(joints).forEach(function (k) {
       var j = joints[k];
       if (!j.type) return;
+      curRef = ['joint', k];
       var P = V(j.pos), L = j.legs, n = j.nmax, r = OD[n] / 2000, mesh, fm = 0xf2f6f8;
       if (j.type === 'elbow') {
         var d1 = L[0].d, d2 = L[1].d;
@@ -794,6 +801,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // 7. Valves and inline items sit in the pipe, so their length comes off the pipe.
     model.valves.forEach(function (v, i) {
+      curRef = ['valve', i];
       var kind = VALVE_FF[v.k] ? v.k : 'gate';
       var r = OD[v.n] / 2000, R = r * 1.9, L = VALVE_FF[kind][v.n];
       var g = new T.Group(), bm = mat({ check: 0x6bb0ff, ball: 0x6bd18f, butterfly: 0xb48cff, plug: 0xff9d5c, control: 0x4fd1c5, angle: 0xff8f5c, needle: 0xd6c34a, diaphragm: 0x9a7fd1, knife: 0x7fa8d1, threeway: 0x49b3a0, footv: 0x6bb0ff }[kind] || 0xff6b5e, 0.4);
@@ -851,6 +859,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
     });
     model.items.forEach(function (it, i) {
+      curRef = ['item', i];
       var r = OD[it.n] / 2000, L = itemLen(it.t, it.n), g = new T.Group(), im = mat(0xb8c7ce, 0.4), ac = mat(0xffb21f, 0.5);
       function cyl(rad, len, y, m) { var c = new T.Mesh(new T.CylinderGeometry(rad, rad, len, 24), m || im); c.position.y = y || 0; g.add(c); return c; }
       if (it.t === 'coupling') cyl(r * 1.18, L);
@@ -886,6 +895,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // Supports: shoe, guide and anchor stand on a post to the floor, hangers drop from above.
     model.supports.forEach(function (sp0, i) {
+      curRef = ['support', i];
       var r = OD[sp0.n] / 2000, base = V(sp0.p), d = V(sp0.d), vertical = Math.abs(d.y) > 0.9, g = new T.Group(), sm = mat(0x7f95a0, 0.6);
       function box(w, hh, dp, x, y, z, m) { var b = new T.Mesh(new T.BoxGeometry(w, hh, dp), m || sm); b.position.set(x, y, z); g.add(b); return b; }
       function ringAt(rad) { var rg = new T.Mesh(new T.TorusGeometry(rad, 0.012, 8, 24), sm); rg.rotation.y = Math.PI / 2; g.add(rg); return rg; }
@@ -914,6 +924,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // Instruments: a short stem and a ball at the tapping point. Controllers link to a control valve with a line.
     model.instr.forEach(function (it, i) {
+      curRef = ['instr', i];
       var def = INSTR[it.k], base = V(it.p), dir = new T.Vector3(0, 1, 0);
       if (it.eq != null && model.equip[it.eq]) { dir = base.clone().sub(V(model.equip[it.eq].p)); dir.y = 0; if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0); dir.normalize(); }
       else if (it.d && Math.abs(it.d[1]) > 0.9) dir.set(1, 0, 0);
@@ -933,6 +944,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // 8. Flanges: pairs (weld-neck, slip-on, lap-joint with stub ends) or a blind flange on a pipe end,
     // each with a gasket and a bolt set.
     model.flanges.forEach(function (f, i) {
+      curRef = ['flange', i];
       var t = f.t || 'wn', fo = FL[f.n][0] / 2, ft = FL[f.n][1], gap = 0.004, rr = OD[f.n] / 2000;
       var g = new T.Group(), fmat = mat({ so: 0xcfe0e6, lj: 0xbfd0d8, bl: 0xe6d9ae, th: 0xd8e0c0, sw: 0xc8e0d8, ro: 0xffd9a0 }[t] || 0xdfe8ec, 0.35);
       function disc(y, rad, th, m) { var d = new T.Mesh(new T.CylinderGeometry(rad, rad, th, 36), m || fmat); d.position.y = y; g.add(d); }
@@ -957,6 +969,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
     });
 
+    curRef = null;
     if (total > 0.001) add('stock', 'Pipe stock, ' + STOCK + ' m lengths (estimate)', Math.ceil(total / STOCK), 'pc');
     if (weight > 0.05) add('weight', 'Pipe weight, steel, empty', weight, 'kg');
 
@@ -1547,95 +1560,236 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function svgText(x, y, t, size, anchor, weight) {
     return '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" text-anchor="' + (anchor || 'middle') + '" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="4" paint-order="stroke"' + (weight ? ' font-weight="' + weight + '"' : '') + '>' + esc(t) + '</text>';
   }
+  // The isometric sheet follows isometric drawing practice, not P&ID practice: pipe is a single line, every symbol is
+  // skewed into the plane of its pipe, components carry item balloons that point at the material list on the sheet,
+  // dimensions run along the pipe, and elevations are written at the free ends.
   function isoSvg() {
-    var W = 1000, H = 700, M = 70, LEG = 200, Wd = W - LEG, c30 = Math.cos(Math.PI / 6);
-    function pr(p) { return [(p[0] - p[2]) * c30, -(p[1] + (p[0] + p[2]) * 0.5)]; }
-    var pts = []; model.pipes.forEach(function (p) { pts.push(pr(p.a), pr(p.b)); });
-    model.equip.forEach(function (e) { pts.push(pr(e.p)); });
     if (!model.pipes.length) return null;
+    var allRows = bomRows(), isNote = function (r) { return /^Pipe (stock|weight)/.test(r[0]); };
+    var rows = allRows.filter(function (r) { return !isNote(r); }), notes = allRows.filter(isNote), numOf = {};   // stock and weight are notes, not items
+    rows.forEach(function (r, i) { numOf[r[0]] = i + 1; });
+    var tg = assignTags(), tagsOf = {};
+    function addTag(desc, t) { if (desc && t) (tagsOf[desc] = tagsOf[desc] || []).push(t); }
+    model.valves.forEach(function (v, i) { addTag(compDesc.valve[i], tg.valves[i]); });
+    model.flanges.forEach(function (f, i) { addTag(compDesc.flange[i], tg.flanges[i]); });
+    model.items.forEach(function (it, i) { addTag(compDesc.item[i], tg.items[i]); });
+    model.supports.forEach(function (q, i) { addTag(compDesc.support[i], tg.supports[i]); });
+    model.equip.forEach(function (e, i) { addTag(compDesc.equip[i], tg.equip[i]); });
+    model.instr.forEach(function (it, i) { addTag(compDesc.instr[i], instrTag(it)); });
+
+    // Material list: laid out first, because its length sets the height of the sheet.
+    var MAT = 350, PERL = 42, W = 1200, M = 80;
+    function wrap(s) {
+      var out = [], cur = '';
+      s.split(', ').forEach(function (part, i) {
+        var piece = (i ? ', ' : '') + part;
+        if (cur && (cur + piece).length > PERL) { out.push(cur); cur = part; } else cur += piece;
+      });
+      if (cur) out.push(cur);
+      return out.slice(0, 3);
+    }
+    var list = rows.map(function (r) {
+      var t = (tagsOf[r[0]] || []).join('  ');
+      return { lines: wrap(r[0]), tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
+    });
+    var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.tag ? 11 : 0) + 9; }, 0);
+    var H = Math.max(760, listH + notes.length * 12 + 170), Wd = W - MAT;
+
+    // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
+    var c30 = Math.cos(Math.PI / 6);
+    function pr(p) { return [(p[0] - p[2]) * c30, -(p[1] + (p[0] + p[2]) * 0.5)]; }
+    function A(v) { return [v.x, v.y, v.z]; }
+    function eqGeom(e) {                                            // equipment as a wire outline
+      var rot = (e.r || 0) * Math.PI / 2, base = V(e.p);
+      function W3(x, y, z) { return A(new T.Vector3(x, y, z).applyAxisAngle(UP, rot).add(base)); }
+      if (e.k === 'vessel') {
+        var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(0.6 * Math.cos(i / 28 * 2 * Math.PI), y, 0.6 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
+        var r0 = ring(0), r1 = ring(2.4);
+        return { kind: 'vessel', r0: r0, r1: r1, pts: r0.concat(r1, [W3(0, 2.55, 0)]), c: W3(0, 1.2, 0) };
+      }
+      var c = [[-0.55, 0, -0.3], [0.95, 0, -0.3], [0.95, 0, 0.3], [-0.55, 0, 0.3], [-0.55, 0.7, -0.3], [0.95, 0.7, -0.3], [0.95, 0.7, 0.3], [-0.55, 0.7, 0.3]].map(function (q) { return W3(q[0], q[1], q[2]); });
+      return { kind: 'pump', cs: c, pts: c, c: W3(0.2, 0.35, 0) };
+    }
+    var geo = model.equip.map(eqGeom), pts = [];
+    model.pipes.forEach(function (p) { pts.push(pr(p.a), pr(p.b)); });
+    geo.forEach(function (g) { g.pts.forEach(function (q) { pts.push(pr(q)); }); });
     var x0 = Math.min.apply(null, pts.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, pts.map(function (q) { return q[0]; }));
     var y0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, pts.map(function (q) { return q[1]; }));
-    var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - 2 * M - 70) / Math.max(y1 - y0, 0.5), 160);
-    var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc + 10;
+    var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - 70 - 2 * M) / Math.max(y1 - y0, 0.5), 160);
+    var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc;
     function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
-    function ang(p, d) { var a = sp(p), b = sp([p[0] + d[0] * 0.1, p[1] + d[1] * 0.1, p[2] + d[2] * 0.1]); return Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; }
-    var used = {}, tags = assignTags();
-    var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
-    s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
+    function f1(v) { return v.toFixed(1); }
+    function f3(v) { return v.toFixed(3); }
+    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><style>.sy *{vector-effect:non-scaling-stroke}</style>';
+    o += '<rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/><rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
+    var body = '';
+
+    // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
+    function isoSym(key, p3, d3, Lpx, flip) {
+      var s0 = SYM[key]; if (!s0) return '';
+      var d = V(d3).normalize(); if (flip) d.negate();
+      var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = pr(A(d)), ey = pr(wv), k = Lpx / 20, q = sp(p3);
+      var m = [ex[0] * k, ex[1] * k, -ey[0] * k, -ey[1] * k, q[0], q[1]].map(f3).join(' ');
+      var extra = s0.act ? '<line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/>' : '';
+      return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">' + s0.svg + extra + '</g>';
+    }
+    function clampPx(m, lo, hi) { return Math.max(lo, Math.min(hi, m * sc)); }
+
+    // Equipment outlines, with their nozzles.
+    model.equip.forEach(function (e, i) {
+      var g = geo[i], st = ' fill="none" stroke="' + INK + '" stroke-width="1" stroke-dasharray="6 3"';
+      if (g.kind === 'vessel') {
+        var poly = function (ring) { return ring.map(function (q) { var s = sp(q); return f1(s[0]) + ',' + f1(s[1]); }).join(' '); };
+        body += '<polygon points="' + poly(g.r0) + '"' + st + '/><polygon points="' + poly(g.r1) + '"' + st + '/>';
+        var sx = g.r0.map(function (q) { return sp(q)[0]; }), iL = sx.indexOf(Math.min.apply(null, sx)), iR = sx.indexOf(Math.max.apply(null, sx));
+        [iL, iR].forEach(function (k) { var a = sp(g.r0[k]), b = sp(g.r1[k]); body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '"' + st + '/>'; });
+      } else {
+        [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(function (ed) {
+          var a = sp(g.cs[ed[0]]), b = sp(g.cs[ed[1]]); body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '"' + st + '/>';
+        });
+      }
+      var cq = sp(g.c);
+      body += svgText(cq[0], cq[1] + (g.kind === 'vessel' ? 0 : 6), tg.equip[i], 11, 'middle', 600);
+    });
+    nozList.forEach(function (z) {
+      if (z.e == null || z.e < 0) return;
+      var q = sp(A(z.p));
+      body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="3.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.2"/>' + svgText(q[0] + 9, q[1] + 14, 'N' + (z.idx + 1), 8.5, 'start');
+    });
+
+    // Pipe: one line per run, heavier for larger sizes.
     model.pipes.forEach(function (p) {
       var a = sp(p.a), b = sp(p.b);
-      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="' + INK + '" stroke-width="' + (1.6 + p.n * 0.3) + '" stroke-linecap="round"/>';
+      body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.1 + Math.sqrt(p.n) * 0.45).toFixed(2) + '" stroke-linecap="round"/>';
     });
+    // Butt welds at fittings.
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k]; if (!j.type) return;
+      var q = sp(j.pos); body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + INK + '"/>';
+    });
+
+    // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
+    function dimLine(a, b, label) {
+      var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 34) return '';
+      var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
+      if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
+      var off = 20, a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
+      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
+      var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
+      var mx = (a2[0] + b2[0]) / 2 - nx * 4, my = (a2[1] + b2[1]) / 2 - ny * 4;
+      return '<g class="dim" stroke="' + INK + '" stroke-width="0.8" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '"/></g>'
+        + arrow(a2, 1) + arrow(b2, -1)
+        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>';
+    }
+    model.pipes.forEach(function (p) { body += dimLine(sp(p.a), sp(p.b), String(Math.round(V(p.a).distanceTo(V(p.b)) * 1000))); });
+
+    // Flow arrows near the far end of each pipe, clear of the dimension.
     model.pipes.forEach(function (p) {
-      var a = sp(p.a), b = sp(p.b), L = V(p.a).distanceTo(V(p.b));
-      s += svgText(a[0] + (b[0] - a[0]) * 0.3, a[1] + (b[1] - a[1]) * 0.3 - 8, String(Math.round(L * 1000)), 12);
-    });
-    model.pipes.forEach(function (p) {                              // flow arrows, away from the dimension and from items at mid-pipe
       if (!p.fl) return;
       var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1];
       if (Math.hypot(dx, dy) < 40) return;
-      used.flow = 1; s += sym('flow', a[0] + dx * 0.7, a[1] + dy * 0.7, Math.atan2(dy, dx) * 180 / Math.PI + (p.fl > 0 ? 0 : 180));
+      body += '<g class="flow" transform="translate(' + f1(a[0] + dx * 0.7) + ' ' + f1(a[1] + dy * 0.7) + ') rotate(' + f1(Math.atan2(dy, dx) * 180 / Math.PI + (p.fl > 0 ? 0 : 180)) + ')" fill="' + INK + '">' + SYM.flow.svg + '</g>';
     });
-    var seen = {};
-    model.pipes.forEach(function (p) { [p.a, p.b].forEach(function (e) { var k = key(e); if (!seen[k]) { seen[k] = 1; var q = sp(e); s += sym('weld', q[0], q[1], 0); used.weld = 1; } }); });
-    // Fittings that have their own symbol.
-    Object.keys(jointInfo).forEach(function (k) {
-      var j = jointInfo[k], q = sp(j.pos), kk = null, a = 0;
-      if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = 'reducer'; a = ang(j.pos, [big.d.x, big.d.y, big.d.z]); }
-      else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; a = ang(j.pos, [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]); }
-      else if (j.type === 'olet' || j.type === 'stub') { kk = 'olet'; q = sp(j.pos); }
-      if (!kk) return;
-      used[kk] = 1; s += sym(kk, q[0], q[1], a);
-    });
-    function placed(list, keyOf, tagList) {
-      list.forEach(function (it, i) {
-        var kk = keyOf(it), q = sp(it.p); used[kk] = 1;
-        s += sym(kk, q[0], q[1], ang(it.p, it.rev ? [-it.d[0], -it.d[1], -it.d[2]] : it.d)) + svgText(q[0], q[1] - (SYM[kk].act ? 26 : 16), tagList[i], 10);
-      });
+
+    // Item balloons point at the material list.
+    var bi = 0, balloons = '';
+    function balloon(desc, p3, lift) {
+      var n = numOf[desc]; if (!n) return;
+      var q = sp(p3), side = bi % 2 ? 1 : -1, off = 30 + (bi % 3) * 9 + (lift || 0);
+      bi++;
+      var bx = q[0] + side * 20, by = q[1] - off;
+      balloons += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(bx - side * 5) + '" y2="' + f1(by + 7) + '" stroke="' + INK + '" stroke-width="0.8"/><circle cx="' + f1(bx) + '" cy="' + f1(by) + '" r="9.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
+        + '<text x="' + f1(bx) + '" y="' + f1(by + 3.6) + '" font-size="10" font-weight="600" text-anchor="middle" fill="' + INK + '">' + n + '</text>';
     }
-    placed(model.valves, function (v) { return SYM[v.k] ? v.k : 'gate'; }, tags.valves);
-    placed(model.flanges, function (f) { return 'fl-' + (f.t || 'wn'); }, tags.flanges);
-    placed(model.items, function (it) { return it.t; }, tags.items);
-    model.equip.forEach(function (e, i) {
-      var q = sp(e.p); used[e.k] = 1;
-      s += sym(e.k, q[0], q[1], 0) + svgText(q[0], q[1] + (e.k === 'vessel' ? 30 : 24), tags.equip[i], 10);
+
+    // Valves, flanges, inline fittings and supports.
+    model.valves.forEach(function (v, i) {
+      var kk = SYM[v.k] ? v.k : 'gate';
+      body += isoSym(kk, v.p, v.d, clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 24, 64), kk === 'check' && v.rev);
+      balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
+    model.flanges.forEach(function (f, i) { body += isoSym('fl-' + (f.t || 'wn'), f.p, f.d, 20); balloon(compDesc.flange[i], f.p); });
+    model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, clampPx(itemLen(it.t, it.n), 22, 52)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
-      var q = sp(q0.p), kk = 'sup-' + q0.t, above = q0.t === 'hanger' || q0.t === 'spring'; used[kk] = 1;
-      s += sym(kk, q[0], q[1], 0) + svgText(q[0], q[1] + (above ? -24 : 26), tags.supports[i], 9.5);
+      var up = q0.t === 'hanger' || q0.t === 'spring';
+      body += isoSym('sup-' + q0.t, q0.p, q0.d, 26); balloon(compDesc.support[i], q0.p, up ? 10 : 22);
     });
-    var bpos = {};
+
+    // Instruments: a stem and a small circle in the plane of the pipe, tagged. The signal line is dashed.
+    var itop = {};
     model.instr.forEach(function (it, j) {
-      var q = sp(it.p), def = INSTR[it.k];
-      if (def.psv) { used.psv = 1; s += sym('psv', q[0], q[1] - 6, 0) + svgText(q[0], q[1] - 40, instrTag(it), 10); return; }
-      used[def.dcs ? 'instr-dcs' : 'instr'] = 1; bpos[j] = [q[0], q[1] - 40];
-      s += '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + q[0].toFixed(1) + '" y2="' + (q[1] - 26).toFixed(1) + '" stroke="' + INK + '" stroke-width="1.2"/>' + bubble(q[0], q[1] - 40, it);
+      var def = INSTR[it.k], d3 = it.d || [1, 0, 0], q = sp(it.p);
+      if (def.psv) {
+        body += isoSym('psv', it.p, d3, 26);
+        body += svgText(q[0] + 14, q[1] - 22, instrTag(it), 9.5, 'start'); balloon(compDesc.instr[j], it.p, 14); return;
+      }
+      var top3 = [it.p[0], it.p[1] + 26 / sc, it.p[2]], t = sp(top3); itop[j] = top3;
+      body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'instr-dcs' : 'instr', top3, d3, 18);
+      body += svgText(t[0] + 12, t[1] + 3, instrTag(it), 9.5, 'start'); balloon(compDesc.instr[j], it.p, 6);
     });
     model.instr.forEach(function (it, j) {
-      if (it.link == null || !bpos[j] || !model.valves[it.link]) return;
-      var vq = sp(model.valves[it.link].p); used.signal = 1;
-      s += '<line x1="' + bpos[j][0].toFixed(1) + '" y1="' + bpos[j][1].toFixed(1) + '" x2="' + vq[0].toFixed(1) + '" y2="' + (vq[1] - 12).toFixed(1) + '" stroke="' + INK + '" stroke-width="1.2" stroke-dasharray="4 3"/>';
+      if (it.link == null || !itop[j] || !model.valves[it.link]) return;
+      var a = sp(itop[j]), b = sp(model.valves[it.link].p);
+      body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="1" stroke-dasharray="4 3"/>';
     });
-    // Legend: only the symbols that appear on this sheet.
-    var lx = Wd + 16, ly = 40;
-    s += '<line x1="' + (Wd) + '" y1="12" x2="' + Wd + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1"/>';
-    s += '<text x="' + lx + '" y="' + ly + '" font-size="11" font-weight="600" fill="' + INK + '">SYMBOLS</text>';
-    SYM_ORDER.filter(function (k) { return used[k]; }).forEach(function (k, i) {
-      var y = ly + 28 + i * 30;
-      s += sym(k, lx + 18, y, 0) + '<text x="' + (lx + 44) + '" y="' + (y + 4) + '" font-size="10.5" fill="' + INK + '">' + esc(SYM[k].name) + '</text>';
+
+    // Fittings with a symbol of their own, balloons on every fitting but plain elbows.
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k], kk = null, d3 = [1, 0, 0];
+      if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = 'reducer'; d3 = A(big.d); }
+      else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; d3 = [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]; }
+      else if (j.type === 'olet') { kk = 'olet'; d3 = A(j.legs[0].d); }
+      if (kk) body += isoSym(kk, j.pos, d3, 20);
+      if (j.type && (j.type !== 'elbow' || j.retMain)) balloon(compDesc.joint[k], j.pos, 4);
     });
+    // One balloon per pipe row, on its longest run.
+    var longest = {};
+    model.pipes.forEach(function (p, i) { var d = compDesc.pipe[i], L = V(p.a).distanceTo(V(p.b)); if (d && (!longest[d] || L > longest[d].L)) longest[d] = { L: L, i: i }; });
+    Object.keys(longest).forEach(function (d) {
+      var p = model.pipes[longest[d].i]; balloon(d, [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2], -2);
+    });
+    model.equip.forEach(function (e, i) { balloon(compDesc.equip[i], geo[i].c, geo[i].kind === 'vessel' ? 30 : 10); });
+    body += balloons;
+
+    // Elevation at each free end.
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k]; if (j.legs.length !== 1) return;
+      var q = sp(j.pos), el = j.pos[1];
+      body += svgText(q[0] + 8, q[1] - 7, 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), 9, 'start');
+    });
+    o += body;
+
+    // Axes, material list and title block.
+    var ax = 64, ay = H - 118;
+    [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y'], [[0, 1, 0], 'Z']].forEach(function (a3) {
+      var v = pr(a3[0]), ex = ax + v[0] * 38, ey = ay + v[1] * 38;
+      o += '<line x1="' + ax + '" y1="' + ay + '" x2="' + f1(ex) + '" y2="' + f1(ey) + '" stroke="' + INK + '" stroke-width="1.2"/>' + svgText(ex + v[0] * 8, ey + v[1] * 8 + 3, a3[1], 10, 'middle', 600);
+    });
+    o += '<line x1="' + Wd + '" y1="12" x2="' + Wd + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1"/>';
+    o += '<text x="' + (Wd + 14) + '" y="40" font-size="11" font-weight="600" fill="' + INK + '">MATERIAL LIST</text>';
+    o += '<text x="' + (Wd + 14) + '" y="60" font-size="9" fill="' + INK + '">NO</text><text x="' + (Wd + 44) + '" y="60" font-size="9" fill="' + INK + '">QTY</text><text x="' + (Wd + 108) + '" y="60" font-size="9" fill="' + INK + '">DESCRIPTION</text>';
+    o += '<line x1="' + (Wd + 8) + '" y1="66" x2="' + (W - 20) + '" y2="66" stroke="' + INK + '" stroke-width="0.8"/>';
+    var ly = 82;
+    list.forEach(function (r, i) {
+      o += '<text x="' + (Wd + 14) + '" y="' + ly + '" font-size="9.5" font-weight="600" fill="' + INK + '">' + (i + 1) + '</text><text x="' + (Wd + 44) + '" y="' + ly + '" font-size="9.5" fill="' + INK + '">' + esc(r.qty) + '</text>';
+      r.lines.forEach(function (ln, li) { o += '<text x="' + (Wd + 108) + '" y="' + (ly + li * 12) + '" font-size="9" fill="' + INK + '">' + esc(ln) + '</text>'; });
+      ly += r.lines.length * 12;
+      if (r.tag) { o += '<text x="' + (Wd + 108) + '" y="' + (ly - 1) + '" font-size="8" fill="#555">' + esc(r.tag) + '</text>'; ly += 11; }
+      ly += 9;
+    });
+    notes.forEach(function (r) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 8) + '" font-size="8.5" fill="#555">' + esc(r[0]) + ': ' + esc(r[1]) + '</text>'; ly += 12; });
     var byLn = {}; model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
     var tl = Object.keys(byLn).map(function (k) { return esc(k) + ' ' + byLn[k].toFixed(2) + ' m'; }).join('   ');
-    s += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    s += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="' + INK + '">PIPEDRAFT 3D · ISOMETRIC</text>';
-    s += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="' + INK + '">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm, centreline lengths</text>';
-    return s + '</svg>';
+    o += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1.5"/>';
+    o += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="' + INK + '">PIPEDRAFT 3D · ISOMETRIC</text>';
+    o += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="' + INK + '">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm along the centreline, elevations in m, not to scale</text>';
+    return o + '</svg>';
   }
   function legendSvg() {                                            // every symbol, for reference
     var W = 1000, H = 700, s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
     s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
     s += '<text x="32" y="52" font-size="18" font-weight="600" fill="' + INK + '">PIPING SYMBOLS</text>';
-    s += '<text x="32" y="74" font-size="11" fill="' + INK + '">As drawn on the isometric sheet. The tag prefix numbers each item on the sheet, for example GV-1.</text>';
+    s += '<text x="32" y="74" font-size="11" fill="' + INK + '">Flat reference, as used on the P&amp;ID. The isometric sheet draws each one skewed into the plane of its pipe and refers to it by item balloon. The tag prefix numbers each item, for example GV-1.</text>';
     SYM_ORDER.forEach(function (k, i) {
       var col = i % 2, row = Math.floor(i / 2), x = 40 + col * 480, y = 120 + row * 44;
       s += sym(k, x + 24, y, 0) + '<text x="' + (x + 64) + '" y="' + (y + 4) + '" font-size="13" fill="' + INK + '">' + esc(SYM[k].name) + '</text>';
