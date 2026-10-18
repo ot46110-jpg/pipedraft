@@ -5,9 +5,10 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x => x[1]);
 const app = scripts[scripts.length - 2];
 const els = {};
-const mk = () => ({ style: {}, dataset: {}, classList: { add() {}, remove() {} }, setAttribute() {}, getAttribute() { return null; }, addEventListener() {}, click() {},
+const L = {};                                                           // listeners per element, so the tests can tap the canvas
+const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {} }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
-const doc = { getElementById: id => els[id] || (els[id] = mk()), querySelectorAll: () => [], addEventListener() {} };
+const doc = { getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
 const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
   localStorage: { getItem() { return null; }, setItem() {} }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
 vm.createContext(ctx);
@@ -239,6 +240,36 @@ H = PD.hyd();
 check('each line number has its own flow and drop', H.lines['L-001'].dpF > H.lines['L-002'].dpF && H.lines['L-002'].dpF > 0);
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [], fluid: 'unobtainium' });
 check('unknown fluid falls back to water', PD.model.fluid === 'water20');
+
+// Drawing by aiming: the axis comes from where you point, and up the screen is Z.
+let pid_ = 1;
+const tapAt = (x, y) => { const e = { pointerId: pid_++, pointerType: 'touch', clientX: x, clientY: y }; L.cv.pointerdown(Object.assign({ type: 'pointerdown' }, e)); L.cv.pointerup(Object.assign({ type: 'pointerup' }, e)); };
+const tapOn = p => { const s = PD.project(p); tapAt(s.x, s.y); };
+const lastPipe = () => PD.model.pipes[PD.model.pipes.length - 1];
+const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.011);
+PD.load({ pipes: [], valves: [] });
+els['t-pipe'].onclick(); els['ax-auto'].onclick(); els['finish'].onclick();
+for (let i = 0; i < 6; i++) els['down'].onclick();                      // with no run active this lowers the start plane to the floor
+tapOn([0, 0, 0]);
+tapOn([0, 2.3, 0]);
+check('tap straight up the screen draws a vertical pipe', PD.model.pipes.length === 1 && near(lastPipe().b, [0, 2.3, 0]), JSON.stringify(PD.model.pipes));
+tapOn([3, 2.3, 0]);
+check('tap along X draws along X from the new height', near(lastPipe().a, [0, 2.3, 0]) && near(lastPipe().b, [3, 2.3, 0]), JSON.stringify(lastPipe()));
+tapOn([3, 2.3, -2]);
+check('tap along Y (scene Z) draws horizontally', near(lastPipe().b, [3, 2.3, -2]), JSON.stringify(lastPipe()));
+tapOn([3, 0.5, -2]);
+check('and straight down again, at the same spot', near(lastPipe().a, [3, 2.3, -2]) && near(lastPipe().b, [3, 0.5, -2]), JSON.stringify(lastPipe()));
+tapOn([3, -1, -2]);
+check('nothing is drawn below the floor', PD.model.pipes.length === 4, String(PD.model.pipes.length));
+els['finish'].onclick();
+for (let i = 0; i < 6; i++) els['down'].onclick();
+tapOn([-3, 0, 3]);
+els['ax-z'].onclick();
+const s1 = PD.project([-3, 1.5, 3]);                                     // above the start, but 60 px to the side
+tapAt(s1.x + 60, s1.y);
+check('locking Z keeps the pipe vertical wherever you tap', near(lastPipe().a, [-3, 0, 3]) && lastPipe().b[0] === -3 && lastPipe().b[2] === 3 && lastPipe().b[1] > 0, JSON.stringify(lastPipe()));
+els['ax-auto'].onclick();
+els['finish'].onclick();
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });

@@ -148,6 +148,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <div id="ctx" class="float">
       <div data-for="pipe">
         <button id="psum" aria-label="Pipe settings">NPS 4</button>
+        <div class="seg" id="axis" role="group" aria-label="Drawing axis">
+          <button id="ax-auto" aria-pressed="true" aria-label="Pick the axis from where you aim">Auto</button>
+          <button id="ax-x" aria-pressed="false" aria-label="Lock to X">X</button>
+          <button id="ax-y" aria-pressed="false" aria-label="Lock to Y">Y</button>
+          <button id="ax-z" aria-pressed="false" aria-label="Lock to Z, up and down">Z↑</button>
+        </div>
         <button id="ang" aria-pressed="false" aria-label="Allow 45 degree turns">45° turns</button>
         <button id="finish">Finish run</button>
       </div>
@@ -295,7 +301,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- state ----------
   var model = blank(), hist = [];
-  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true;
+  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
   function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto' } }; }
@@ -356,7 +362,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   scene.add(new T.AmbientLight(0xffffff, 0.65));
   var sun = new T.DirectionalLight(0xffffff, 0.8); sun.position.set(6, 12, 8); scene.add(sun);
   scene.add(new T.GridHelper(24, 48, 0x34505d, 0x1a262d));
-  [[0xff6b5e, 1, 0, 0], [0x6bd18f, 0, 1, 0], [0x5fa8ff, 0, 0, 1]].forEach(function (a) {
+  [[0xff6b5e, 1, 0, 0], [0x5fa8ff, 0, 1, 0], [0x6bd18f, 0, 0, 1]].forEach(function (a) {
     var g = new T.BufferGeometry().setFromPoints([new T.Vector3(0, 0.002, 0), new T.Vector3(a[1], a[2] + 0.002, a[3])]);
     scene.add(new T.Line(g, new T.LineBasicMaterial({ color: a[0] })));
   });
@@ -373,6 +379,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     l.geometry.attributes.position.needsUpdate = true;
   }
   var ghostLine = makeLine(0xffb21f);
+  var guideLine = makeLine(0xffffff); guideLine.material.transparent = true; guideLine.material.opacity = 0.4;
   var marker = new T.Mesh(new T.SphereGeometry(0.06, 16, 12), new T.MeshBasicMaterial({ color: 0xffb21f }));
   marker.visible = false; scene.add(marker);
   var curMark = new T.Mesh(new T.SphereGeometry(0.09, 16, 12), new T.MeshBasicMaterial({ color: 0xffffff }));
@@ -1014,20 +1021,49 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     for (var j = 0; j < out.length - 1; j++) addPipe(out[j], out[j + 1], curN, curS, curL);
     cursor = noz ? null : out[out.length - 1]; elev = out[out.length - 1][1];
   }
-  function constrain(p) {
-    var dx = p.x - cursor[0], dz = p.z - cursor[2], q = cursor.slice(), ux, uz, len;
-    if (ang45) {
-      var an = Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) * (Math.PI / 4);
-      ux = Math.cos(an); uz = Math.sin(an);
-      len = rs(dx * ux + dz * uz);
-      if (len < snap * 0.99) return null;
-    } else {
-      var useX = Math.abs(dx) >= Math.abs(dz), d = useX ? dx : dz;
-      len = rs(Math.abs(d)); if (len < snap * 0.99) return null;
-      var sg = d < 0 ? -1 : 1; ux = useX ? sg : 0; uz = useX ? 0 : sg;
+  // Aiming. Pipes are drawn by pointing along an axis, not by hitting a plane. The axis is the one whose
+  // direction on screen best matches where the pointer is from the run end (or the locked axis), and the
+  // length is where the pointer ray passes closest to that axis line, so it works from any camera angle.
+  // Axes follow CAD: X and Y are horizontal, Z is up. In the scene Y is up, so CAD Y is scene Z.
+  var AXV = [new T.Vector3(1, 0, 0), new T.Vector3(0, 0, 1), new T.Vector3(0, 1, 0)];
+  var AXCOL = [0xff6b5e, 0x6bd18f, 0x5fa8ff, 0xffb21f, 0xffb21f];      // X red, Y green, Z blue, like the corner gizmo
+  function scr(v3) {
+    var r = cv.getBoundingClientRect(), v = v3.clone().project(camera);
+    return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top };
+  }
+  function aim(e) {
+    if (!cursor) return null;
+    setRay(e);
+    var c = V(cursor), o = ray.ray.origin.clone(), dv = ray.ray.direction.clone(), p0 = scr(c);
+    var px = e.clientX - p0.x, py = e.clientY - p0.y, pl = Math.hypot(px, py);
+    if (pl < 8) return null;
+    var cands = AXV.map(function (a, i) { return { d: a, i: i }; }), pick = null;
+    if (ang45) cands.push({ d: new T.Vector3(1, 0, 1).normalize(), i: 3 }, { d: new T.Vector3(1, 0, -1).normalize(), i: 4 });
+    if (axisMode !== 'auto') pick = cands[{ x: 0, y: 1, z: 2 }[axisMode]];
+    else {
+      var best = 0;
+      cands.forEach(function (cd) {
+        var s = scr(c.clone().add(cd.d)), sx = s.x - p0.x, sy = s.y - p0.y, sl = Math.hypot(sx, sy);
+        if (sl < 1e-6) return;
+        var score = Math.abs(px * sx + py * sy) / (pl * sl) * Math.min(1, sl / 25);   // axes pointing at the camera count for less
+        if (score > best) { best = score; pick = cd; }
+      });
     }
-    q[0] = Math.round((cursor[0] + ux * len) * 1000) / 1000; q[2] = Math.round((cursor[2] + uz * len) * 1000) / 1000;
-    return q;
+    if (!pick) return null;
+    var w = c.clone().sub(o), a = pick.d, b = a.dot(dv), den = 1 - b * b;
+    if (den < 1e-6) return null;
+    var t = clamp((b * dv.dot(w) - a.dot(w)) / den, -60, 60), len = rs(Math.abs(t));
+    if (len < snap * 0.99) return null;
+    var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len));
+    if (q[1] < -1e-9) return null;                                  // nothing below the floor
+    return { q: q, axis: pick.i, dir: a };
+  }
+  function showGuide(am) {
+    if (!am || !cursor) { guideLine.visible = false; return; }
+    var c = cursor, d = am.dir;
+    guideLine.material.color.setHex(AXCOL[am.axis]);
+    setLine(guideLine, [c[0] - d.x * 12, c[1] - d.y * 12, c[2] - d.z * 12], [c[0] + d.x * 12, c[1] + d.y * 12, c[2] + d.z * 12]);
+    guideLine.visible = true;
   }
   function startPoint(e) {                                          // where a new run begins: nozzle/end, then mid-pipe, then grid
     var p = planePoint(e), s = p ? snapPoint(p) : null;
@@ -1052,9 +1088,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       } else if (ss && key(ss.pt) !== key(cursor)) {
         pushHist(); routeTo(cursor, ss.pt, ss.noz); changed();
       } else {
-        var p = planePoint(e); if (!p) return;
-        var q = constrain(p);
-        if (q) { pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; changed(); }
+        var am = aim(e), q = am && am.q;
+        if (q) { pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; elev = q[1]; changed(); }
       }
       ghost(e);
     } else if (tool === 'valve' || tool === 'item' || (tool === 'flange' && fk !== 'bl')) {
@@ -1108,7 +1143,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else {
         var A = V(mA), B = V(pt), D = A.distanceTo(B);
         setLine(measLine, mA, pt); measLine.visible = true;
-        $('pos').textContent = Math.round(D * 1000) + ' mm  ΔX ' + Math.round((B.x - A.x) * 1000) + '  ΔY ' + Math.round((B.y - A.y) * 1000) + '  ΔZ ' + Math.round((B.z - A.z) * 1000);
+        $('pos').textContent = Math.round(D * 1000) + ' mm  ΔX ' + Math.round((B.x - A.x) * 1000) + '  ΔY ' + Math.round((B.z - A.z) * 1000) + '  ΔZ ' + Math.round((B.y - A.y) * 1000);
         mA = null;
       }
     } else if (tool === 'sel') {
@@ -1149,15 +1184,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (mA) { ghostLine.visible = true; setLine(ghostLine, mA, pt); } else ghostLine.visible = false;
       return;
     }
+    guideLine.visible = false;
     if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
     var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null;
     if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
     else if (ss && !(cursor && key(ss.pt) === key(cursor))) t = ss.pt;
-    else if (cursor) { if (p) t = constrain(p); }
+    else if (cursor) { var am = aim(e); t = am ? am.q : null; showGuide(am); }
     else t = startPoint(e);
     if (t) {
       marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!ss && t === ss.pt);
-      setPos('X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[1] * 1000) + '  Z ' + Math.round(t[2] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
+      setPos('X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
       if (cursor && tool === 'pipe') { ghostLine.visible = true; setLine(ghostLine, cursor, t); } else ghostLine.visible = false;
     } else { marker.visible = false; ghostLine.visible = false; }
   }
@@ -1717,7 +1753,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
-    $('pset').hidden = true; $('more').hidden = true;
+    $('pset').hidden = true; $('more').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
     if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
@@ -1783,7 +1819,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function setTool(t) {
     tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) lastPart = t;
-    $('pset').hidden = true; $('more').hidden = true;
+    $('pset').hidden = true; $('more').hidden = true; guideLine.visible = false;
     if (t !== 'sel') sel = null;
     rebuild(); updateUi();
   }
@@ -1797,6 +1833,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
     $('undo').disabled = !hist.length;
     $('ang').setAttribute('aria-pressed', String(ang45));
+    ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow));
@@ -1808,7 +1845,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var hints = {
       nav: 'Drag to orbit. Two fingers to pan and zoom.',
       sel: 'Tap a pipe, valve, flange or equipment to edit it.',
-      pipe: cursor ? 'Tap to extend the run. ' + (ang45 ? 'Snaps to 45° steps. ' : 'Snaps to X or Z. ') + '▲ ▼ add a vertical pipe.' : 'Tap to start: grid, a pipe end, a nozzle, or anywhere on a pipe to branch.',
+      pipe: cursor ? 'Aim along an axis and tap: up the screen is Z, sideways is X or Y. Lock one with the buttons below.' : 'Tap to start: grid, a pipe end, a nozzle, or anywhere on a pipe to branch.',
       valve: 'Tap a pipe to place a ' + VALVE_NAME[vk].toLowerCase() + '.',
       flange: fk === 'bl' ? 'Tap an open pipe end to fit a blind flange.' : 'Tap a pipe to place a flange pair with gasket and bolts.',
       item: 'Tap a pipe to place the fitting inline.',
@@ -1842,7 +1879,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('sp-olet').onchange = function () { setSpec('olet', this.value); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
   $('rot').onclick = function () { curRot = (curRot + 1) % 4; toast('Rotation ' + curRot * 90 + '°'); };
-  $('finish').onclick = function () { cursor = null; updateUi(); };
+  ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).onclick = function () { axisMode = a; updateUi(); }; });
+  $('finish').onclick = function () { cursor = null; guideLine.visible = false; updateUi(); };
   $('undo').onclick = function () {
     if (!hist.length) return;
     model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
@@ -1926,6 +1964,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var map = { n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
     if (k === 'escape' || k === 'enter') { cursor = null; sel = null; mA = null; rebuild(); updateUi(); }
     else if (map[k]) setTool(map[k]);
+    else if (k === 'x' || k === 'y' || k === 'z' || k === 'a') { axisMode = k === 'a' ? 'auto' : k; updateUi(); }
     else if (k === 'arrowup') vertical(1);
     else if (k === 'arrowdown') vertical(-1);
   });
