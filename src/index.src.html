@@ -128,6 +128,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 .tbl td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .tbl td.bad { color: var(--danger); }
 .tbl input { width: 92px; min-height: 40px; padding: 0 8px; }
+.coord { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.coord input { min-width: 0; padding: 0 8px; }
+.dd { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 2px; }
+.dd summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.dd summary::-webkit-details-marker { display: none; }
+.dd summary::after { content: '▸'; font-size: 12px; }
+.dd[open] > summary::after { content: '▾'; }
+#insp .dd p.dim { font: 400 11.5px/1.35 var(--font-ui); color: var(--dim); margin: 0 0 8px; }
+#ctx input[type="text"] { width: 104px; }
+#pstart { bottom: 78px; left: 50%; transform: translateX(-50%); width: min(380px, calc(100% - 32px)); z-index: 5; }
 #hydBody details { margin: 8px 0; }
 #hydBody summary { cursor: pointer; padding: 8px 0; color: var(--dim); }
 #hydBody .field { max-width: 360px; }
@@ -161,12 +171,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <div id="ctx" class="float">
       <div data-for="pipe">
         <button id="psum" aria-label="Pipe settings">NPS 4</button>
+        <button id="startAt" aria-label="Start the run at typed coordinates">Start at…</button>
         <div class="seg" id="axis" role="group" aria-label="Drawing axis">
           <button id="ax-auto" aria-pressed="true" aria-label="Pick the axis from where you aim">Auto</button>
           <button id="ax-x" aria-pressed="false" aria-label="Lock to X">X</button>
           <button id="ax-y" aria-pressed="false" aria-label="Lock to Y">Y</button>
           <button id="ax-z" aria-pressed="false" aria-label="Lock to Z, up and down">Z↑</button>
         </div>
+        <input type="text" id="lenIn" inputmode="decimal" placeholder="mm" aria-label="Exact length in millimetres" autocomplete="off">
+        <button id="lenAdd" aria-label="Add a pipe of the typed length">Add</button>
         <button id="finish">Finish run</button>
       </div>
       <div data-for="equip"><button id="rot">Rotate 90°</button></div>
@@ -187,6 +200,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <label class="field">Grid snap<select id="snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select></label>
         <label class="field">Turns<select id="ang"><option value="0" selected>90° only</option><option value="1">90° and 45°</option></select></label>
       </div>
+    </div>
+    <div id="pstart" class="sheet" hidden>
+      <h2>Start the run at, mm</h2>
+      <div class="field">X · Y · Z (Z is up)<div class="coord"><input type="text" inputmode="decimal" id="sx" placeholder="X" autocomplete="off"><input type="text" inputmode="decimal" id="sy" placeholder="Y" autocomplete="off"><input type="text" inputmode="decimal" id="sz" placeholder="Z" autocomplete="off"></div></div>
+      <div class="actions"><button id="startGo">Start here</button></div>
     </div>
     <div id="elev" class="float"><button id="up" aria-label="Raise 0.5 m">▲</button><output id="elv">EL +0.000 m</output><button id="down" aria-label="Lower 0.5 m">▼</button></div>
     <div id="side">
@@ -390,7 +408,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- state ----------
   var model = blank(), hist = [];
-  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up';
+  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null;
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
   function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
@@ -1225,6 +1243,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (len < snap * 0.99) return null;
     var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len));
     if (q[1] < -1e-9) return null;                                  // nothing below the floor
+    lastAim = { axis: pick.i, dir: a.clone(), sign: sg };
     return { q: q, axis: pick.i, dir: a };
   }
   function showGuide(am) {
@@ -1415,13 +1434,215 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null;
     if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
     else if (ss && !(cursor && key(ss.pt) === key(cursor))) t = ss.pt;
-    else if (cursor) { var am = aim(e); t = am ? am.q : null; showGuide(am); }
+    else if (cursor) { var am = aim(e); t = am ? am.q : null; showGuide(am); if (am) $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); }
     else t = startPoint(e);
     if (t) {
       marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!ss && t === ss.pt);
       setPos('X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
       if (cursor && tool === 'pipe') { ghostLine.visible = true; setLine(ghostLine, cursor, t); } else ghostLine.visible = false;
     } else { marker.visible = false; ghostLine.visible = false; }
+  }
+
+  // ---------- exact input and editing: typed lengths, typed coordinates, stretch, move, copy, mirror, rotate ----------
+  // Typed values use the CAD axes in millimetres: X and Y are horizontal, Z is up. The scene itself has Y up, so CAD Y is scene Z.
+  function cadOf(p) { return [p[0], p[2], p[1]]; }
+  function sceneOf(c) { return [c[0], c[2], c[1]]; }
+  function numField(id) { var v = parseFloat(String($(id).value).replace(',', '.')); return isFinite(v) ? v : null; }
+  function mmText(m) { return String(+(m * 1000).toFixed(1)); }
+  function addTyped() {                                             // an exact length along the aimed or locked axis
+    if (!cursor) return;
+    var val = numField('lenIn');
+    if (val == null || val === 0) { toast('Type a length in mm'); return; }
+    var dir = null;
+    if (axisMode !== 'auto') { var ai = { x: 0, y: 1, z: 2 }[axisMode]; dir = AXV[ai].clone(); if (lastAim && lastAim.axis === ai) dir.multiplyScalar(lastAim.sign); }
+    else if (lastAim) dir = lastAim.dir.clone().multiplyScalar(lastAim.sign);
+    if (!dir) { toast('Aim a direction first, or lock X, Y or Z'); return; }
+    var q = mm3(V(cursor).addScaledVector(dir, val / 1000));
+    if (q[1] < -1e-9) { toast('That goes below the floor'); return; }
+    pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; elev = q[1]; $('lenIn').value = ''; changed();
+  }
+  function startAtTyped() {                                         // begin a run at typed coordinates
+    var x = numField('sx'), y = numField('sy'), z = numField('sz');
+    if (x == null || y == null || z == null) { toast('Type X, Y and Z in mm'); return; }
+    var pt = mm3(V(sceneOf([x / 1000, y / 1000, z / 1000])));
+    if (pt[1] < -1e-9) { toast('Z cannot be below the floor'); return; }
+    var before = JSON.stringify(model);
+    if (splitAt(pt)) { hist.push(before); changed(); }
+    cursor = pt; elev = pt[1]; $('pstart').hidden = true; updateUi();
+  }
+
+  function endpointKeys(set) { var ks = {}; Object.keys(set).forEach(function (i) { ks[key(model.pipes[i].a)] = 1; ks[key(model.pipes[i].b)] = 1; }); return ks; }
+  function componentFrom(starts, block) {                           // pipes connected to the starts, never crossing the pipe `block`
+    var byKey = {}; model.pipes.forEach(function (p, i) { [key(p.a), key(p.b)].forEach(function (k) { (byKey[k] = byKey[k] || []).push(i); }); });
+    var seen = {}, stack = [];
+    starts.forEach(function (i) { if (i !== block && !seen[i]) { seen[i] = 1; stack.push(i); } });
+    while (stack.length) {
+      var q = model.pipes[stack.pop()];
+      [key(q.a), key(q.b)].forEach(function (k) { (byKey[k] || []).forEach(function (j) { if (j !== block && !seen[j]) { seen[j] = 1; stack.push(j); } }); });
+    }
+    return { set: seen, keys: endpointKeys(seen) };
+  }
+  function nozzleAt(k) { return nozList.some(function (z) { return key(mm3(z.p)) === k; }); }
+  function hostMap() { var m = {}; ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { model[g].forEach(function (it, i) { if (it.eq == null) m[g + ':' + i] = hostOf(it.p); }); }); return m; }
+  function addV(arr, d) { return mm3(V(arr).add(d)); }
+  function rekey(map) {                                             // joint overrides and caps follow a moved joint
+    var nf = {}; Object.keys(model.fit).forEach(function (k) { nf[map[k] || k] = model.fit[k]; }); model.fit = nf;
+  }
+  function shiftedKey(k, d) { var c = k.split(',').map(function (v) { return Number(v) / 1000; }); return key([c[0] + d.x, c[1] + d.y, c[2] + d.z]); }
+  function moveComponent(comp, delta, extraKeys) {                  // translate pipes, what sits on them, caps and joint overrides
+    var hosts = hostMap(), map = {}, all = Object.assign({}, comp.keys, extraKeys || {});
+    Object.keys(all).forEach(function (k) { map[k] = shiftedKey(k, delta); });
+    Object.keys(comp.set).forEach(function (i) { var p = model.pipes[i]; p.a = addV(p.a, delta); p.b = addV(p.b, delta); });
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) {
+      model[g].forEach(function (it, i) { if (it.eq == null && comp.set[hosts[g + ':' + i]]) it.p = addV(it.p, delta); });
+    });
+    model.caps.forEach(function (c) { if (map[key(c)]) { var n = addV(c, delta); c[0] = n[0]; c[1] = n[1]; c[2] = n[2]; } });
+    rekey(map);
+  }
+  function lowest(comp, delta, newY) {                              // lowest point after the move, counting the moved end itself
+    var y = Infinity; Object.keys(comp.set).forEach(function (i) { y = Math.min(y, model.pipes[i].a[1], model.pipes[i].b[1]); });
+    return Math.min(y + delta.y, newY);
+  }
+  function stretchPipe(i, which, np) {                              // move one end of a pipe, carrying everything beyond that end
+    np = mm3(V(np));
+    var p = model.pipes[i], oldPt = which === 'b' ? p.b : p.a, other = which === 'b' ? p.a : p.b, delta = V(np).sub(V(oldPt));
+    if (delta.length() < 0.0005) return;
+    var newDir = V(np).sub(V(other)), oldDir = V(oldPt).sub(V(other));
+    if (newDir.length() < 0.05 || newDir.dot(oldDir) <= 0) { toast('The pipe would be under 50 mm or turn back'); showInsp(); return; }
+    var kEnd = key(oldPt), starts = [];
+    model.pipes.forEach(function (q, j) { if (j !== i && (key(q.a) === kEnd || key(q.b) === kEnd)) starts.push(j); });
+    var comp = componentFrom(starts, i);
+    if (nozzleAt(kEnd) || Object.keys(comp.keys).some(nozzleAt)) { toast('This end is tied to equipment or a valve port. Move the equipment instead.'); showInsp(); return; }
+    if (comp.keys[key(other)]) { toast('The piping beyond this end loops back to the other end, so it cannot stretch'); showInsp(); return; }
+    if (lowest(comp, delta, np[1]) < -1e-9) { toast('That would take piping below the floor'); showInsp(); return; }
+    pushHist();
+    var holders = hostMap(), oldDirN = oldDir.clone().normalize(), fixed = V(other);
+    moveComponent(comp, delta, { [kEnd]: 1 });
+    p[which] = np;
+    var dirN = V(p.b).sub(V(p.a)).normalize(), L = V(p.a).distanceTo(V(p.b)), a = V(p.a);
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) {   // items on this pipe stay put, unless the end passed them
+      model[g].forEach(function (it, k) {
+        if (it.eq != null || holders[g + ':' + k] !== i) return;
+        var t = V(it.p).sub(a).dot(dirN);
+        if (t > L - 0.05) it.p = mm3(a.clone().addScaledVector(dirN, Math.max(0.05, L - 0.1)));
+        if (it.d) it.d = [dirN.x, dirN.y, dirN.z];
+      });
+    });
+    changed();
+  }
+
+  // Groups: the piping connected to a pipe, with what sits on it.
+  function groupOf(i) {
+    var comp = componentFrom([i], -1), keys = comp.keys, hosts = hostMap(), items = {};
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { items[g] = []; model[g].forEach(function (it, k) { if (it.eq == null && comp.set[hosts[g + ':' + k]]) items[g].push(k); }); });
+    return { set: comp.set, keys: keys, items: items, eq: Object.keys(keys).some(nozzleAt) };
+  }
+  function groupPoints(g) {
+    var pts = []; Object.keys(g.set).forEach(function (i) { pts.push(model.pipes[i].a, model.pipes[i].b); });
+    return pts;
+  }
+  function applyGroup(i, tf, copies, label) {                       // tf: {pt, dir} on arrays; copies 0 moves in place
+    var g = groupOf(i);
+    if (g.eq) { toast('This piping is tied to equipment. Move the equipment first.'); return false; }
+    var idx = Object.keys(g.set).map(Number).sort(function (a, b) { return a - b; });
+    var n = copies || 1, trial = [];
+    for (var c = 1; c <= n; c++) groupPoints(g).forEach(function (pt) { trial.push(tf(pt, c)[1]); });
+    if (trial.some(function (y) { return y < -1e-9; })) { toast('That would take piping below the floor'); return false; }
+    pushHist();
+    var firstNew = model.pipes.length;
+    if (!copies) {
+      var map = {};
+      Object.keys(g.keys).forEach(function (k) { var c0 = k.split(',').map(function (v) { return Number(v) / 1000; }); map[k] = key(tf(c0, 1)[0]); });
+      idx.forEach(function (j) { var p = model.pipes[j]; p.a = tf(p.a, 1)[0]; p.b = tf(p.b, 1)[0]; });
+      ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (grp) {
+        g.items[grp].forEach(function (k) { var it = model[grp][k]; it.p = tf(it.p, 1)[0]; if (it.d) it.d = tf(it.d, 1)[2]; });
+      });
+      model.caps.forEach(function (cp) { if (map[key(cp)]) { var np = tf(cp, 1)[0]; cp[0] = np[0]; cp[1] = np[1]; cp[2] = np[2]; } });
+      rekey(map);
+      changed(); return true;
+    }
+    for (var m = 1; m <= copies; m++) {
+      var pmap = {}, vmap = {};
+      idx.forEach(function (j) { var p = model.pipes[j], q = JSON.parse(JSON.stringify(p)); q.a = tf(p.a, m)[0]; q.b = tf(p.b, m)[0]; pmap[j] = model.pipes.length; model.pipes.push(q); });
+      g.items.valves.forEach(function (k) { var it = JSON.parse(JSON.stringify(model.valves[k])); it.p = tf(it.p, m)[0]; it.d = tf(it.d, m)[2]; vmap[k] = model.valves.length; model.valves.push(it); });
+      ['items', 'flanges', 'supports'].forEach(function (grp) {
+        g.items[grp].forEach(function (k) { var it = JSON.parse(JSON.stringify(model[grp][k])); it.p = tf(it.p, m)[0]; it.d = tf(it.d, m)[2]; model[grp].push(it); });
+      });
+      g.items.instr.forEach(function (k) {
+        var it = JSON.parse(JSON.stringify(model.instr[k])); it.p = tf(it.p, m)[0]; if (it.d) it.d = tf(it.d, m)[2];
+        if (it.link != null) { if (vmap[it.link] != null) it.link = vmap[it.link]; else delete it.link; }
+        it.num = nextNum(it.k); model.instr.push(it);
+      });
+      model.caps.slice().forEach(function (cp) { if (g.keys[key(cp)]) { var np = tf(cp, m)[0]; model.caps.push([np[0], np[1], np[2], cp[3]]); } });
+      Object.keys(model.fit).slice().forEach(function (k) {
+        if (!g.keys[k]) return;
+        var c1 = k.split(',').map(function (v) { return Number(v) / 1000; }); model.fit[key(tf(c1, m)[0])] = JSON.parse(JSON.stringify(model.fit[k]));
+      });
+    }
+    sel = { kind: 'pipe', i: firstNew };
+    changed(); toast(label + ': ' + copies + (copies === 1 ? ' copy' : ' copies')); return true;
+  }
+  // Transforms return [point, y of the point, direction] so the caller can test the floor. m is the copy number for stepped copies.
+  function shiftTf(dx, dy, dz) {                                    // CAD mm
+    return function (v, m) { var d = sceneOf([dx * m / 1000, dy * m / 1000, dz * m / 1000]), q = mm3(V(v).add(V(d))); return [q, q[1], v]; };
+  }
+  function mirrorTf(axis, at) {                                     // axis 0, 1, 2 = scene x, y, z about the plane through `at`
+    return function (v) { var q = v.slice(0, 3); q[axis] = Math.round((2 * at[axis] - q[axis]) * 1000) / 1000; var d = v.slice(0, 3); d[axis] = -d[axis]; return [q, q[1], d]; };
+  }
+  function rotTf(at) {                                              // 90° about the vertical axis through `at`, counter-clockwise seen from above
+    return function (v) { var x = v[0] - at[0], z = v[2] - at[2], q = [Math.round((at[0] - z) * 1000) / 1000, v[1], Math.round((at[2] + x) * 1000) / 1000]; return [q, q[1], [-v[2], v[1], v[0]]]; };
+  }
+
+  function geomHtml(it) {
+    var L = V(it.a).distanceTo(V(it.b)), a = cadOf(it.a), b = cadOf(it.b);
+    function row(tag, c, id) { return '<div class="field" style="margin-bottom:8px">' + tag + '<div class="coord"><input type="text" inputmode="decimal" id="' + id + 'x" value="' + mmText(c[0]) + '" aria-label="' + tag + ' X"><input type="text" inputmode="decimal" id="' + id + 'y" value="' + mmText(c[1]) + '" aria-label="' + tag + ' Y"><input type="text" inputmode="decimal" id="' + id + 'z" value="' + mmText(c[2]) + '" aria-label="' + tag + ' Z"></div></div>'; }
+    return '<details open class="dd"><summary>Length and ends, mm</summary>'
+      + '<div class="row"><label class="field">Length<input type="text" inputmode="decimal" id="i-len" value="' + mmText(L) + '"></label></div>'
+      + row('Start X · Y · Z', a, 'i-a') + row('End X · Y · Z', b, 'i-b')
+      + '<p class="dim">Changing an end moves the piping beyond it, so the rest of the line follows.</p></details>'
+      + '<details class="dd"><summary>Move, copy, mirror</summary>'
+      + '<div class="field" style="margin-bottom:8px">Offset X · Y · Z, mm<div class="coord"><input type="text" inputmode="decimal" id="g-x" value="0"><input type="text" inputmode="decimal" id="g-y" value="0"><input type="text" inputmode="decimal" id="g-z" value="0"></div></div>'
+      + '<div class="row"><label class="field">Copies<input type="text" inputmode="numeric" id="g-n" value="1"></label></div>'
+      + '<div class="row"><button id="g-move">Move</button><button id="g-copy">Copy</button></div>'
+      + '<div class="row"><button id="g-mx">Mirror X</button><button id="g-my">Mirror Y</button><button id="g-mz">Mirror Z</button><button id="g-rot">Rotate 90°</button></div>'
+      + '<p class="dim">Acts on the piping connected to this pipe, with its valves, flanges, supports and instruments. Mirror and rotate turn about this pipe\'s start.</p></details>'
+      + '<p>' + (L * lineWeight(it.n, it.s)).toFixed(1) + ' kg of pipe</p>';
+  }
+  function bindGeom(it) {
+    var i = sel.i;
+    $('i-len').onchange = function () {
+      var L1 = numField('i-len'); if (L1 == null || L1 < 50) { toast('Length must be at least 50 mm'); showInsp(); return; }
+      var a = V(it.a), u = V(it.b).sub(a).normalize();
+      stretchPipe(i, 'b', mm3(a.addScaledVector(u, L1 / 1000)));
+    };
+    ['a', 'b'].forEach(function (w) {
+      ['x', 'y', 'z'].forEach(function (ax) {
+        $('i-' + w + ax).onchange = function () {
+          var x = numField('i-' + w + 'x'), y = numField('i-' + w + 'y'), z = numField('i-' + w + 'z');
+          if (x == null || y == null || z == null) { toast('Type numbers in mm'); showInsp(); return; }
+          stretchPipe(i, w, mm3(V(sceneOf([x / 1000, y / 1000, z / 1000]))));
+        };
+      });
+    });
+    function offs() { return [numField('g-x') || 0, numField('g-y') || 0, numField('g-z') || 0]; }
+    $('g-move').onclick = function () { var o = offs(); applyGroup(i, shiftTf(o[0], o[1], o[2]), 0, 'Moved'); };
+    $('g-copy').onclick = function () { var o = offs(), n = Math.max(1, Math.min(50, Math.round(numField('g-n') || 1))); if (!o[0] && !o[1] && !o[2]) { toast('Type an offset for the copy'); return; } applyGroup(i, shiftTf(o[0], o[1], o[2]), n, 'Copied'); };
+    [['g-mx', 0], ['g-my', 2], ['g-mz', 1]].forEach(function (m) { $(m[0]).onclick = function () { applyGroup(i, mirrorTf(m[1], model.pipes[i].a), 1, 'Mirrored'); }; });
+    $('g-rot').onclick = function () { applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); };
+  }
+  function posHtml(it) {                                            // where a valve, flange, fitting, support or instrument sits along its pipe
+    var h = hostOf(it.p); if (h < 0) return '';
+    var t = V(it.p).distanceTo(V(model.pipes[h].a));
+    return '<div class="row"><label class="field">Distance from the pipe start, mm<input type="text" inputmode="decimal" id="i-pos" value="' + mmText(t) + '"></label></div>';
+  }
+  function bindPos(it) {
+    var el = $('i-pos'); if (!el) return;
+    el.onchange = function () {
+      var h = hostOf(it.p), t = numField('i-pos'); if (h < 0 || t == null) { showInsp(); return; }
+      var p = model.pipes[h], a = V(p.a), L = a.distanceTo(V(p.b)), u = V(p.b).sub(a).normalize(), s = t / 1000;
+      if (s < 0.05 || s > L - 0.05) { toast('Pick a spot at least 50 mm from each end, within ' + mmText(L) + ' mm'); showInsp(); return; }
+      pushHist(); it.p = mm3(a.addScaledVector(u, s)); changed();
+    };
   }
 
   // ---------- inspector ----------
@@ -1439,7 +1660,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + '<div class="row"><label>Line number<input type="text" id="i-ln" value="' + esc(it.ln) + '" maxlength="12" style="width:100%"></label></div>'
         + '<div class="row"><label class="field">Flow<select id="i-fl">' + opts([[0, 'Not set'], [1, 'Along drawing direction'], [-1, 'Against drawing direction']], it.fl || 0) + '</select></label></div>'
         + '<div class="row"><button id="i-run">Apply flow to the whole run</button></div>'
-        + '<p>Length ' + Math.round(L * 1000) + ' mm · ' + (L * lineWeight(it.n, it.s)).toFixed(1) + ' kg</p>';
+        + geomHtml(it);
     } else if (sel.kind === 'valve') {
       h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts(Object.keys(VALVE_NAME).map(function (k) { return [k, VALVE_NAME[k].replace(' valve', '')]; }), it.k) + '</select></label></div>'
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
@@ -1475,6 +1696,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else {
       h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
     }
+    if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
     h += '<div class="row">' + (sel.kind === 'fit' ? '' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
     el.innerHTML = h; el.hidden = false;
     function edit(fn) { return function () { pushHist(); fn(this.value); changed(); }; }
@@ -1483,6 +1705,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ($('i-ln')) $('i-ln').onchange = edit(function (v) { it.ln = v.trim() || 'L-001'; });
     if ($('i-k')) $('i-k').onchange = edit(function (v) { it.k = v; });
     if ($('i-fl')) $('i-fl').onchange = edit(function (v) { it.fl = +v; });
+    if (sel.kind === 'pipe' && $('i-len')) bindGeom(it);
+    bindPos(it);
     if ($('i-run')) $('i-run').onclick = function () { setRunFlow(sel.i, it.fl || 1); };
     if ($('i-rotv')) $('i-rotv').onclick = function () { pushHist(); it.rot = ((it.rot || 0) + 1) % 4; changed(); };
     if ($('i-flip')) $('i-flip').onclick = function () { pushHist(); it.rev = !it.rev; changed(); };
@@ -2140,7 +2364,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
-    $('pset').hidden = true; $('more').hidden = true; guideLine.visible = false;
+    $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
     if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
@@ -2227,7 +2451,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function setTool(t) {
     tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
-    $('pset').hidden = true; $('more').hidden = true; guideLine.visible = false;
+    $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     if (t !== 'sel') sel = null;
     rebuild(); updateUi();
   }
@@ -2236,7 +2460,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
     $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) syncParts();
     $('psum').textContent = '' + sz(curN) + ' · SCH ' + curS + ' · ' + curL + (ang45 ? ' · 45°' : '');
-    $('axis').hidden = !cursor; $('finish').hidden = !cursor;          // these only matter while a run is going
+    $('axis').hidden = !cursor; $('finish').hidden = !cursor;
+    $('startAt').hidden = !!cursor; $('lenIn').hidden = !cursor; $('lenAdd').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
     $('fgroup').hidden = $('fgroup').hidden || (tool === 'cap' && ck !== 'ret');   // direction only matters for a return bend among the end fittings
@@ -2301,11 +2526,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('sp-std').onchange = function () { pushHist(); model.spec.std = this.value; model.spec.sizeMode = { asme: 'NPS', jis: 'A', en: 'DN' }[this.value]; changed(); fillSizes(); };
   $('sp-size').onchange = function () { setSpec('sizeMode', this.value); fillSizes(); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
+  $('lenAdd').onclick = addTyped;
+  $('lenIn').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addTyped(); } });
+  $('startAt').onclick = function () { $('pstart').hidden = !$('pstart').hidden; $('pset').hidden = true; $('more').hidden = true; };
+  $('startGo').onclick = startAtTyped;
   $('fsz').onchange = function () { fsz = +$('fsz').value; updateUi(); };
   ['up', 'near', 'far', 'down'].forEach(function (d) { $('bd-' + d).onclick = function () { bdir = d; updateUi(); }; });
   $('rot').onclick = function () { curRot = (curRot + 1) % 4; toast('Rotation ' + curRot * 90 + '°'); };
   ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).onclick = function () { axisMode = a; updateUi(); }; });
-  $('finish').onclick = function () { cursor = null; guideLine.visible = false; updateUi(); };
+  $('finish').onclick = function () { cursor = null; lastAim = null; guideLine.visible = false; updateUi(); };
   $('undo').onclick = function () {
     if (!hist.length) return;
     model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
@@ -2400,7 +2629,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    setRunFlow: setRunFlow, stretch: stretchPipe, typed: addTyped,
+    group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

@@ -436,6 +436,98 @@ check('the size designation can be changed on its own', PD.model.spec.sizeMode =
 els['sp-std'].value = 'asme'; els['sp-std'].onchange.call(els['sp-std']);
 check('and back to NPS with ASME', PD.model.spec.sizeMode === 'NPS' && els['nps'].innerHTML.includes('NPS 4 · 114.3 mm'));
 
+// Exact input: typed lengths and start coordinates while drawing.
+['sx', 'sy', 'sz', 'lenIn', 'g-x', 'g-y', 'g-z', 'g-n', 'i-len', 'i-ax', 'i-ay', 'i-az', 'i-bx', 'i-by', 'i-bz', 'i-pos'].forEach(id => doc.getElementById(id));
+const floorOut = () => { els['t-pipe'].onclick(); els['finish'].onclick(); for (let i = 0; i < 6; i++) els['down'].onclick(); };
+const cur = () => PD.cursor();
+PD.load({ pipes: [], valves: [] }); floorOut();
+els['sx'].value = '1000'; els['sy'].value = '2000'; els['sz'].value = '500'; els['startGo'].onclick();
+check('a run starts at typed X, Y, Z (Z up) in mm', cur() && near(cur(), [1, 0.5, 2]), JSON.stringify(cur()));
+els['ax-x'].onclick(); els['lenIn'].value = '1234'; els['lenAdd'].onclick();
+check('typed length goes exactly that far along the locked axis', near(lastPipe().a, [1, 0.5, 2]) && near(lastPipe().b, [2.234, 0.5, 2]) && Math.abs(lastPipe().b[0] - 2.234) < 1e-9, JSON.stringify(lastPipe()));
+els['lenIn'].value = '-500'; els['lenAdd'].onclick();
+check('a negative length goes the other way', near(lastPipe().b, [1.734, 0.5, 2]), JSON.stringify(lastPipe()));
+els['ax-z'].onclick(); els['lenIn'].value = '2500'; els['lenAdd'].onclick();
+check('typed length along Z goes up', near(lastPipe().b, [1.734, 3, 2]), JSON.stringify(lastPipe()));
+els['ax-y'].onclick(); els['lenIn'].value = '750'; els['lenAdd'].onclick();
+check('typed length along Y goes along scene Z', near(lastPipe().b, [1.734, 3, 2.75]), JSON.stringify(lastPipe()));
+const nP = PD.model.pipes.length;
+els['ax-z'].onclick(); els['lenIn'].value = '-99999'; els['lenAdd'].onclick();
+check('a typed length below the floor is refused', PD.model.pipes.length === nP);
+els['lenIn'].value = 'abc'; els['lenAdd'].onclick();
+check('a typed length that is not a number is refused', PD.model.pipes.length === nP);
+els['ax-auto'].onclick();
+tapOn([cur()[0] + 1.5, cur()[1], cur()[2]]);
+const before = lastPipe().b.slice();
+els['lenIn'].value = '300'; els['lenAdd'].onclick();
+check('in Auto a typed length carries on in the direction you last aimed', near(lastPipe().a, before) && near(lastPipe().b, [before[0] + 0.3, before[1], before[2]]), JSON.stringify(lastPipe()));
+els['finish'].onclick();
+els['ax-auto'].onclick(); els['lenIn'].value = '100';
+check('typing a length with no run is a no-op', (() => { const n = PD.model.pipes.length; PD.typed(); return PD.model.pipes.length === n; })());
+els['sx'].value = '0'; els['sy'].value = '0'; els['sz'].value = '-100'; els['startGo'].onclick();
+check('a start below the floor is refused', cur() === null);
+
+// Editing: stretch an end and everything beyond follows.
+const chain = () => ({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, fl: 1 }, { a: [4, 0, 3], b: [8, 0, 3], n: 4, fl: 1 }], valves: [{ p: [4, 0, 1.5], d: [0, 0, 1], n: 4, k: 'gate' }], fit: { '4000,0,0': { el: 'SR' } }, caps: [[8, 0, 3]], instr: [{ k: 'PT', p: [6, 0, 3], d: [1, 0, 0], n: 4, num: 101 }] });
+PD.load(chain()); PD.stretch(0, 'b', [5, 0, 0]);
+check('stretching an end moves the piping beyond it', near(PD.model.pipes[0].b, [5, 0, 0]) && near(PD.model.pipes[1].a, [5, 0, 0]) && near(PD.model.pipes[1].b, [5, 0, 3]) && near(PD.model.pipes[2].a, [5, 0, 3]) && near(PD.model.pipes[2].b, [9, 0, 3]), JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+check('and what sits on it, caps and joint overrides go along', near(PD.model.valves[0].p, [5, 0, 1.5]) && near(PD.model.instr[0].p, [7, 0, 3]) && near(PD.model.caps[0], [9, 0, 3]) && PD.model.fit['5000,0,0'] && PD.model.fit['5000,0,0'].el === 'SR' && !PD.model.fit['4000,0,0'], JSON.stringify(PD.model.fit));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [8, 0, 0], n: 4 }], valves: [] }); PD.stretch(1, 'a', [3, 0, 0]);
+check('stretching the start end carries the piping behind it', near(PD.model.pipes[0].a, [-1, 0, 0]) && near(PD.model.pipes[0].b, [3, 0, 0]) && near(PD.model.pipes[1].a, [3, 0, 0]), JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+const sq = () => ({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 4], n: 4 }, { a: [4, 0, 4], b: [0, 0, 4], n: 4 }, { a: [0, 0, 4], b: [0, 0, 0], n: 4 }], valves: [] });
+PD.load(sq()); PD.stretch(0, 'b', [5, 0, 0]);
+check('a closed loop cannot stretch', near(PD.model.pipes[0].b, [4, 0, 0]) && near(PD.model.pipes[1].a, [4, 0, 0]));
+PD.load({ pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n: 4 }], valves: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] }); PD.stretch(0, 'b', [-3, 0.4, 0]);
+check('a pipe on a pump nozzle moves at its free end', near(PD.model.pipes[0].b, [-3, 0.4, 0]));
+PD.stretch(0, 'a', [-0.5, 0.4, 0]);
+check('but not at the nozzle end', near(PD.model.pipes[0].a, [-0.35, 0.4, 0]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 2, 0], n: 4 }], valves: [] }); PD.stretch(1, 'a', [3, -0.5, 0]);
+check('stretching below the floor is refused', near(PD.model.pipes[1].a, [3, 0, 0]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] }); PD.stretch(0, 'b', [0.02, 0, 0]);
+check('a pipe cannot be stretched shorter than 50 mm', near(PD.model.pipes[0].b, [4, 0, 0]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [3.5, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] }); PD.stretch(0, 'b', [2, 0, 0]);
+check('a valve past the shortened end is pulled back onto the pipe', PD.model.valves[0].p[0] < 2 && PD.model.valves[0].p[0] > 1.8, JSON.stringify(PD.model.valves[0].p));
+
+// Move, copy, mirror and rotate the connected piping.
+const grp = () => ({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'control' }], flanges: [{ p: [4, 0, 1.5], d: [0, 0, 1], n: 4, t: 'wn' }], instr: [{ k: 'FIC', p: [1, 0, 0], d: [1, 0, 0], n: 4, num: 101, link: 0 }], caps: [[4, 0, 3]], fit: { '4000,0,0': { el: 'SR' } } });
+PD.load(grp()); PD.group.move(0, 1000, 500, 250);
+check('move shifts the whole connected piping by a typed offset (CAD axes)', near(PD.model.pipes[0].a, [1, 0.25, 0.5]) && near(PD.model.pipes[1].b, [5, 0.25, 3.5]) && near(PD.model.valves[0].p, [3, 0.25, 0.5]) && near(PD.model.flanges[0].p, [5, 0.25, 2]) && near(PD.model.instr[0].p, [2, 0.25, 0.5]) && near(PD.model.caps[0], [5, 0.25, 3.5]) && PD.model.fit['5000,250,500'], JSON.stringify(PD.model.fit) + JSON.stringify(PD.model.pipes[0]));
+PD.load(grp()); PD.group.copy(0, 0, 2000, 0, 2);
+check('copy with a count makes stepped copies', PD.model.pipes.length === 6 && PD.model.valves.length === 3 && PD.model.flanges.length === 3 && PD.model.instr.length === 3 && PD.model.caps.length === 3 && near(PD.model.pipes[2].a, [0, 0, 2]) && near(PD.model.pipes[4].a, [0, 0, 4]), JSON.stringify(PD.model.pipes.map(p => p.a)));
+check('copies keep the originals and carry flow, joint overrides and numbering', near(PD.model.pipes[0].a, [0, 0, 0]) && PD.model.pipes[3].fl === 1 && PD.model.fit['4000,0,2000'] && PD.model.fit['4000,0,4000'] && PD.model.instr.map(q => q.num).join() === '101,102,103', JSON.stringify(PD.model.instr.map(q => q.num)));
+check('a copied controller drives the copied valve', PD.model.instr[1].link === 1 && PD.model.instr[2].link === 2 && PD.model.instr[0].link === 0, JSON.stringify(PD.model.instr.map(q => q.link)));
+PD.load(grp()); PD.group.mirror(0, 0);
+check('mirror across X makes a mirrored copy with mirrored items', PD.model.pipes.length === 4 && near(PD.model.pipes[2].a, [0, 0, 0]) && near(PD.model.pipes[2].b, [-4, 0, 0]) && near(PD.model.pipes[3].b, [-4, 0, 3]) && near(PD.model.valves[1].p, [-2, 0, 0]) && PD.model.valves[1].d[0] === -1, JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+PD.load(grp()); PD.group.mirror(0, 2);
+check('mirror across Y (scene Z) flips the other horizontal axis', near(PD.model.pipes[3].b, [4, 0, -3]) && near(PD.model.flanges[1].p, [4, 0, -1.5]), JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+PD.load(grp()); PD.group.rotate(0);
+check('rotate turns the group 90° about the vertical axis through its start', near(PD.model.pipes[0].b, [0, 0, 4]) && near(PD.model.pipes[1].b, [-3, 0, 4]) && near(PD.model.valves[0].p, [0, 0, 2]) && near(PD.model.valves[0].d, [0, 0, 1]), JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+PD.load(Object.assign(grp(), { pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n: 4 }], valves: [], flanges: [], instr: [], caps: [], fit: {}, equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] }));
+check('piping tied to equipment cannot be moved, copied or rotated', PD.group.move(0, 100, 0, 0) === false && PD.group.copy(0, 0, 500, 0, 1) === false && PD.group.rotate(0) === false && PD.model.pipes.length === 1);
+PD.load(grp());
+check('a move or copy that goes below the floor is refused', PD.group.move(0, 0, 0, -1000) === false && PD.group.copy(0, 0, 0, -1000, 1) === false && PD.model.pipes.length === 2);
+
+// The inspector fields do the same through the screen.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+els['t-sel'].onclick(); tapOn([3, 0, 0]);
+const ih = els['insp'].innerHTML;
+check('the pipe inspector has length, both ends and the group tools', ih.includes('id="i-len"') && ih.includes('id="i-bx"') && ih.includes('Move, copy, mirror') && ih.includes('value="4000"'), ih.slice(0, 200));
+els['i-len'].value = '5000'; els['i-len'].onchange();
+check('typing a length in the inspector stretches the pipe', near(PD.model.pipes[0].b, [5, 0, 0]));
+els['i-bx'].value = '6000'; els['i-by'].value = '0'; els['i-bz'].value = '0'; els['i-bx'].onchange();
+check('typing an end coordinate moves the end', near(PD.model.pipes[0].b, [6, 0, 0]));
+els['i-ax'].value = '500'; els['i-ay'].value = '0'; els['i-az'].value = '0'; els['i-ax'].onchange();
+check('typing a start coordinate moves the start', near(PD.model.pipes[0].a, [0.5, 0, 0]));
+els['g-x'].value = '0'; els['g-y'].value = '1000'; els['g-z'].value = '0'; els['g-n'].value = '1'; els['g-copy'].onclick();
+check('the inspector copy button copies with the typed offset', PD.model.pipes.length === 2 && near(PD.model.pipes[1].a, [0.5, 0, 1]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+tapOn([1, 0, 0]);
+check('a valve has a typed position along its pipe', els['insp'].innerHTML.includes('id="i-pos"') && els['insp'].innerHTML.includes('value="1000"'), els['insp'].innerHTML.slice(0, 200));
+els['i-pos'].value = '2500'; els['i-pos'].onchange();
+check('typing a position moves the valve along the pipe', near(PD.model.valves[0].p, [2.5, 0, 0]));
+els['i-pos'].value = '20'; els['i-pos'].onchange();
+check('a position too close to an end is refused', near(PD.model.valves[0].p, [2.5, 0, 0]));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
