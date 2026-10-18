@@ -24,8 +24,14 @@ fs.writeFileSync(path.join(__dirname, 'index.html'), out);
 
 // New cache name on every content change, so installed copies update.
 const v = crypto.createHash('sha256').update(out).digest('hex').slice(0, 8);
+// Online: revalidate with the network every time, so a new build shows up on the next open.
+// Offline or slow (4 s): fall back to the cached copy. Install bypasses the HTTP cache (GitHub Pages sends max-age=600).
 fs.writeFileSync(path.join(__dirname, 'sw.js'),
-  'const C="pd-' + v + '";self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(["./","index.html","manifest.json","icon-180.png","icon-512.png"])))});'
+  'const C="pd-' + v + '",F=["./","index.html","manifest.json","icon-180.png","icon-512.png"];'
+  + 'self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(F.map(u=>new Request(u,{cache:"reload"})))))});'
   + 'self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(n=>n!==C).map(n=>caches.delete(n)))).then(()=>self.clients.claim())));'
-  + 'self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request,{ignoreSearch:true}).then(r=>r||fetch(e.request))));\n');
+  + 'self.addEventListener("fetch",e=>{if(e.request.method!=="GET")return;'
+  + 'const net=fetch(e.request,{cache:"no-cache"}).then(r=>{if(r.ok){const c=r.clone();caches.open(C).then(x=>x.put(e.request,c))}return r});'
+  + 'const slow=new Promise((_,rej)=>setTimeout(rej,4000));'
+  + 'e.respondWith(Promise.race([net,slow]).catch(()=>caches.match(e.request,{ignoreSearch:true}).then(r=>r||net)))});\n');
 console.log('built index.html', Math.round(out.length / 1024) + ' KB, cache pd-' + v);
