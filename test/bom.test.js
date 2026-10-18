@@ -399,10 +399,25 @@ check('no P&ID bubbles on the iso sheet', !isoP.includes('r="14"') && !isoP.incl
 check('item balloons point at the material list', (isoP.match(/r="9.5"/g) || []).length >= 8 && isoP.includes('>' + rowsN + '</text>'), String((isoP.match(/r="9.5"/g) || []).length));
 check('dimension lines run along the pipe with the centreline length', (isoP.match(/class="dim"/g) || []).length >= 3 && isoP.includes('>4150<'), (isoP.match(/class="dim"/g) || []).length + '');
 check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
-check('equipment is a dashed outline with its nozzles and tag', isoP.includes('stroke-dasharray="6 3"') && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
+check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#dde3e6"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
 check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y (N)<') && isoP.includes('>Z<'));
-check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('skewed into the plane of its pipe'));
+check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('picture the isometric sheet draws') && PD.legend().includes('#dde3e6'));
+{
+  const valveKinds = ['gate', 'globe', 'check', 'ball', 'butterfly', 'plug', 'control', 'angle', 'needle', 'diaphragm', 'knife', 'threeway', 'footv'];
+  const pics = new Set(valveKinds.map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k }] }); const m = PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s); return m ? m[1] : ''; }));
+  check('every valve type has its own picture on the iso sheet', pics.size === valveKinds.length && !pics.has(''), String(pics.size));
+  const itemKinds = ['coupling', 'nipple', 'union', 'strainer', 'basket', 'expansion', 'spectacle', 'orifice', 'sight', 'flowmeter', 'trap', 'rupture', 'flame', 'hose'];
+  const ipics = new Set(itemKinds.map(t => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], items: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t }] }); const m = PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s); return m ? m[1] : ''; }));
+  check('every inline item has its own picture', ipics.size === itemKinds.length && !ipics.has(''), String(ipics.size));
+  const sup = ['shoe', 'guide', 'anchor', 'hanger', 'spring'];
+  const spics = new Set(sup.map(t => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], supports: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t }] }); const m = PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s); return m ? m[1] : ''; }));
+  check('every support type has its own picture', spics.size === sup.length && !spics.has(''), String(spics.size));
+  const ins = [['PI', 'PT', 'FIC']].flat().map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], instr: [{ k, p: [2, 0, 0], d: [1, 0, 0], n: 4, num: 101 }] }); return PD.iso('', 0).includes('class="sy"'); });
+  check('gauges, transmitters and controllers are drawn', ins.every(Boolean));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+  check('the iso sheet no longer uses the P&ID bow-tie outline for a valve', !PD.iso('', 0).includes('M-10,-6 L10,6 L10,-6 L-10,6') && PD.iso('', 0).includes('#dde3e6'));
+}
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
 check('a bare pipe has a balloon for its pipe row', PD.iso().includes('r="9.5"') && PD.iso().includes('Pipe, NPS 4 SCH 40, BE'));
 
