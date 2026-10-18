@@ -287,6 +287,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <select id="iso-line" aria-label="Line number"></select>
           <select id="iso-view" aria-label="View direction"><option value="auto">View: auto</option><option value="0">View 1</option><option value="1">View 2</option><option value="2">View 3</option><option value="3">View 4</option></select>
           <button id="iso-tidy" aria-pressed="true">Auto layout</button>
+          <button id="iso-style" aria-pressed="false">Symbols</button>
           <button id="iso-info" aria-pressed="false">Title block</button>
         </span>
         <button id="iso-pdf">Save PDF</button><button id="iso-print">Print</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
@@ -2288,6 +2289,36 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var SYM_ORDER = Object.keys(SYM);
   // Isometric pictures. The iso sheet shows what a part looks like in side view, drawn in the plane of its pipe: x along the pipe,
   // up is negative y, 20 units is the face to face length of a valve. The P&ID symbols above are not used on the iso sheet.
+
+  // The symbols used on most isometric drawings: the bow-tie for a valve with its stem and a mark that says which valve it is,
+  // two bars for a flange. Flanged valves get their flange bars from the flanges fitted against them. Parts without a symbol of
+  // their own here (strainers, expansion joints and so on) use the pictures above.
+  var ISOS = (function () {
+    var DK = '#14191c';
+    function P(d, f) { return '<path d="' + d + '" fill="' + (f || 'none') + '"/>'; }
+    function Ln(x1, y1, x2, y2, sw) { return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"' + (sw ? ' stroke-width="' + sw + '"' : '') + '/>'; }
+    function C(cx, cy, r, f) { return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + (f || 'none') + '"/>'; }
+    function E(cx, cy, rx, ry, f) { return '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="' + (f || 'none') + '"/>'; }
+    var BT = P('M-8,-6 L8,6 L8,-6 L-8,6Z', '#ffffff'), STEM = function (y) { return Ln(0, 0, 0, y) + Ln(-5, y, 5, y, 2.2); };
+    var s = {};
+    s.gate = BT + STEM(-13);
+    s.globe = BT + C(0, 0, 2.8, DK) + STEM(-13);
+    s.check = BT + P('M-3.5,-3.2 L3.8,0 L-3.5,3.2Z', DK);
+    s.ball = BT + C(0, 0, 3.4, '#ffffff') + Ln(0, 0, 0, -9) + Ln(0, -9, 10, -9, 2.4);
+    s.butterfly = Ln(-2.5, -8, -2.5, 8, 2.2) + Ln(2.5, -8, 2.5, 8, 2.2) + E(0, 0, 1.6, 6, '#ffffff') + Ln(0, 0, 0, -11) + Ln(0, -11, 10, -11, 2.4);
+    s.plug = BT + P('M-3.2,2.6 L3.2,2.6 L2,-2.6 L-2,-2.6Z', DK) + STEM(-13);
+    s.control = BT + Ln(0, 0, 0, -10) + P('M-8,-10 A8,8 0 0 1 8,-10Z', '#ffffff') + Ln(-8, -10, 8, -10);
+    s.angle = P('M-8,-6 L-8,6 L0,0Z', '#ffffff') + P('M0,0 L-6,13 L6,13Z', '#ffffff') + STEM(-13);
+    s.needle = BT + P('M-2.5,-9 L2.5,-9 L0,-3.5Z', DK) + Ln(0, 0, 0, -3.5) + Ln(-4.5, -9, 4.5, -9, 2.2);
+    s.diaphragm = BT + Ln(0, 0, 0, -8) + P('M-5,-8 A5,5 0 0 1 5,-8Z', '#ffffff') + Ln(-5, -8, 5, -8);
+    s.knife = Ln(-2.5, -8, -2.5, 8, 2.2) + Ln(2.5, -8, 2.5, 8, 2.2) + P('M-4.5,-8 L4.5,-8 L0,0Z', '#ffffff') + STEM(-14);
+    s.threeway = BT + Ln(0, 0, 0, 11) + Ln(-5, 11, 5, 11, 2.2) + STEM(-13);
+    s.footv = BT + P('M-3.5,-3.2 L3.8,0 L-3.5,3.2Z', DK) + P('M-4.5,7 L4.5,7 L6.5,15 L-6.5,15Z', '#ffffff') + Ln(-3, 11, 3, 11, 0.8);
+    ['wn', 'so', 'lj', 'th', 'sw'].forEach(function (t) { s['fl-' + t] = Ln(-2.2, -8, -2.2, 8, 2.6) + Ln(2.2, -8, 2.2, 8, 2.6); });
+    s['fl-ro'] = s['fl-wn'] + Ln(0, -8, 0, -14, 1.4) + Ln(0, 8, 0, 14, 1.4);
+    s['fl-end'] = Ln(0, -8, 0, 8, 2.8);
+    return s;
+  })();
   var ISOA = (function () {
     var BD = '#dde3e6', AC = '#c4dcd8', WH = '#ffffff', DK = '#14191c';
     function R(x, y, w, h, f, rx) { return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + (f || 'none') + '"' + (rx ? ' rx="' + rx + '"' : '') + '/>'; }
@@ -2493,13 +2524,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
     function isoSym(key, p3, d3, Lpx, flip, down) {
-      var s0 = SYM[key], pic = ISOA[key]; if (!s0 && !pic) return '';
+      var s0 = SYM[key], own = isoCtx.style === 'pic' ? null : ISOS[key], pic = own || ISOA[key]; if (!s0 && !pic) return '';
       var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
       var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = pr(A(d)), ey = pr(wv), k = Lpx / 20, q = sp(p3);
       var ud = down ? -1 : 1, m = [ex[0] * k, ex[1] * k, -ey[0] * k * ud, -ey[1] * k * ud, q[0], q[1]].map(f3).join(' ');
       var extra = !pic && s0.act ? '<line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/>' : '';
-      return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="' + (pic ? 1.1 : 1.5) + '" stroke-linejoin="round" stroke-linecap="round">' + (pic || s0.svg) + extra + '</g>';
+      return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="' + (own ? 1.5 : pic ? 1.1 : 1.5) + '" stroke-linejoin="round" stroke-linecap="round">' + (pic || s0.svg) + extra + '</g>';
     }
     function clampPx(m, lo, hi) { return Math.max(lo, Math.min(hi, m * sc)); }
 
@@ -2802,7 +2833,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return o + '</svg>';
   }
   // The isometric sheet for everything, or for one line number, and the view that reads best.
-  var isoCtx = { ln: '', rot: 0, tidy: true }, isoOpts = { ln: '', view: 'auto' };
+  var isoCtx = { ln: '', rot: 0, tidy: true, style: 'sym' }, isoOpts = { ln: '', view: 'auto', style: 'sym' };
   function subsetFor(ln) {                                          // a copy of the model with one line's pipes and what sits on them
     var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {};
     m.pipes = []; model.pipes.forEach(function (p, i) { if (p.ln === ln) { keepP[i] = 1; m.pipes.push(JSON.parse(JSON.stringify(p))); ends[key(p.a)] = 1; ends[key(p.b)] = 1; } });
@@ -2815,12 +2846,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     m.equip = model.equip.filter(function (e, i) { return nz[i]; }).map(function (e) { return JSON.parse(JSON.stringify(e)); });
     return m;
   }
-  function isoSvg(ln, view, tidy) {
+  function isoSvg(ln, view, tidy, style) {
     ln = ln == null ? isoOpts.ln : ln; view = view == null ? isoOpts.view : view;
     if (!model.pipes.length) return null;
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
-    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy;
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym';
     if (!ln) return isoCore(rot);
     model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; rebuild(); }
@@ -2830,12 +2861,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var W = 1000, H = 700, s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
     s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
     s += '<text x="32" y="52" font-size="18" font-weight="600" fill="' + INK + '">PIPING SYMBOLS</text>';
-    s += '<text x="32" y="74" font-size="11" fill="' + INK + '">Left: the flat P&amp;ID symbol. Right: the picture the isometric sheet draws, in side view in the plane of its pipe, with an item balloon. The tag prefix numbers each item, for example GV-1.</text>';
+    s += '<text x="32" y="74" font-size="11" fill="' + INK + '">Left: the flat P&amp;ID symbol. Right: the symbol the isometric sheet draws, skewed into the plane of its pipe, with an item balloon. The tag prefix numbers each item, for example GV-1. The isometric sheet can also show pictures of the parts instead.</text>';
     SYM_ORDER.forEach(function (k, i) {
       var col = i % 2, row = Math.floor(i / 2), x = 40 + col * 480, y = 120 + row * 44;
       s += sym(k, x + 24, y, 0) + '<text x="' + (x + 64) + '" y="' + (y + 4) + '" font-size="13" fill="' + INK + '">' + esc(SYM[k].name) + '</text>';
       s += '<text x="' + (x + 470) + '" y="' + (y + 4) + '" font-size="12" text-anchor="end" fill="' + INK + '">' + SYM[k].tag + '</text>';
-      var pk = ISOA[k] || (k === 'instr' ? ISOA['i-gauge'] : k === 'instr-dcs' ? ISOA['i-ctrl'] : null);
+      var pk = ISOS[k] || ISOA[k] || (k === 'instr' ? ISOA['i-gauge'] : k === 'instr-dcs' ? ISOA['i-ctrl'] : null);
       if (pk) s += '<g transform="translate(' + (x + 395) + ' ' + (y + 2) + ') scale(0.78)" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round">' + pk + '</g>';
     });
     return s + '</svg>';
@@ -3443,6 +3474,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').innerHTML = '<option value="">All lines</option>' + Object.keys(lns).sort().map(function (k) { return '<option value="' + esc(k) + '"' + (k === isoOpts.ln ? ' selected' : '') + '>Line ' + esc(k) + '</option>'; }).join('');
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
+    $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
     $('isoInfo').innerHTML = isoInfoHtml();
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
@@ -3455,6 +3487,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('isoBtn').onclick = function () { $('more').hidden = true; refreshIso(); };
   $('iso-line').onchange = function () { isoOpts.ln = this.value; refreshIso(); };
   $('iso-view').onchange = function () { isoOpts.view = this.value; refreshIso(); };
+  $('iso-style').onclick = function () { isoOpts.style = isoOpts.style === 'pic' ? 'sym' : 'pic'; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {
@@ -3559,7 +3592,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
