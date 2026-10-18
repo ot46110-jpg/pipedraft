@@ -24,6 +24,7 @@ const rows = () => PD.rows().map(r => r[0] + ' | ' + r[1]).join('\n');
 const has = s => rows().includes(s);
 
 // Example layout shown on first open.
+check('the example layout has no clashes', PD.clashes().length === 0, JSON.stringify(PD.clashes().map(c => c.text)));
 check('example BOM', ['Pipe, NPS 4 SCH 40, BE | 8.27 m', 'Pipe, NPS 3 SCH 40, BE | 0.75 m', 'Elbow 90° LR BW, NPS 4 SCH 40 | 2', 'Reducer concentric BW, NPS 4×3 SCH 40 | 1', 'Tee equal BW, NPS 4 SCH 40 | 1', 'Gate valve flanged 150#, NPS 4 | 2'].every(has), rows());
 check('example has no warnings', PD.warns().length === 0, PD.warns().join('\n'));
 
@@ -682,6 +683,26 @@ L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln
 check('and clearing it removes it', PD.model.lines['L-002'].pdes === undefined);
 PD.model.lines['L-002'].cls = 'JIS 10K SGP';
 check('the class typed in the line list reaches the title block of that line sheet', PD.iso('L-002', 0).includes('JIS 10K SGP'));
+
+// Clash check.
+PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1, -2], b: [2, 1, 2], n: 4 }], valves: [] });
+check('two pipes crossing at the same height clash', PD.clashes().length === 1 && PD.clashes()[0].kind === 'pipe' && PD.warns().some(w => w.includes('run into each other') && w.includes('2000, 0, 1000')), PD.warns().join());
+PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1.3, -2], b: [2, 1.3, 2], n: 4 }], valves: [] });
+check('crossing one pipe diameter and more clear of each other is fine', PD.clashes().length === 0);
+PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1, 0], b: [2, 1, 3], n: 4 }], valves: [] });
+check('a branch that starts on the header is not a clash', PD.clashes().length === 0);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [] });
+check('an elbow joint is not a clash', PD.clashes().length === 0);
+PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [0, 1.05, 1], b: [4, 1.05, 1], n: 4 }], valves: [] });
+check('parallel pipes a metre apart are fine', PD.clashes().length === 0, JSON.stringify(PD.clashes().map(c => c.d)));
+PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [0, 1.05, 0], b: [4, 1.05, 0], n: 4 }], valves: [] });
+check('pipes lying on top of each other are reported', PD.clashes().length === 1);
+PD.load({ pipes: [{ a: [-3, 0.4, 0], b: [3, 0.4, 0], n: 4 }], valves: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
+check('a pipe through a pump is reported', PD.clashes().some(c => c.kind === 'equip') && PD.warns().some(w => w.includes('runs through P-1')), PD.warns().join());
+PD.load({ pipes: [{ a: [-0.35, 0.4, 0], b: [-3, 0.4, 0], n: 4 }], valves: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
+check('a pipe leaving a nozzle is not', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+PD.load({ pipes: [{ a: [3, 0.4, 3], b: [6, 0.4, 3], n: 4 }], valves: [], equip: [{ k: 'vessel', p: [0, 0, 0], r: 0 }] });
+check('and a pipe away from equipment is not', PD.clashes().length === 0);
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });

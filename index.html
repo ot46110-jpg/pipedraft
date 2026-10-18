@@ -1124,6 +1124,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
+    clashWarnings();
     hydroWarnings();
     matDirty = true;
     renderBom(); showInsp();
@@ -1247,6 +1248,51 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var o = 'Piece,Spool,Line,Pipe,Cut length (mm)\n' + f.pieces.map(function (p) { return [q(p.label), q(p.spool), q(p.ln), q(compDesc.pipe[p.i] || ''), Math.round(p.len * 1000)].join(','); }).join('\n');
     o += '\n\nWeld,Type,Size,Line,X (mm),Y (mm),Z (mm),Made\n' + f.welds.map(function (w) { return ['W' + w.no, q(WELD_NAME[w.kind]), q(w.n ? szs(w.n) : ''), q(w.ln), Math.round(w.pos[0] * 1000), Math.round(w.pos[2] * 1000), Math.round(w.pos[1] * 1000), w.field ? 'Field' : 'Shop'].join(','); }).join('\n');
     return o + '\n';
+  }
+
+  // ---------- clash check ----------
+  // Pipes are cylinders of their outside diameter. Two pipes clash when their axes pass closer than the sum of the radii and
+  // they are not joined; a pipe clashes with equipment when it runs inside the outline away from the nozzles.
+  function cadText(pt) { return '(' + [pt[0], pt[2], pt[1]].map(function (v) { return Math.round(v * 1000); }).join(', ') + ' mm)'; }
+  function clashes() {
+    var out = [], P = model.pipes, n = P.length;
+    var seg = P.map(function (q) { return { a: V(q.a), b: V(q.b), r: OD[q.n] / 2000 }; });
+    function touches(s, t) {                                         // an end of one pipe lies on the other: a branch or a joint
+      function pd(pt, A, B) { var d = B.clone().sub(A), L2 = d.lengthSq(), u = L2 ? clamp(pt.clone().sub(A).dot(d) / L2, 0, 1) : 0; return A.clone().addScaledVector(d, u).distanceTo(pt); }
+      return pd(s.a, t.a, t.b) < 0.02 || pd(s.b, t.a, t.b) < 0.02 || pd(t.a, s.a, s.b) < 0.02 || pd(t.b, s.a, s.b) < 0.02;
+    }
+    for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) {
+      var s = seg[i], t = seg[j], R = s.r + t.r;
+      if (Math.min(s.a.x, s.b.x) - R > Math.max(t.a.x, t.b.x) || Math.max(s.a.x, s.b.x) + R < Math.min(t.a.x, t.b.x)
+        || Math.min(s.a.y, s.b.y) - R > Math.max(t.a.y, t.b.y) || Math.max(s.a.y, s.b.y) + R < Math.min(t.a.y, t.b.y)
+        || Math.min(s.a.z, s.b.z) - R > Math.max(t.a.z, t.b.z) || Math.max(s.a.z, s.b.z) + R < Math.min(t.a.z, t.b.z)) continue;
+      if (touches(s, t)) continue;
+      var d = segDist(s.a, s.b, t.a, t.b);
+      if (d < R - 0.004) out.push({ kind: 'pipe', i: i, j: j, at: mm3(s.a.clone().add(s.b).multiplyScalar(0.5)), d: d, text: 'Pipe ' + (i + 1) + ' (' + P[i].ln + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
+    }
+    var tg = assignTags();
+    model.equip.forEach(function (e, ei) {
+      var rot = (e.r || 0) * Math.PI / 2, base = V(e.p), inside = function (pt) {
+        var l = pt.clone().sub(base).applyAxisAngle(UP, -rot), m = 0.03;
+        return e.k === 'vessel' ? Math.hypot(l.x, l.z) < 0.6 - m && l.y > m && l.y < 2.4 - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
+      };
+      var nz = nozList.filter(function (z) { return z.e === ei; });
+      P.forEach(function (q, pi) {
+        var a = V(q.a), b = V(q.b), L = a.distanceTo(b), steps = Math.max(2, Math.ceil(L / 0.05));
+        for (var k = 0; k <= steps; k++) {
+          var pt = a.clone().lerp(b, k / steps);
+          if (!inside(pt)) continue;
+          if (nz.some(function (z) { return z.p.distanceTo(pt) < 0.3; })) continue;
+          out.push({ kind: 'equip', i: pi, j: ei, at: mm3(pt), text: 'Pipe ' + (pi + 1) + ' (' + q.ln + ') runs through ' + tg.equip[ei] }); return;
+        }
+      });
+    });
+    return out;
+  }
+  function clashWarnings() {
+    var c = clashes();
+    c.slice(0, 8).forEach(function (x) { warns.push(x.text + ' near ' + cadText(x.at) + '.'); });
+    if (c.length > 8) warns.push((c.length - 8) + ' more clashes not listed.');
   }
 
   // ---------- line list ----------
@@ -3162,7 +3208,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
