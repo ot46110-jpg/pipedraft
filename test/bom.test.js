@@ -119,7 +119,7 @@ PD.routeTo(PD.cursor(), arr(nz[4]), nz[4]);
 PD.rebuild();
 const last = PD.model.pipes[PD.model.pipes.length - 1];
 check('route ends on the vessel nozzle', last.b.join() === arr(nz[4]).join() && PD.cursor() === null, JSON.stringify(PD.model.pipes));
-check('connected equipment has no warnings', PD.warns().length === 0, PD.warns().join('\n'));
+check('connected equipment has no warnings', PD.warns().filter(w => !w.includes('without a support')).length === 0, PD.warns().join('\n'));
 PD.load({ pipes: [], valves: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
 PD.routeTo([-2, 0.7, -1], arr(PD.nozzles()[1]), PD.nozzles()[1]);    // NPS 4 pipe into an NPS 3 nozzle
 PD.rebuild();
@@ -168,6 +168,37 @@ PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], instr: [{ k
 check('instrument off the pipe is reported', PD.warns().some(w => w.includes('PT-101 is not on a pipe')), PD.warns().join('\n'));
 PD.load({ pipes: [], valves: [] });
 check('P&ID empty returns null', PD.pid() === null);
+
+// Flow direction.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, fl: 1 }, { a: [4, 0, 0], b: [2, 0, 0], n: 4, fl: 1 }], valves: [] });
+check('head-on flow is reported', PD.warns().some(w => w.includes('Flow meets head-on')), PD.warns().join('\n'));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, fl: 1 }, { a: [2, 0, 2], b: [2, 0, 0], n: 4 }, { a: [2, 0, 2], b: [2, 0, 5], n: 4 }], valves: [] });
+PD.setRunFlow(0, 1);
+check('flow carries along a run through elbows', PD.model.pipes.map(p => p.fl).join() === '1,-1,1', PD.model.pipes.map(p => p.fl).join());
+check('consistent flow gives no warning', !PD.warns().some(w => w.includes('Flow meets')), PD.warns().join('\n'));
+const chk = rev => ({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'check', rev }] });
+PD.load(chk(true));
+check('check valve against the flow is reported', PD.warns().some(w => w.includes('CV-1 faces against the flow')), PD.warns().join('\n'));
+PD.load(chk(false));
+check('check valve with the flow is fine', !PD.warns().some(w => w.includes('faces against')));
+PD.load(Object.assign(chk(false), { pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, fl: 1 }] }));
+check('flow arrows appear on the iso sheet and P&ID', PD.iso().includes('Flow direction') && PD.pid().includes('Flow direction'));
+
+// Supports.
+const longPipe = sup => ({ pipes: [{ a: [0, 1, 0], b: [9, 1, 0], n: 4 }], valves: [], supports: sup });
+PD.load(longPipe([]));
+check('long unsupported span is reported', PD.warns().some(w => w.includes('spans 9.0 m without a support')), PD.warns().join('\n'));
+PD.load(longPipe([{ p: [3, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }, { p: [6, 1, 0], d: [1, 0, 0], n: 4, t: 'guide' }]));
+check('supports clear the span warning', !PD.warns().some(w => w.includes('without a support')), PD.warns().join('\n'));
+check('support BOM names', has('Pipe shoe, NPS 4 | 1') && has('Pipe guide, NPS 4 | 1'), rows());
+PD.load(longPipe([{ p: [3, 1, 0], d: [1, 0, 0], n: 4, t: 'anchor' }, { p: [6, 1, 0], d: [1, 0, 0], n: 4, t: 'hanger' }, { p: [8, 1, 0], d: [1, 0, 0], n: 4, t: 'spring' }]));
+check('anchor, hanger and spring hanger', has('Pipe anchor, NPS 4 | 1') && has('Rod hanger, NPS 4 | 1') && has('Spring hanger, NPS 4 | 1'), rows());
+const isoS = PD.iso();
+check('supports are tagged on the iso sheet', ['AN-1', 'HG-1', 'SPH-1'].every(t => isoS.includes('>' + t + '<')) && isoS.includes('Rod hanger'), isoS.match(/>[A-Z]+-\d+</g) + '');
+PD.load({ pipes: [{ a: [0, 0, 0], b: [0, 3, 0], n: 4 }], valves: [], supports: [{ p: [0, 1.5, 0], d: [0, 1, 0], n: 4, t: 'guide' }] });
+check('guide on a vertical pipe', has('Pipe guide, NPS 4 | 1'), rows());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], valves: [], supports: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, t: 'bogus' }] });
+check('unknown support types are dropped on load', PD.model.supports.length === 0);
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
