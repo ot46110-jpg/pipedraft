@@ -9,7 +9,7 @@ const memStore = {}; let memFull = false;                               // an in
 const L = {};                                                           // listeners per element, so the tests can tap the canvas
 const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector() { return null; }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
-const doc = { getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
+const doc = { createElement: () => ({ style: {}, width: 0, height: 0, getContext: () => ({ strokeText() {}, fillText() {}, fillRect() {}, drawImage() {} }) }), getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
 const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
   localStorage: { getItem(k) { return k in memStore ? memStore[k] : null; }, setItem(k, v) { if (memFull) throw new Error('quota'); memStore[k] = String(v); } }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
 vm.createContext(ctx);
@@ -798,6 +798,45 @@ check('a fitting that is not there changes nothing', PD.model.pipes.length === 2
 els['t-sel'].onclick(); PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 2], n: 4 }], valves: [] });
 els['t-del'].onclick(); tapOn([3.955, 0, 0.045]);
 check('the delete tool on an elbow now works too', PD.model.pipes.length === 1, String(PD.model.pipes.length));
+
+// Elevation panel: typed heights, levels, the eyedropper and the drawing aids.
+PD.load({ pipes: [{ a: [0, 1, 0], b: [6, 1, 0], n: 4 }, { a: [6, 1, 0], b: [6, 3.5, 0], n: 4 }], valves: [] }); els['finish'].onclick(); els['t-pipe'].onclick();
+['lv-in', 'lv-name'].forEach(id => doc.getElementById(id));
+PD.setLevel(2.25);
+check('with no run going, a typed level sets the working height', PD.elevNow() === 2.25 && els['elv'].textContent === 'EL +2.250 m', els['elv'].textContent);
+check('and the faint grid appears at that height', PD.viz().grid === true && PD.viz().gridY === 2.25);
+PD.setLevel(0);
+check('the floor hides the grid', PD.viz().grid === false);
+els['lv-in'].value = '4100'; els['lv-go'].onclick();
+check('typing millimetres in the panel works', PD.elevNow() === 4.1);
+PD.setLevel(-3);
+check('a level below the floor goes to the floor', PD.elevNow() === 0);
+const lv = PD.levelList().map(l => l[0]);
+check('the level list holds the floor and the heights already in the drawing, in order', lv.join() === '0,1000,3500', lv.join());
+els['lv-name'].value = 'Pipe rack'; els['lv-in'].value = '4500'; els['lv-save'].onclick();
+check('a level can be named and kept with the project', PD.model.levels.length === 1 && PD.model.levels[0].name === 'Pipe rack' && PD.model.levels[0].z === 4.5 && PD.levelList().some(l => l[0] === 4500 && l[1] === 'Pipe rack'), JSON.stringify(PD.model.levels));
+check('the chips show the name and a remove button for it', (els['lv-list'].innerHTML.match(/data-z=/g) || []).length === 4 && els['lv-list'].innerHTML.includes('Pipe rack') && els['lv-list'].innerHTML.includes('data-del="4500"'), els['lv-list'].innerHTML);
+L['lv-list'].click({ target: { closest: () => ({ getAttribute: k => ({ 'data-del': '4500' })[k] ?? null }) } });
+check('removing it takes it off the list', PD.model.levels.length === 0 && !PD.levelList().some(l => l[0] === 4500));
+els['lv-name'].value = ''; els['lv-save'].onclick();
+check('a level needs a name', PD.model.levels.length === 0);
+fresh(run4()); PD.setLevel(1);
+tapOn([2, 1, 0]); 
+els['t-pipe'].onclick(); tapOn([6, 1, 0]);
+check('while drawing, a level adds a vertical pipe from the run to that height', (() => { if (!PD.cursor()) return true; const n = PD.model.pipes.length; PD.setLevel(3); const last = PD.model.pipes[PD.model.pipes.length - 1]; return PD.model.pipes.length === n + 1 && Math.abs(last.b[1] - 3) < 1e-9 && last.a[0] === last.b[0]; })());
+fresh(run4()); els['t-pipe'].onclick(); tapOn([6, 1, 0]);
+const nP2 = PD.model.pipes.length, cur0 = PD.cursor();
+if (cur0) { PD.setLevel(cur0[1] + 0.02); }
+check('a change of under 50 mm while drawing is refused', !cur0 || PD.model.pipes.length === nP2);
+fresh([{ a: [0, 2.5, 0], b: [4, 2.5, 0], n: 4 }]); els['lv-pick'].onclick(); tapOn([2, 2.5, 0]);
+check('the eyedropper takes the height of the pipe you tap', Math.abs(PD.elevNow() - 2.5) < 1e-9, String(PD.elevNow()));
+els['lv-pick'].onclick(); els['lv-pick'].onclick();
+tapOn([2, 2.5, 0]);
+check('tapping the panel button twice turns the eyedropper off again', PD.elevNow() === 2.5);
+PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }], valves: [], levels: [{ name: 'Rack', z: 4.5 }, { name: 'bad', z: 'x' }, null] });
+check('levels are loaded from a project and bad ones are skipped', PD.model.levels.length === 1 && PD.model.levels[0].name === 'Rack');
+check('and saved in the project file', JSON.stringify({ model: PD.model }).includes('"levels":[{"name":"Rack","z":4.5}]'));
+fresh(run4());
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
