@@ -101,6 +101,20 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 /* iPad: full-screen standalone, no rubber-band or callouts */
 html { overscroll-behavior: none; }
 body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
+/* hydraulics sheet */
+#hyd { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
+#hyd header { display: flex; align-items: center; gap: 8px; }
+#hyd header h2 { margin: 0 auto 0 0; }
+#hydBody { flex: 1; min-height: 0; overflow: auto; -webkit-user-select: text; user-select: text; }
+.scroll { overflow-x: auto; margin-bottom: 12px; }
+.tbl { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font-weight: 500; color: var(--dim); padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tbl td.bad { color: var(--danger); }
+.tbl input { width: 92px; min-height: 40px; padding: 0 8px; }
+#hydBody details { margin: 8px 0; }
+#hydBody summary { cursor: pointer; padding: 8px 0; color: var(--dim); }
+#hydBody .field { max-width: 360px; }
 /* narrow windows: palette and side column stack over the canvas */
 @media (max-width: 760px) { #parts { width: calc(100% - 120px); } #side { bottom: 12px; } #elev { display: none; } }
 </style></style>
@@ -162,6 +176,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <div id="more" class="sheet" hidden>
       <button id="isoBtn">Isometric sheet</button>
       <button id="pidBtn">P&amp;ID sheet</button>
+      <button id="hydBtn">Hydraulics</button>
       <button id="legendBtn">Piping symbols</button>
       <button id="specBtn" aria-pressed="false">Project spec</button>
       <button id="ortho" aria-pressed="false">Orthographic view</button>
@@ -180,6 +195,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
       <header><h2 id="isoTitle">Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
       <div id="isoSheet"></div>
+    </section>
+    <section id="hyd" class="sheet" hidden aria-label="Hydraulics">
+      <header><h2>Hydraulics</h2><button id="hyd-close">Close</button></header>
+      <div id="hydBody"></div>
     </section>
     <div id="toast" role="status"></div>
   </main>
@@ -241,6 +260,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var SUPPORT_NAME = { shoe: 'Pipe shoe', guide: 'Pipe guide', anchor: 'Pipe anchor', hanger: 'Rod hanger', spring: 'Spring hanger' };
   // Rough maximum span between supports for water-filled steel pipe, in metres (MSS SP-69 style table, from memory).
   var SPAN = { 2: 3.0, 3: 3.7, 4: 4.3, 6: 5.2 };
+  // Hydraulics data. Fluid values are typical, K values are Crane TP-410 style, all from memory.
+  var FLUIDS = {
+    water20: { name: 'Water, 20 °C', rho: 998, mu: 0.00100 }, water60: { name: 'Water, 60 °C', rho: 983, mu: 0.000467 },
+    seawater: { name: 'Seawater, 20 °C', rho: 1025, mu: 0.00108 }, glycol30: { name: 'Ethylene glycol 30 %, 20 °C', rho: 1035, mu: 0.0028 },
+    diesel: { name: 'Diesel, 20 °C', rho: 830, mu: 0.0027 }, oil: { name: 'Light fuel oil, 20 °C', rho: 880, mu: 0.02 }
+  };
+  var FT = { 2: 0.019, 3: 0.018, 4: 0.017, 6: 0.015 };                // fully turbulent friction factor by size
+  var ELBOW_K = { LR: 14, SR: 20, '3D': 12 };                         // 90° elbow, in multiples of FT
+  var VALVE_K = { gate: 8, globe: 340, check: 100, ball: 3, butterfly: 45, plug: 18 };   // in multiples of FT
+  var ITEM_K = { coupling: 0, union: 0, strainer: 2, expansion: 0.3, spectacle: 0, orifice: 3 };   // plain K, assumed
+  var CV = { 2: 60, 3: 130, 4: 230, 6: 500 };                         // control valve Cv fully open, assumed
+  var ROUGH = 0.000045;                                               // commercial steel, m
   var OLET_NAME = { weldolet: 'Weldolet BW', sockolet: 'Sockolet SW', threadolet: 'Threadolet THD', sweepolet: 'Sweepolet BW' };
   var RED_L = 0.12, STOCK = 6, STEEL = 7850, STEP = 0.5;
   var STORE = 'pipedraft.model.v1';
@@ -270,7 +301,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true;
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto' } }; }
   function normalize(m) {
     var o = blank();
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -281,6 +312,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.items = (m.items || []).map(function (it) { it.s = it.s || 40; return it; });
     o.instr = (m.instr || []).filter(function (q) { return INSTR[q.k]; });
     o.supports = (m.supports || []).filter(function (q) { return SUPPORT_NAME[q.t]; });
+    o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
     o.fit = m.fit || {};
     o.spec = Object.assign(o.spec, m.spec || {});
     return o;
@@ -444,7 +476,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- model -> meshes ----------
   var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, item: 11, instr: 12, support: 13, weight: 14 };
-  var lines = {}, warns = [], nozList = [], jointInfo = {};
+  var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {};
   function add(cat, desc, qty, unit) {
     var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit });
     l.qty += qty;
@@ -465,7 +497,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
       });
     }
-    lines = {}; warns = []; nozList = [];
+    lines = {}; warns = []; nozList = []; pipeLen = {};
     var weight = 0;
 
     // 1. Equipment and its nozzles. A nozzle turns green once a pipe ends on it.
@@ -569,6 +601,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (Lp < 0.001) return;
       var dir = d.clone().normalize(), ta = trims[i + 'a'] || 0, tb = trims[i + 'b'] || 0, len = Lp - ta - tb;
       if (len < -0.0005) warns.push('Pipe ' + (i + 1) + ' (' + Math.round(Lp * 1000) + ' mm) is shorter than the fittings at its ends.');
+      pipeLen[i] = Math.max(len, 0);
       if (len < 0.001) return;
       var s = p.s || 40, r = OD[p.n] / 2000;
       var m = new T.Mesh(new T.CylinderGeometry(r, r, len, 24), mat(new T.Color(COL[p.n]).multiplyScalar(s === 80 ? 0.72 : 1)));
@@ -727,6 +760,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       add('valve', VALVE_NAME[kind] + ' ' + (VALVE_END[kind] || 'flanged 150#') + ', NPS ' + v.n, 1, 'pc');
       add('pipe', 'Pipe, NPS ' + v.n + ' SCH ' + (v.s || 40) + ', BE', -L, 'm');
       total -= L; weight -= L * lineWeight(v.n, v.s || 40);
+      var hv = hostOf(v.p); if (hv >= 0) pipeLen[hv] = Math.max(0, (pipeLen[hv] || 0) - L);
       var hp = kind === 'check' ? hostOf(v.p) : -1;
       if (hp >= 0 && model.pipes[hp].fl) {
         var pf = V(model.pipes[hp].b).sub(V(model.pipes[hp].a)).normalize().multiplyScalar(model.pipes[hp].fl);
@@ -756,6 +790,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       add('item', (ITEM_NAME[it.t] || it.t) + ', NPS ' + it.n, 1, 'pc');
       add('pipe', 'Pipe, NPS ' + it.n + ' SCH ' + (it.s || 40) + ', BE', -L, 'm');
       total -= L; weight -= L * lineWeight(it.n, it.s || 40);
+      var hi = hostOf(it.p); if (hi >= 0) pipeLen[hi] = Math.max(0, (pipeLen[hi] || 0) - L);
     });
 
     // Supports: shoe, guide and anchor stand on a post to the floor, hangers drop from above.
@@ -834,6 +869,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (sel) world.traverse(function (o) {
       if (o.userData && o.userData.kind === sel.kind && o.userData.i === sel.i && o.material && o.material.emissive) o.material.emissive.setHex(0x664400);
     });
+    hydroWarnings();
     matDirty = true;
     renderBom(); showInsp();
     $('undo').disabled = !hist.length;
@@ -1563,6 +1599,111 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return o + '</svg>';
   }
 
+  // ---------- hydraulics: velocity and pressure drop per line number ----------
+  // Single phase liquid. Pipe friction by Darcy-Weisbach with the Churchill friction factor. Fittings by the
+  // Crane TP-410 K method, K from equivalent length times the fully turbulent friction factor of the size.
+  // The K values are textbook figures written from memory. They are for a first estimate, not for final sizing.
+  function frictionFactor(Re, eD) {                                 // Darcy friction factor, valid from laminar to fully rough
+    if (!(Re > 0)) return 0;
+    var A = Math.pow(2.457 * Math.log(1 / (Math.pow(7 / Re, 0.9) + 0.27 * eD)), 16), B = Math.pow(37530 / Re, 16);
+    return 8 * Math.pow(Math.pow(8 / Re, 12) + 1 / Math.pow(A + B, 1.5), 1 / 12);
+  }
+  function idOf(n, s) { return SIZES[n].od / 1000 - 2 * SIZES[n].wt[s || 40] / 1000; }
+  function hydraulics() {
+    var fl = FLUIDS[model.fluid] || FLUIDS.water20, rho = fl.rho, mu = fl.mu, G = 9.81;
+    var res = { fluid: fl, lines: {}, pipes: [], fits: [] };
+    function qOf(ln) { var q = (model.lines[ln] || {}).q; return q > 0 ? q / 3600 : 0; }
+    function line(ln) {
+      return res.lines[ln] || (res.lines[ln] = { ln: ln, q: (model.lines[ln] || {}).q || 0, len: 0, dpF: 0, dpK: 0, dpZ: 0, vmax: 0, vmin: Infinity, Remin: Infinity, zAll: true, sizes: {} });
+    }
+    model.pipes.forEach(function (p, i) {
+      var L = line(p.ln), Q = qOf(p.ln), len = pipeLen[i] || 0, D = idOf(p.n, p.s), A = Math.PI * D * D / 4;
+      var row = { i: i, ln: p.ln, n: p.n, s: p.s || 40, D: D, len: len, v: 0, Re: 0, f: 0, dp: 0 };
+      L.len += len; L.sizes[p.n] = 1;
+      if (Q > 0) {
+        row.v = Q / A; row.Re = rho * row.v * D / mu; row.f = frictionFactor(row.Re, ROUGH / D);
+        row.dp = row.f * len / D * rho * row.v * row.v / 2;
+        L.dpF += row.dp; L.vmax = Math.max(L.vmax, row.v); L.vmin = Math.min(L.vmin, row.v); L.Remin = Math.min(L.Remin, row.Re);
+        if (p.fl) L.dpZ += rho * G * (p.fl > 0 ? p.b[1] - p.a[1] : p.a[1] - p.b[1]);
+      }
+      if (!p.fl) L.zAll = false;
+      res.pipes.push(row);
+    });
+    function addK(ln, n, s, K, label) {
+      var Q = qOf(ln); line(ln);
+      if (Q <= 0 || !(K > 0)) return;
+      var D = idOf(n, s), v = Q / (Math.PI * D * D / 4), dp = K * rho * v * v / 2;
+      res.lines[ln].dpK += dp; res.fits.push({ ln: ln, label: label + ', NPS ' + n, K: K, dp: dp });
+    }
+    function lnOf(leg) { return model.pipes[leg.i].ln; }
+    function into(l) { var f = model.pipes[l.i].fl || 0; return !f ? 0 : ((l.end === 'b') === (f > 0) ? 1 : -1); }
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k]; if (!j.type || !j.legs.length) return;
+      var ft = FT[j.nmax], ln0 = lnOf(j.legs[0]);
+      if (j.type === 'elbow') addK(ln0, j.nmax, j.s, ELBOW_K[j.kind] * ft * (j.defl / (Math.PI / 2)), 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind);
+      else if (j.type === 'tee' || j.type === 'rtee') { addK(lnOf(j.hdr[0]), j.nh, j.s, 20 * FT[j.nh], 'Tee, run'); addK(lnOf(j.br), j.br.n, j.s, 60 * FT[j.br.n], 'Tee, branch'); }
+      else if (j.type === 'lat') { addK(lnOf(j.hdr[0]), j.nh, j.s, 20 * FT[j.nh], 'Lateral, run'); addK(lnOf(j.br), j.br.n, j.s, 30 * FT[j.br.n], 'Lateral, branch'); }
+      else if (j.type === 'olet' || j.type === 'stub') addK(lnOf(j.br), j.br.n, j.s, 60 * FT[j.br.n], 'Branch outlet');
+      else if (j.type === 'cross') addK(ln0, j.nmax, j.s, 60 * ft, 'Cross');
+      else if (j.type === 'reducer') {
+        var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1], sm = big === j.legs[0] ? j.legs[1] : j.legs[0];
+        var D1 = idOf(big.n, big.s), D2 = idOf(sm.n, sm.s), b2 = Math.pow(D2 / D1, 2), th = 2 * Math.atan((D1 - D2) / (2 * RED_L));
+        var contraction = !(into(sm) === 1 && into(big) !== 1), K;     // flow from small to large is an expansion, otherwise assume a contraction
+        if (contraction) K = th <= Math.PI / 4 ? 0.8 * Math.sin(th / 2) * (1 - b2) : 0.5 * Math.sqrt(Math.sin(th / 2)) * (1 - b2);
+        else K = th <= Math.PI / 4 ? 2.6 * Math.sin(th / 2) * Math.pow(1 - b2, 2) : Math.pow(1 - b2, 2);
+        addK(lnOf(sm), sm.n, sm.s, K, 'Reducer, ' + (contraction ? 'contraction' : 'expansion'));
+      }
+    });
+    model.valves.forEach(function (v) {
+      var h = hostOf(v.p); if (h < 0) return;
+      var K = v.k === 'control' ? 891 * Math.pow(idOf(v.n, v.s) / 0.0254, 4) / Math.pow(CV[v.n], 2) : VALVE_K[v.k] * FT[v.n];
+      addK(model.pipes[h].ln, v.n, v.s, K, VALVE_NAME[v.k] + (v.k === 'control' ? ' fully open' : ''));
+    });
+    model.items.forEach(function (it) {
+      var h = hostOf(it.p); if (h < 0) return;
+      addK(model.pipes[h].ln, it.n, it.s, ITEM_K[it.t], (ITEM_NAME[it.t] || it.t).split(',')[0]);
+    });
+    Object.keys(res.lines).forEach(function (k) {
+      var L = res.lines[k], useZ = L.zAll && L.q > 0;
+      L.total = L.dpF + L.dpK + (useZ ? L.dpZ : 0); L.useZ = useZ; L.head = L.total / (rho * G);
+      if (L.vmin === Infinity) L.vmin = 0;
+    });
+    return res;
+  }
+  function hydroWarnings() {
+    var any = Object.keys(model.lines).some(function (k) { return model.lines[k].q > 0; });
+    if (!any) return;
+    var r = hydraulics();
+    Object.keys(r.lines).forEach(function (k) {
+      var L = r.lines[k];
+      if (L.vmax > 3) warns.push('Line ' + k + ': velocity ' + L.vmax.toFixed(1) + ' m/s is above 3 m/s. Use a larger pipe or less flow.');
+    });
+  }
+  function fmt(v, d) { return v === 0 || !isFinite(v) ? '–' : v.toFixed(d); }
+  function renderHyd() {
+    var r = hydraulics(), names = Object.keys(r.lines).sort(), fl = r.fluid;
+    var h = '<div class="row"><label class="field">Fluid<select id="h-fl">' + opts(Object.keys(FLUIDS).map(function (k) { return [k, FLUIDS[k].name]; }), model.fluid) + '</select></label></div>';
+    h += '<p class="empty">Density ' + fl.rho + ' kg/m³, viscosity ' + (fl.mu * 1000).toFixed(2) + ' mPa·s (typical values). Steel roughness 0.045 mm. Enter a flow for each line number.</p>';
+    if (!names.length) return h + '<p class="empty">No pipes yet.</p>';
+    h += '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Flow m³/h</th><th>Pipe m</th><th>Velocity m/s</th><th>Friction bar</th><th>Fittings bar</th><th>Elevation bar</th><th>Total bar</th><th>Head m</th><th>Note</th></tr></thead><tbody>';
+    names.forEach(function (k) {
+      var L = r.lines[k], has = L.q > 0, note = '';
+      if (has && L.vmax > 3) note = 'Above 3 m/s'; else if (has && L.vmax < 0.5) note = 'Below 0.5 m/s'; else if (has && L.Remin < 2300) note = 'Laminar';
+      if (has && !L.zAll) note += (note ? ', ' : '') + 'Flow not set on every pipe, so no elevation';
+      h += '<tr><td>' + esc(k) + '</td><td><input type="text" inputmode="decimal" data-ln="' + esc(k) + '" value="' + (has ? L.q : '') + '" placeholder="0"></td><td>' + L.len.toFixed(1) + '</td>'
+        + (has ? '<td>' + (L.vmin === L.vmax ? L.vmax.toFixed(2) : L.vmin.toFixed(2) + ' to ' + L.vmax.toFixed(2)) + '</td><td>' + (L.dpF / 1e5).toFixed(3) + '</td><td>' + (L.dpK / 1e5).toFixed(3) + '</td><td>' + (L.useZ ? (L.dpZ / 1e5).toFixed(3) : '–') + '</td><td><b>' + (L.total / 1e5).toFixed(3) + '</b></td><td>' + L.head.toFixed(1) + '</td>'
+          : '<td colspan="6" class="empty">Enter a flow</td>') + '<td class="' + (note.indexOf('Above') === 0 ? 'bad' : '') + '">' + note + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    if (r.fits.length) h += '<details><summary>Fittings and valves (' + r.fits.length + ')</summary><div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Item</th><th>K</th><th>Drop kPa</th></tr></thead><tbody>'
+      + r.fits.map(function (f) { return '<tr><td>' + esc(f.ln) + '</td><td>' + esc(f.label) + '</td><td>' + f.K.toFixed(2) + '</td><td>' + (f.dp / 1000).toFixed(2) + '</td></tr>'; }).join('') + '</tbody></table></div></details>';
+    h += '<details><summary>Pipes (' + r.pipes.length + ')</summary><div class="scroll"><table class="tbl"><thead><tr><th>Pipe</th><th>Line</th><th>NPS</th><th>ID mm</th><th>Length m</th><th>v m/s</th><th>Re</th><th>f</th><th>Drop kPa</th></tr></thead><tbody>'
+      + r.pipes.map(function (p) { return '<tr><td>' + (p.i + 1) + '</td><td>' + esc(p.ln) + '</td><td>' + p.n + '</td><td>' + (p.D * 1000).toFixed(1) + '</td><td>' + p.len.toFixed(2) + '</td><td>' + fmt(p.v, 2) + '</td><td>' + (p.Re ? Math.round(p.Re) : '–') + '</td><td>' + (p.f ? p.f.toFixed(4) : '–') + '</td><td>' + (p.dp ? (p.dp / 1000).toFixed(2) : '–') + '</td></tr>'; }).join('') + '</tbody></table></div></details>';
+    h += '<p class="empty">Head loss is the pressure drop as metres of the fluid. A pump must cover it plus any pressure the process needs. Equipment nozzles, entrance and exit losses, and flow splits at tees are not included.</p>';
+    return h;
+  }
+  function showHyd() { $('hydBody').innerHTML = renderHyd(); $('hyd').hidden = false; }
+
   // ---------- input ----------
   var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
   function penNow() { return performance.now() - lastPen < 350; }
@@ -1736,6 +1877,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso').hidden = false;
   }
   $('isoBtn').onclick = function () { showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso.svg'); };
+  $('hydBtn').onclick = showHyd;
+  $('hyd-close').onclick = function () { $('hyd').hidden = true; };
+  $('hydBody').addEventListener('change', function (e) {
+    var t = e.target; if (!t) return;
+    if (t.id === 'h-fl') model.fluid = t.value;
+    else if (t.dataset && t.dataset.ln != null) { var q = parseFloat(String(t.value).replace(',', '.')); model.lines[t.dataset.ln] = { q: q > 0 ? q : 0 }; }
+    else return;
+    save(); rebuild(); $('hydBody').innerHTML = renderHyd();
+  });
   $('pidBtn').onclick = function () { showSheet('P&ID sheet', pidSvg(), 'pipedraft-pid.svg'); };
   $('legendBtn').onclick = function () { showSheet('Piping symbols', legendSvg(), 'pipedraft-symbols.svg'); };
   $('iso-close').onclick = function () { $('iso').hidden = true; };
@@ -1789,7 +1939,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, dxf: dxf, csv: csv,
+    setRunFlow: setRunFlow, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

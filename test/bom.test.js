@@ -200,6 +200,46 @@ check('guide on a vertical pipe', has('Pipe guide, NPS 4 | 1'), rows());
 PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], valves: [], supports: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, t: 'bogus' }] });
 check('unknown support types are dropped on load', PD.model.supports.length === 0);
 
+// Hydraulics, checked against the Python `fluids` package (Clamond friction factor, Crane reducer K).
+const close = (a, b, tol) => Math.abs(a - b) <= tol * Math.abs(b);
+const refF = [[1000, 0.0004, 0.064], [1500, 0, 0.042666667], [1e4, 0.0004, 0.031493946], [5e4, 0.0004, 0.022250309], [1e5, 0.0004, 0.019908649], [1e6, 0.0004, 0.016487589], [2e5, 0.0005, 0.01881979]];
+check('friction factor matches fluids across laminar and turbulent', refF.every(([Re, eD, f]) => close(PD.friction(Re, eD), f, 0.03)), refF.map(([Re, eD, f]) => PD.friction(Re, eD).toFixed(5) + '/' + f.toFixed(5)).join('  '));
+const hy = (extra, q) => { PD.load(Object.assign({ valves: [], fluid: 'water20', lines: { 'L-001': { q: q == null ? 50 : q } } }, extra)); return PD.hyd(); };
+let H = hy({ pipes: [{ a: [0, 0, 0], b: [100, 0, 0], n: 4, fl: 1 }] });
+check('NPS 4 line: velocity and Reynolds number', close(H.pipes[0].v, 1.69109, 0.001) && close(H.pipes[0].Re, 172585, 0.002), JSON.stringify(H.pipes[0]));
+check('NPS 4 line: friction drop matches fluids (26.2 kPa per 100 m)', close(H.lines['L-001'].dpF, 26219, 0.015), String(H.lines['L-001'].dpF));
+const dyn = 998 * Math.pow(50 / 3600 / (Math.PI * 0.10226 * 0.10226 / 4), 2) / 2;
+H = hy({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, fl: 1 }, { a: [2, 0, 0], b: [2, 0, 2], n: 4, fl: 1 }] });
+check('LR elbow drop is 14 fT x velocity head', close(H.fits.find(f => f.label.startsWith('Elbow')).dp, 14 * 0.017 * dyn, 0.01), JSON.stringify(H.fits));
+const redu = fl => ({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4, fl }, { a: [3, 0, 0], b: [6, 0, 0], n: 3, fl }] });
+H = hy(redu(1));
+const dsm = 998 * Math.pow(50 / 3600 / (Math.PI * 0.07792 * 0.07792 / 4), 2) / 2;
+check('reducer contraction K matches the Crane value in fluids (0.0339)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.033853, 0.02) && H.fits[0].label.includes('contraction'), JSON.stringify(H.fits));
+check('reducer drop uses the small-bore velocity head', close(H.fits[0].dp, 0.033853 * dsm, 0.03));
+H = hy(redu(-1));
+check('reducer expansion K matches the Crane value in fluids (0.0461)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.046142, 0.02) && H.fits[0].label.includes('expansion'), JSON.stringify(H.fits));
+H = hy({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'control' }] });
+check('control valve K from Cv (4.43 for NPS 4)', close(H.fits[0].K, 4.425, 0.01), JSON.stringify(H.fits));
+H = hy({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'globe' }, { p: [3, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+check('globe and gate valve K', close(H.fits.find(f => f.label.startsWith('Globe')).K, 340 * 0.017, 0.001) && close(H.fits.find(f => f.label.startsWith('Gate')).K, 8 * 0.017, 0.001));
+check('valve length comes off the pipe length', close(H.pipes[0].len, 4 - 0.292 - 0.229, 0.001), String(H.pipes[0].len));
+H = hy({ pipes: [{ a: [0, 0, 0], b: [0, 10, 0], n: 4, fl: 1 }] });
+check('static head of a 10 m rise', close(H.lines['L-001'].dpZ, 998 * 9.81 * 10, 0.001) && H.lines['L-001'].useZ, JSON.stringify(H.lines['L-001']));
+H = hy({ pipes: [{ a: [0, 0, 0], b: [0, 10, 0], n: 4 }] });
+check('no elevation term when flow is not set', !H.lines['L-001'].useZ);
+H = hy({ pipes: [{ a: [0, 0, 0], b: [20, 0, 0], n: 4, fl: 1 }] }, 150);
+check('velocity above 3 m/s is reported', PD.warns().some(w => w.includes('Line L-001: velocity 5.1 m/s')), PD.warns().join('\n'));
+H = hy({ pipes: [{ a: [0, 0, 0], b: [20, 0, 0], n: 4, fl: 1 }] }, 0);
+check('no flow entered means no hydraulics warning', !PD.warns().some(w => w.includes('velocity')));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4, fl: 1 }], valves: [], fluid: 'oil', lines: { 'L-001': { q: 2 } } });
+H = PD.hyd();
+check('viscous oil at low flow is laminar and uses 64/Re', H.lines['L-001'].Remin < 2300 && close(H.pipes[0].f, 64 / H.pipes[0].Re, 0.01), JSON.stringify(H.pipes[0]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4, ln: 'L-001' }, { a: [0, 0, 5], b: [10, 0, 5], n: 4, ln: 'L-002' }], valves: [], lines: { 'L-001': { q: 40 }, 'L-002': { q: 20 } } });
+H = PD.hyd();
+check('each line number has its own flow and drop', H.lines['L-001'].dpF > H.lines['L-002'].dpF && H.lines['L-002'].dpF > 0);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [], fluid: 'unobtainium' });
+check('unknown fluid falls back to water', PD.model.fluid === 'water20');
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
