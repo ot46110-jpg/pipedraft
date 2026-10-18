@@ -1,4 +1,4 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0d1418"><link rel="manifest" href="manifest.json"><style>html{color-scheme:dark}body{margin:0}</style><title>PipeDraft 3D</title>
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PipeDraft"><meta name="theme-color" content="#0d1418"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-180.png"><link rel="manifest" href="manifest.json"><style>html{color-scheme:dark}body{margin:0}</style><title>PipeDraft 3D</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* Layout: one-screen CAD viewport. Tool bar on top, 3D canvas fills the middle, status line below, BOM sheet slides over the canvas. Single dark drafting look by choice. */
@@ -48,6 +48,12 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #toast { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 6px; padding: 8px 14px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity .2s; }
 #toast.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+/* iPad: full-screen standalone, no rubber-band or callouts, roomy touch targets */
+html { overscroll-behavior: none; }
+body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
+#top { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+#status { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+@media (pointer: coarse) { button, select { min-height: 48px; min-width: 48px; } }
 </style>
 
 </head><body><div id="app">
@@ -461,17 +467,24 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     var up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
   }
+  var lastPen = 0;
+  function penNow() { return performance.now() - lastPen < 350; }
   cv.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'pen') lastPen = performance.now();
+    else if (e.pointerType === 'touch' && penNow()) return;      // palm resting while the Pencil is in use
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
+    if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
     if (nPtr === 1) { down = { x: e.clientX, y: e.clientY, moved: false }; multi = false; }
     else { multi = true; if (nPtr === 2) pinch = pinchState(); }
   });
   cv.addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'pen') lastPen = performance.now();
     var p = ptrs[e.pointerId];
-    if (!p) { ghost(e); return; }
+    if (!p) { if (e.pointerType !== 'touch') ghost(e); return; }
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
     p.x = e.clientX; p.y = e.clientY;
+    if (nPtr === 1 && e.pointerType === 'pen' && tool !== 'nav') { ghost(e); return; }   // Pencil aims, lifting places
     if (nPtr === 1) {
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
       if (down.moved) { theta -= dx * 0.007; phi = Math.min(1.5, Math.max(0.1, phi - dy * 0.007)); }
@@ -484,7 +497,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   });
   function end(e) {
     if (!ptrs[e.pointerId]) return;
-    var tap = nPtr === 1 && !multi && down && !down.moved && e.type === 'pointerup';
+    if (e.pointerType === 'pen') lastPen = performance.now();
+    var pen = e.pointerType === 'pen' && tool !== 'nav';
+    var tap = nPtr === 1 && !multi && down && (pen || !down.moved) && e.type === 'pointerup';
     delete ptrs[e.pointerId]; nPtr--;
     if (nPtr === 2) pinch = pinchState();
     if (tap) onTap(e);
@@ -528,10 +543,26 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   $('up').onclick = function () { vertical(1); };
   $('down').onclick = function () { vertical(-1); };
 
+  // ---------- iPad niceties ----------
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  window.addEventListener('keydown', function (e) {                   // Magic Keyboard / Smart Keyboard
+    var k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && k === 'z') { e.preventDefault(); $('undo').click(); }
+    else if (k === 'escape' || k === 'enter') { cursor = null; updateUi(); }
+    else if (k === 'n') { tool = 'nav'; updateUi(); }
+    else if (k === 'p') { tool = 'pipe'; updateUi(); }
+    else if (k === 'v') { tool = 'valve'; updateUi(); }
+    else if (k === 'd' || k === 'delete' || k === 'backspace') { tool = 'del'; updateUi(); }
+    else if (k === 'arrowup') vertical(1);
+    else if (k === 'arrowdown') vertical(-1);
+  });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (x) {}
+
   // ---------- boot ----------
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
-  if ($('bom').hidden === false && window.innerWidth < 700) { $('bom').hidden = true; $('bomBtn').setAttribute('aria-pressed', 'false'); }
+  if ($('bom').hidden === false && window.innerWidth < 900) { $('bom').hidden = true; $('bomBtn').setAttribute('aria-pressed', 'false'); }
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
