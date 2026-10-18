@@ -61,12 +61,17 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #rail { left: var(--gutter-l); top: 12px; flex-direction: column; }
 #rail button { width: 66px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; font-size: 11px; border-color: transparent; }
 #rail svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-/* parts palette */
-#parts { left: calc(var(--gutter-l) + 82px); top: 12px; width: min(460px, calc(100% - 120px - var(--gutter-l) - var(--gutter-r))); }
-.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 2px; }
-.tabs button { flex: none; }
-.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
-.chips button { white-space: normal; line-height: 1.2; min-height: 54px; text-align: center; }
+/* parts palette: one narrow scrolling list, sections fold */
+#parts { left: calc(var(--gutter-l) + 82px); top: 12px; bottom: 12px; width: 218px; padding: 6px; max-height: none; display: flex; flex-direction: column; }
+#plist { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+.psec { border-bottom: 1px solid var(--line); }
+.psec:last-child { border-bottom: 0; }
+.phead { width: 100%; display: flex; justify-content: space-between; align-items: center; border: 0; border-radius: 8px; text-align: left; min-height: 44px; padding: 0 8px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); background: var(--panel); position: sticky; top: 0; z-index: 1; }
+.phead::after { content: '▾'; font-size: 12px; }
+.psec.closed .phead::after { content: '▸'; }
+.psec.closed .prows { display: none; }
+.prows { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
+.prows button { width: 100%; text-align: left; border-color: transparent; min-height: 44px; white-space: normal; line-height: 1.2; }
 /* context bar and pipe settings */
 #ctx { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 160px); overflow-x: auto; }
 #ctx:not(:has([data-for]:not([hidden]))) { display: none; }
@@ -88,7 +93,13 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 /* more menu */
 #more { top: 12px; right: var(--gutter-r); width: min(280px, calc(100% - 32px)); z-index: 7; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
 #more button { text-align: left; width: 100%; }
-#more hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+#more details { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+#more details:last-of-type { border-bottom: 0; padding-bottom: 0; }
+#more summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; padding: 0 6px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+#more summary::-webkit-details-marker { display: none; }
+#more summary::after { content: '▸'; font-size: 12px; }
+#more details[open] > summary::after { content: '▾'; }
+#more details > button { margin-bottom: 4px; }
 /* isometric sheet */
 #iso { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
 #iso header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -119,7 +130,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 #hydBody summary { cursor: pointer; padding: 8px 0; color: var(--dim); }
 #hydBody .field { max-width: 360px; }
 /* narrow windows: palette and side column stack over the canvas */
-@media (max-width: 760px) { #parts { width: calc(100% - 120px); } #side { bottom: 12px; } #elev { display: none; } }
+@media (max-width: 760px) { #parts { width: min(218px, calc(100% - 100px)); } #side { bottom: 12px; } #elev { display: none; } }
 </style></style>
 
 <div id="app">
@@ -183,22 +194,29 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <aside id="bom" class="sheet" aria-label="Bill of materials" hidden></aside>
     </div>
     <div id="more" class="sheet" hidden>
-      <button id="isoBtn">Isometric sheet</button>
-      <button id="pidBtn">P&amp;ID sheet</button>
-      <button id="hydBtn">Hydraulics</button>
-      <button id="legendBtn">Piping symbols</button>
-      <button id="specBtn" aria-pressed="false">Project spec</button>
-      <button id="ortho" aria-pressed="false">Orthographic view</button>
-      <button id="dims" aria-pressed="false">Show pipe lengths</button>
-      <button id="flowBtn" aria-pressed="true">Show flow arrows</button>
-      <hr>
-      <button id="f-save">Save project (.json)</button>
-      <button id="f-open">Open project</button>
-      <button id="f-csv">Export BOM (.csv)</button>
-      <button id="f-dxf">Export centrelines (.dxf)</button>
-      <button id="f-png">Save image (.png)</button>
-      <hr>
-      <button id="f-clear">Clear everything</button>
+      <details open>
+        <summary>Sheets</summary>
+        <button id="isoBtn">Isometric sheet</button>
+        <button id="pidBtn">P&amp;ID sheet</button>
+        <button id="hydBtn">Hydraulics</button>
+        <button id="legendBtn">Piping symbols</button>
+      </details>
+      <details>
+        <summary>Project</summary>
+        <button id="specBtn" aria-pressed="false">Project spec</button>
+        <button id="ortho" aria-pressed="false">Orthographic view</button>
+        <button id="dims" aria-pressed="false">Show pipe lengths</button>
+        <button id="flowBtn" aria-pressed="true">Show flow arrows</button>
+      </details>
+      <details>
+        <summary>File</summary>
+        <button id="f-save">Save project (.json)</button>
+        <button id="f-open">Open project</button>
+        <button id="f-csv">Export BOM (.csv)</button>
+        <button id="f-dxf">Export centrelines (.dxf)</button>
+        <button id="f-png">Save image (.png)</button>
+        <button id="f-clear">Clear everything</button>
+      </details>
     </div>
     <input type="file" id="openf" accept=".json,application/json" hidden>
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
@@ -1807,18 +1825,37 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else eqk = v;
     updateUi();
   }
-  function renderParts() {
-    var tabs = PART_KEYS.map(function (c) { return '<button data-tab="' + c + '" aria-pressed="' + (tool === c) + '">' + PARTS[c].label + '</button>'; }).join('');
-    var chips = PARTS[tool].items.map(function (it) { return '<button data-chip="' + it[0] + '" aria-pressed="' + (partVal(tool) === it[0]) + '">' + it[1] + '</button>'; }).join('');
-    $('parts').innerHTML = '<div class="tabs">' + tabs + '</div><div class="chips">' + chips + '</div>';
+  var partOpen = { valve: true };
+  function buildParts() {
+    $('parts').innerHTML = '<div id="plist">' + PART_KEYS.map(function (c) {
+      return '<div class="psec" data-sec="' + c + '"><button class="phead" data-head="' + c + '" aria-expanded="true">' + PARTS[c].label + '</button><div class="prows">'
+        + PARTS[c].items.map(function (it) { return '<button data-cat="' + c + '" data-chip="' + it[0] + '" aria-pressed="false">' + it[1] + '</button>'; }).join('') + '</div></div>';
+    }).join('') + '</div>';
+  }
+  function syncParts() {                                            // only classes change, so the scroll position stays put
+    var root = $('parts');
+    root.querySelectorAll('.psec').forEach(function (s) {
+      var c = s.getAttribute('data-sec'), open = !!partOpen[c];
+      s.classList.toggle('closed', !open);
+      var hd = s.querySelector('.phead'); if (hd) hd.setAttribute('aria-expanded', String(open));
+    });
+    root.querySelectorAll('[data-chip]').forEach(function (b) {
+      var c = b.getAttribute('data-cat');
+      b.setAttribute('aria-pressed', String(c === tool && partVal(c) === b.getAttribute('data-chip')));
+    });
+  }
+  function scrollParts(c) {
+    var s = $('parts').querySelector('[data-sec="' + c + '"]');
+    if (s) $('plist').scrollTop = s.offsetTop - 6;
   }
   $('parts').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
-    if (b.dataset.tab) setTool(b.dataset.tab); else if (b.dataset.chip) setPart(tool, b.dataset.chip);
+    if (b.dataset.head) { var c = b.dataset.head, was = !!partOpen[c]; PART_KEYS.forEach(function (k) { partOpen[k] = false; }); partOpen[c] = !was; syncParts(); }   // one section open at a time
+    else if (b.dataset.chip) { var cat = b.dataset.cat; if (tool !== cat) setTool(cat); setPart(cat, b.dataset.chip); }
   });
   function setTool(t) {
     tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
-    if (PARTS[t]) lastPart = t;
+    if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
     $('pset').hidden = true; $('more').hidden = true; guideLine.visible = false;
     if (t !== 'sel') sel = null;
     rebuild(); updateUi();
@@ -1826,7 +1863,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function updateUi() {
     RAIL.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
     $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
-    $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) renderParts();
+    $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) syncParts();
     $('psum').textContent = 'NPS ' + curN + ' · SCH ' + curS + ' · ' + curL;
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
@@ -1860,7 +1897,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (tool !== 'pipe' && tool !== 'equip' && tool !== 'measure') { ghostLine.visible = marker.visible = false; }
   }
   RAIL.forEach(function (t) { $('t-' + t).onclick = function () { setTool(t); }; });
-  $('t-parts').onclick = function () { setTool(PARTS[tool] ? 'nav' : lastPart); };
+  $('t-parts').onclick = function () { var opening = !PARTS[tool]; setTool(opening ? lastPart : 'nav'); if (opening) scrollParts(lastPart); };
   $('psum').onclick = function () { $('pset').hidden = !$('pset').hidden; $('more').hidden = true; };
   $('more').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null;
@@ -1983,6 +2020,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- boot ----------
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
+  buildParts();
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();

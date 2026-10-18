@@ -6,7 +6,7 @@ const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x => x[1
 const app = scripts[scripts.length - 2];
 const els = {};
 const L = {};                                                           // listeners per element, so the tests can tap the canvas
-const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {} }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
+const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector() { return null; }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
 const doc = { getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
 const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
