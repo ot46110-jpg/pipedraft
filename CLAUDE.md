@@ -22,6 +22,15 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Catalogue dimensions are written from ASME B16.9 and B16.10 from memory. Treat them as unverified until checked against the standard.
 - Do not copy Autodesk spec or catalog data into this repo. It is public.
 
+## Features
+- Tools: Navigate, Select (inspector edits size, schedule, line number, valve type, equipment rotation), Pipe, Valve (gate, globe, check, ball), Flange pair, Cap, Equipment (pump, vessel with nozzles as pipe start points), Measure, Delete.
+- Pipe tool: snap 50, 100 or 250 mm; optional 45° turns; start a run on a pipe end, a nozzle, or the middle of a pipe (the pipe is split and a tee appears); a new end landing on a pipe splits it too.
+- Views: Iso, Top, Front, Right, Fit, orthographic toggle, dimension labels. Iso sheet is generated as SVG with centreline lengths and a line-number summary.
+- Checks: clash detection between pipes that share no joint, size changes at elbows or tee headers, pipes shorter than their fittings.
+- File: save and open project JSON, BOM CSV, DXF centrelines (mm, Z up), PNG image. On iPad these go through the share sheet.
+- Model arrays: `pipes`, `valves`, `flanges`, `caps` (pipe end points), `equip` (`{k, p, r}`). `normalize()` fills defaults so old saves load.
+- `window.PipeDraft` exists only for the headless tests.
+
 ## iPad input
 - Finger: one-finger drag orbits, two fingers pan and zoom, tap places.
 - Apple Pencil in Pipe, Valve and Delete tools: touch and drag to aim, lift to place. Touches within 350 ms of the pen are ignored as palm contact.

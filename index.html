@@ -1,7 +1,7 @@
 <!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PipeDraft"><meta name="theme-color" content="#0d1418"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-180.png"><link rel="manifest" href="manifest.json"><style>html{color-scheme:dark}body{margin:0}</style><title>PipeDraft 3D</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* Layout: one-screen CAD viewport. Tool bar on top, 3D canvas fills the middle, status line below, BOM sheet slides over the canvas. Single dark drafting look by choice. */
+/* Layout: one-screen CAD viewport. Tool bar and option bar on top, 3D canvas in the middle, status line below. Floating panels sit over the canvas. Single dark drafting look by choice. */
 :root {
   --bg: #0d1418;
   --panel: #141d23;
@@ -11,41 +11,66 @@
   --accent: #ffb21f;
   --accent-fg: #1a1200;
   --danger: #ff7a6b;
+  --paper: #f5f6f4;
+  --ink: #14191c;
   --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--font-ui); overflow: hidden; -webkit-user-select: none; user-select: none; }
 #app { display: flex; flex-direction: column; height: 100%; }
 .bar { background: var(--panel); border-color: var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-#top { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding-block: 8px; overflow-x: auto; }
-#top::-webkit-scrollbar { display: none; }
+#top, #opts { display: flex; align-items: center; gap: 12px; overflow-x: auto; }
+#top { border-bottom: 1px solid var(--line); padding-block: 8px; }
+#opts { border-bottom: 1px solid var(--line); padding-block: 6px; min-height: 0; }
+#opts:not(:has(.group:not([hidden]))) { display: none; }
+#top::-webkit-scrollbar, #opts::-webkit-scrollbar { display: none; }
 .brand { font-weight: 600; letter-spacing: .02em; white-space: nowrap; margin-right: 4px; }
 .brand small { display: block; font: 400 10px/1.2 var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
-.group { display: flex; gap: 4px; padding-left: 12px; border-left: 1px solid var(--line); }
-button, select { font: 500 13px var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; cursor: pointer; white-space: nowrap; }
+.group { display: flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid var(--line); flex: none; }
+.group:first-child { border-left: 0; padding-left: 0; }
+button, select, input[type="text"] { font: 500 13px var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; cursor: pointer; white-space: nowrap; }
+input[type="text"] { cursor: text; width: 110px; background: var(--bg); -webkit-user-select: text; user-select: text; font-family: var(--font-data); }
 button:hover:not(:disabled), select:hover { border-color: var(--dim); }
-button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button:disabled { opacity: .35; cursor: default; }
 select { background: var(--bg); }
+.lbl { font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; padding-right: 2px; }
 #stage { position: relative; flex: 1; min-height: 0; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-#elev { position: absolute; bottom: 12px; left: max(16px, env(safe-area-inset-left, 0px)); display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; gap: 4px; }
+#views { top: 12px; left: max(16px, env(safe-area-inset-left, 0px)); flex-wrap: wrap; max-width: calc(100% - 32px); }
+#views button { min-width: 44px; padding: 0 10px; }
+#elev { bottom: 12px; left: max(16px, env(safe-area-inset-left, 0px)); align-items: center; }
 #elev output { font: 500 12px var(--font-data); color: var(--accent); padding: 0 8px; min-width: 96px; text-align: center; font-variant-numeric: tabular-nums; }
-#bom { position: absolute; top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(340px, calc(100% - 32px)); max-height: calc(100% - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-#bom h2 { margin: 0 0 8px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.sheet { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow: auto; max-height: calc(100% - 24px); }
+.sheet h2 { margin: 0 0 8px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+#bom { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(360px, calc(100% - 32px)); }
 #bom table { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
 #bom td { padding: 6px 0; border-bottom: 1px solid var(--line); }
-#bom td:last-child { text-align: right; color: var(--accent); }
-#bom .empty { color: var(--dim); font-size: 13px; }
-#bom .actions { margin-top: 12px; display: flex; gap: 8px; }
+#bom td:last-child { text-align: right; color: var(--accent); padding-left: 10px; white-space: nowrap; }
+.empty { color: var(--dim); font-size: 13px; }
+.actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+#file { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(260px, calc(100% - 32px)); z-index: 5; display: flex; flex-direction: column; gap: 6px; }
+#file button { text-align: left; }
+#insp { bottom: 76px; left: max(16px, env(safe-area-inset-left, 0px)); width: min(320px, calc(100% - 32px)); }
+#insp .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+#insp label { display: flex; flex-direction: column; gap: 4px; font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; flex: 1; min-width: 100px; }
+#insp label select, #insp label input { width: 100%; text-transform: none; letter-spacing: 0; }
+#insp p { margin: 0 0 10px; font: 400 12.5px var(--font-data); color: var(--fg); }
+#iso { inset: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); z-index: 6; display: flex; flex-direction: column; gap: 10px; }
+#iso header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#iso header h2 { margin: 0 auto 0 0; }
+#isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 6px; overflow: auto; }
+#isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
 #status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; font: 400 12px var(--font-data); color: var(--dim); }
 #status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #status #pos { color: var(--fg); flex: none; }
-#toast { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 6px; padding: 8px 14px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity .2s; }
+#toast { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 6px; padding: 8px 14px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 9; max-width: calc(100% - 32px); }
 #toast.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 /* iPad: full-screen standalone, no rubber-band or callouts, roomy touch targets */
@@ -53,7 +78,7 @@ html { overscroll-behavior: none; }
 body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
 #top { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
 #status { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-@media (pointer: coarse) { button, select { min-height: 48px; min-width: 48px; } }
+@media (pointer: coarse) { button, select, input[type="text"] { min-height: 48px; min-width: 48px; } }
 </style>
 
 </head><body><div id="app">
@@ -61,12 +86,24 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <div class="brand">PipeDraft 3D<small id="mode">Example layout</small></div>
     <div class="group" role="group" aria-label="Tools">
       <button id="t-nav" data-tool="nav" aria-pressed="false">Navigate</button>
+      <button id="t-sel" data-tool="sel" aria-pressed="false">Select</button>
       <button id="t-pipe" data-tool="pipe" aria-pressed="true">Pipe</button>
       <button id="t-valve" data-tool="valve" aria-pressed="false">Valve</button>
+      <button id="t-flange" data-tool="flange" aria-pressed="false">Flange</button>
+      <button id="t-cap" data-tool="cap" aria-pressed="false">Cap</button>
+      <button id="t-equip" data-tool="equip" aria-pressed="false">Equipment</button>
+      <button id="t-measure" data-tool="measure" aria-pressed="false">Measure</button>
       <button id="t-del" data-tool="del" aria-pressed="false">Delete</button>
     </div>
     <div class="group">
-      <label for="nps" class="sr" style="position:absolute;left:-9999px">Pipe size</label>
+      <button id="undo">Undo</button>
+      <button id="isoBtn">Iso sheet</button>
+      <button id="bomBtn" aria-pressed="true">BOM</button>
+      <button id="fileBtn" aria-pressed="false">File</button>
+    </div>
+  </header>
+  <div id="opts" class="bar">
+    <div class="group" data-for="pipe">
       <select id="nps" aria-label="Pipe size">
         <option value="2">NPS 2 · 60.3 mm</option>
         <option value="3">NPS 3 · 88.9 mm</option>
@@ -74,18 +111,47 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <option value="6">NPS 6 · 168.3 mm</option>
       </select>
       <select id="sched" aria-label="Schedule"><option value="40" selected>SCH 40</option><option value="80">SCH 80</option></select>
+      <input type="text" id="ln" value="L-001" maxlength="12" aria-label="Line number" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="group" data-for="pipe">
+      <span class="lbl">Snap</span>
+      <select id="snap" aria-label="Grid snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select>
+      <button id="ang" aria-pressed="false" aria-label="Allow 45 degree turns">45° turns</button>
       <button id="finish">Finish run</button>
     </div>
-    <div class="group">
-      <button id="undo">Undo</button>
-      <button id="bomBtn" aria-pressed="true">BOM</button>
-      <button id="clear">Clear</button>
+    <div class="group" data-for="valve">
+      <span class="lbl">Type</span>
+      <select id="vk" aria-label="Valve type"><option value="gate" selected>Gate</option><option value="globe">Globe</option><option value="check">Check</option><option value="ball">Ball</option></select>
     </div>
-  </header>
+    <div class="group" data-for="equip">
+      <span class="lbl">Item</span>
+      <select id="eqk" aria-label="Equipment"><option value="pump" selected>Centrifugal pump</option><option value="vessel">Vertical vessel</option></select>
+      <button id="rot">Rotate 90°</button>
+    </div>
+  </div>
   <main id="stage">
     <canvas id="cv"></canvas>
-    <div id="elev"><button id="down" aria-label="Lower 0.5 m">▼</button><output id="elv">EL +0.000 m</output><button id="up" aria-label="Raise 0.5 m">▲</button></div>
-    <aside id="bom" aria-label="Bill of materials"></aside>
+    <div id="views" class="float" role="group" aria-label="Views">
+      <button id="v-iso">Iso</button><button id="v-top">Top</button><button id="v-front">Front</button><button id="v-right">Right</button>
+      <button id="v-fit">Fit</button><button id="ortho" aria-pressed="false">Ortho</button><button id="dims" aria-pressed="false">Dims</button>
+    </div>
+    <div id="elev" class="float"><button id="down" aria-label="Lower 0.5 m">▼</button><output id="elv">EL +0.000 m</output><button id="up" aria-label="Raise 0.5 m">▲</button></div>
+    <div id="insp" class="sheet" hidden></div>
+    <aside id="bom" class="sheet" aria-label="Bill of materials"></aside>
+    <div id="file" class="sheet" hidden>
+      <h2>File</h2>
+      <button id="f-save">Save project (.json)</button>
+      <button id="f-open">Open project</button>
+      <button id="f-csv">Export BOM (.csv)</button>
+      <button id="f-dxf">Export centrelines (.dxf)</button>
+      <button id="f-png">Save image (.png)</button>
+      <button id="f-clear">Clear everything</button>
+      <input type="file" id="openf" accept=".json,application/json" hidden>
+    </div>
+    <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
+      <header><h2>Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+      <div id="isoSheet"></div>
+    </section>
     <div id="toast" role="status"></div>
   </main>
   <footer id="status" class="bar"><span id="hint"></span><span id="pos"></span></footer>
@@ -101,24 +167,77 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var OD = { 2: 60.3, 3: 88.9, 4: 114.3, 6: 168.3 };           // mm, ASME B36.10 outside diameter
-  var COL = { 2: 0x6aa7c8, 3: 0x8bc7a0, 4: 0xe0b45a, 6: 0xd98b7a };
-  var STORE = 'pipedraft.model.v1';
-  var STEP = 0.5;                                              // vertical step, m
   var T = THREE;
 
-  var model = { pipes: [], valves: [] };
-  var hist = [];
-  var tool = 'pipe', curN = 4, curS = 40, cursor = null, elev = 0, sample = true;
+  // ---------- catalogue data ----------
+  // Dimensions are public ASME values written from memory (B36.10 pipe, B16.9 butt-weld fittings,
+  // B16.5 class 150 flanges, B16.10 valves). Treat them as unverified until checked against the standard.
+  var SIZES = {
+    2: { od: 60.3, wt: { 40: 3.91, 80: 5.54 } },
+    3: { od: 88.9, wt: { 40: 5.49, 80: 7.62 } },
+    4: { od: 114.3, wt: { 40: 6.02, 80: 8.56 } },
+    6: { od: 168.3, wt: { 40: 7.11, 80: 10.97 } }
+  };
+  var OD = {}; Object.keys(SIZES).forEach(function (n) { OD[n] = SIZES[n].od; });
+  var COL = { 2: 0x6aa7c8, 3: 0x8bc7a0, 4: 0xe0b45a, 6: 0xd98b7a };
+  var TEE_C = { 2: 0.064, 3: 0.086, 4: 0.105, 6: 0.143 };           // tee centre to end, m
+  var CAP_E = { 2: 0.038, 3: 0.051, 4: 0.064, 6: 0.089 };           // cap length, m
+  var FL = { 2: [0.1524, 0.0191], 3: [0.1905, 0.0239], 4: [0.2286, 0.0239], 6: [0.2794, 0.0254] };   // flange OD, thickness, m
+  var BOLTS = { 2: '4× 5/8"', 3: '4× 5/8"', 4: '8× 5/8"', 6: '8× 3/4"' };
+  var VALVE_FF = {                                                  // face to face, m
+    gate: { 2: 0.178, 3: 0.203, 4: 0.229, 6: 0.267 },
+    globe: { 2: 0.203, 3: 0.241, 4: 0.292, 6: 0.406 },
+    check: { 2: 0.203, 3: 0.241, 4: 0.292, 6: 0.356 },
+    ball: { 2: 0.178, 3: 0.203, 4: 0.229, 6: 0.394 }
+  };
+  var VALVE_NAME = { gate: 'Gate valve', globe: 'Globe valve', check: 'Check valve', ball: 'Ball valve' };
+  var RED_L = 0.12, STOCK = 6, STEEL = 7850, STEP = 0.5;
+  var STORE = 'pipedraft.model.v1';
+
+  var EQUIP = {
+    pump: {
+      name: 'Centrifugal pump',
+      noz: [{ p: [-0.35, 0.4, 0], d: [-1, 0, 0], n: 4 }, { p: [-0.15, 0.7, 0], d: [0, 1, 0], n: 3 }],
+      build: function (g, m) {
+        var base = new T.Mesh(new T.BoxGeometry(1.5, 0.08, 0.55), m); base.position.set(0.2, 0.04, 0); g.add(base);
+        var cas = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.4, 28), m); cas.rotation.z = Math.PI / 2; cas.position.set(-0.15, 0.4, 0); g.add(cas);
+        var mot = new T.Mesh(new T.CylinderGeometry(0.22, 0.22, 0.8, 28), mat(0x3d5361, 0.6)); mot.rotation.z = Math.PI / 2; mot.position.set(0.45, 0.4, 0); g.add(mot);
+      }
+    },
+    vessel: {
+      name: 'Vertical vessel',
+      noz: [{ p: [0, 2.55, 0], d: [0, 1, 0], n: 4 }, { p: [0.6, 1.8, 0], d: [1, 0, 0], n: 4 }, { p: [0, 0.4, 0.6], d: [0, 0, 1], n: 4 }],
+      build: function (g, m) {
+        var body = new T.Mesh(new T.CylinderGeometry(0.6, 0.6, 2.4, 32), m); body.position.y = 1.2; g.add(body);
+        var dome = new T.Mesh(new T.SphereGeometry(0.6, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), m); dome.scale.y = 0.25; dome.position.y = 2.4; g.add(dome);
+      }
+    }
+  };
+
+  // ---------- state ----------
+  var model = blank(), hist = [];
+  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0;
+  var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
+
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [] }; }
+  function normalize(m) {
+    var o = blank();
+    if (!m || !Array.isArray(m.pipes)) return o;
+    o.pipes = m.pipes.map(function (p) { p.s = p.s || 40; p.ln = p.ln || 'L-001'; return p; });
+    o.valves = (m.valves || []).map(function (v) { v.s = v.s || 40; v.k = v.k || 'gate'; return v; });
+    o.flanges = (m.flanges || []).map(function (f) { f.s = f.s || 40; return f; });
+    o.caps = m.caps || []; o.equip = m.equip || [];
+    return o;
+  }
 
   // ---------- storage ----------
   function save() { try { localStorage.setItem(STORE, JSON.stringify(model)); } catch (e) {} }
   function load() {
-    try { var s = localStorage.getItem(STORE); if (s) { var m = JSON.parse(s); if (m && m.pipes) { model = m; sample = false; return true; } } } catch (e) {}
+    try { var s = localStorage.getItem(STORE); if (s) { var m = JSON.parse(s); if (m && m.pipes) { model = normalize(m); sample = false; return true; } } } catch (e) {}
     return false;
   }
   function exampleLayout() {
-    return {
+    return normalize({
       pipes: [
         { a: [0, 0, 0], b: [0, 1.5, 0], n: 4 },
         { a: [0, 1.5, 0], b: [0, 1.5, 3], n: 4 },
@@ -131,7 +250,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         { p: [0, 0.8, 0], d: [0, 1, 0], n: 4 },
         { p: [-1.2, 1.5, 3], d: [-1, 0, 0], n: 4 }
       ]
-    };
+    });
   }
 
   // ---------- scene ----------
@@ -140,16 +259,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   var scene = new T.Scene();
   scene.background = new T.Color(0x0d1418);
-  var camera = new T.PerspectiveCamera(45, 1, 0.05, 200);
+  var camP = new T.PerspectiveCamera(45, 1, 0.05, 300);
+  var camO = new T.OrthographicCamera(-5, 5, 5, -5, 0.01, 500);
+  var camera = camP;
   scene.add(new T.AmbientLight(0xffffff, 0.65));
   var sun = new T.DirectionalLight(0xffffff, 0.8); sun.position.set(6, 12, 8); scene.add(sun);
-  var grid = new T.GridHelper(24, 48, 0x34505d, 0x1a262d); scene.add(grid);
-  (function axes() {
-    [[0xff6b5e, 1, 0, 0], [0x6bd18f, 0, 1, 0], [0x5fa8ff, 0, 0, 1]].forEach(function (a) {
-      var g = new T.BufferGeometry().setFromPoints([new T.Vector3(0, 0.002, 0), new T.Vector3(a[1], a[2] + 0.002, a[3])]);
-      scene.add(new T.Line(g, new T.LineBasicMaterial({ color: a[0] })));
-    });
-  })();
+  scene.add(new T.GridHelper(24, 48, 0x34505d, 0x1a262d));
+  [[0xff6b5e, 1, 0, 0], [0x6bd18f, 0, 1, 0], [0x5fa8ff, 0, 0, 1]].forEach(function (a) {
+    var g = new T.BufferGeometry().setFromPoints([new T.Vector3(0, 0.002, 0), new T.Vector3(a[1], a[2] + 0.002, a[3])]);
+    scene.add(new T.Line(g, new T.LineBasicMaterial({ color: a[0] })));
+  });
   var world = new T.Group(); scene.add(world);
 
   var ghostLine = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3()]), new T.LineBasicMaterial({ color: 0xffb21f }));
@@ -158,54 +277,127 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   marker.visible = false; scene.add(marker);
   var curMark = new T.Mesh(new T.SphereGeometry(0.09, 16, 12), new T.MeshBasicMaterial({ color: 0xffffff }));
   curMark.visible = false; scene.add(curMark);
+  var measLine = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3()]), new T.LineBasicMaterial({ color: 0xffffff }));
+  measLine.visible = false; scene.add(measLine);
 
-  // ---------- camera orbit ----------
+  // ---------- camera ----------
   var target = new T.Vector3(1, 0.8, 1.5), theta = 0.8, phi = 1.0, dist = 9;
   function placeCamera() {
+    camera = orthoOn ? camO : camP;
     camera.position.set(
       target.x + dist * Math.sin(phi) * Math.sin(theta),
       target.y + dist * Math.cos(phi),
       target.z + dist * Math.sin(phi) * Math.cos(theta));
     camera.lookAt(target);
+    if (orthoOn) {
+      var hh = dist * Math.tan(camP.fov * Math.PI / 360), hw = hh * camP.aspect;
+      camO.left = -hw; camO.right = hw; camO.top = hh; camO.bottom = -hh; camO.updateProjectionMatrix();
+    }
     camera.updateMatrixWorld();
   }
   function resize() {
     var r = $('stage').getBoundingClientRect();
     renderer.setSize(r.width, r.height, false);
-    camera.aspect = r.width / Math.max(r.height, 1);
-    camera.updateProjectionMatrix();
+    camP.aspect = r.width / Math.max(r.height, 1);
+    camP.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe($('stage'));
+  function setView(name) {
+    var v = { iso: [0.785, 0.95], top: [0.785, 0.03], front: [0, 1.5707], right: [1.5707, 1.5707] }[name];
+    theta = v[0]; phi = v[1];
+  }
+  function fit() {
+    var box = new T.Box3();
+    world.traverse(function (o) { if (o.geometry && o.userData.kind) box.expandByObject(o); });
+    if (box.isEmpty()) { target.set(1, 0.8, 1.5); dist = 9; return; }
+    var c = box.getCenter(new T.Vector3()), s = box.getSize(new T.Vector3());
+    target.copy(c);
+    dist = Math.min(60, Math.max(2, Math.max(s.x, s.y, s.z, 1.5) / (2 * Math.tan(camP.fov * Math.PI / 360)) * 1.5));
+  }
 
-  // ---------- model -> meshes ----------
+  // ---------- helpers ----------
   var V = function (a) { return new T.Vector3(a[0], a[1], a[2]); };
   var key = function (p) { return p.map(function (v) { return Math.round(v * 1000); }).join(','); };
   var UP = new T.Vector3(0, 1, 0);
-  var bom = {}, warns = [];
-  // Catalogue dimensions (public ASME data, metres). Elbow = long radius 1.5D (B16.9),
-  // tee centre-to-end on the run (B16.9), gate valve face-to-face (B16.10), reducer length.
-  var TEE_C = { 2: 0.064, 3: 0.086, 4: 0.105, 6: 0.143 };
-  var GATE_FF = { 2: 0.178, 3: 0.203, 4: 0.229, 6: 0.267 };
-  var RED_L = 0.12, STOCK = 6;
-  var CAT = { pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, valve: 8 };
-  var lines = {};
-
+  var mm3 = function (v) { return [Math.round(v.x * 1000) / 1000, Math.round(v.y * 1000) / 1000, Math.round(v.z * 1000) / 1000]; };
+  var rs = function (v) { return Math.round(v / snap) * snap; };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   function mat(color, rough) { return new T.MeshStandardMaterial({ color: color, roughness: rough == null ? 0.5 : rough, metalness: 0.25 }); }
+  function lineWeight(n, s) {                                       // kg per metre of steel pipe
+    var od = SIZES[n].od / 1000, id = od - 2 * SIZES[n].wt[s] / 1000;
+    return Math.PI / 4 * (od * od - id * id) * STEEL;
+  }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function segDist(p1, q1, p2, q2) {
+    var d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), r = p1.clone().sub(p2);
+    var a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r), s, t;
+    if (a <= 1e-9 && e <= 1e-9) return r.length();
+    if (a <= 1e-9) { s = 0; t = clamp(f / e, 0, 1); }
+    else {
+      var c = d1.dot(r);
+      if (e <= 1e-9) { t = 0; s = clamp(-c / a, 0, 1); }
+      else {
+        var b = d1.dot(d2), den = a * e - b * b;
+        s = den > 1e-9 ? clamp((b * f - c * e) / den, 0, 1) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); } else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
+      }
+    }
+    return p1.clone().addScaledVector(d1, s).distanceTo(p2.clone().addScaledVector(d2, t));
+  }
+  function label(text) {
+    var c = document.createElement('canvas'); c.width = 256; c.height = 64;
+    var x = c.getContext('2d'); x.font = '600 34px ui-monospace, Menlo, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = 8; x.strokeStyle = '#0d1418'; x.strokeText(text, 128, 34); x.fillStyle = '#ffb21f'; x.fillText(text, 128, 34);
+    var sp = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), depthTest: false, transparent: true }));
+    sp.scale.set(0.64, 0.16, 1); sp.renderOrder = 5; return sp;
+  }
+
+  // ---------- model -> meshes ----------
+  var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, weight: 11 };
+  var lines = {}, warns = [], nozList = [];
   function add(cat, desc, qty, unit) {
     var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit });
     l.qty += qty;
   }
   function sizeText(a, b) { return a === b ? 'NPS ' + a : 'NPS ' + a + '×' + b; }
+  function equipNozzles(e) {
+    var rot = (e.r || 0) * Math.PI / 2;
+    return EQUIP[e.k].noz.map(function (z) {
+      return { p: V(z.p).applyAxisAngle(UP, rot).add(V(e.p)), d: V(z.d).applyAxisAngle(UP, rot), n: z.n };
+    });
+  }
 
   function rebuild() {
     for (var c = world.children.length - 1; c >= 0; c--) {
       var o = world.children[c]; world.remove(o);
-      o.traverse(function (m) { if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); });
+      o.traverse(function (m) {
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+      });
     }
-    lines = {}; warns = [];
+    lines = {}; warns = []; nozList = [];
+    var weight = 0;
 
-    // 1. Collect every pipe end into joints (a joint is a point where runs meet).
-    var joints = {}, trims = {};
+    // 1. Equipment and its nozzles.
+    model.equip.forEach(function (e, i) {
+      var def = EQUIP[e.k]; if (!def) return;
+      var g = new T.Group(), m = mat(0x5f7a88, 0.6);
+      def.build(g, m);
+      def.noz.forEach(function (z) {
+        var s = new T.Mesh(new T.CylinderGeometry(OD[z.n] / 2000 * 1.4, OD[z.n] / 2000 * 1.4, 0.12, 20), mat(0xc9d6dc, 0.4));
+        s.position.copy(V(z.p)).addScaledVector(V(z.d), -0.06); s.quaternion.setFromUnitVectors(UP, V(z.d)); g.add(s);
+      });
+      g.position.copy(V(e.p)); g.rotation.y = (e.r || 0) * Math.PI / 2;
+      g.traverse(function (x) { x.userData = { kind: 'equip', i: i }; });
+      world.add(g);
+      equipNozzles(e).forEach(function (z) { nozList.push(z); });
+      add('equip', def.name, 1, 'pc');
+    });
+
+    // 2. Collect every pipe end into joints.
+    var joints = {}, trims = {}, capKeys = {};
+    model.caps.forEach(function (p) { capKeys[key(p)] = true; });
     model.pipes.forEach(function (p, i) {
       var a = V(p.a), b = V(p.b);
       if (a.distanceTo(b) < 0.001) return;
@@ -217,20 +409,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     function setTrim(legs, v) { legs.forEach(function (l) { trims[l.i + l.end] = v; }); }
 
-    // 2. Choose the fitting at each joint, like a spec branch table does, and cut the pipes back.
+    // 3. Choose the fitting at each joint, like a spec branch table, and cut the pipes back.
     Object.keys(joints).forEach(function (k) {
       var j = joints[k], L = j.legs, cnt = L.length;
       var nmax = Math.max.apply(null, L.map(function (l) { return l.n; }));
       j.s = Math.max.apply(null, L.map(function (l) { return l.s; }));
       j.nmax = nmax;
-      if (cnt === 2) {
+      if (cnt === 1) {
+        if (capKeys[k]) { j.type = 'cap'; setTrim(L, CAP_E[nmax]); }
+      } else if (cnt === 2) {
         var dot = L[0].d.dot(L[1].d);
         if (dot < -0.999) {
           if (L[0].n !== L[1].n) { j.type = 'reducer'; setTrim(L, RED_L / 2); }
         } else {
           j.type = 'elbow';
           if (L[0].n !== L[1].n) warns.push('Size change at an elbow, NPS ' + L[0].n + ' to ' + L[1].n + '. Put a reducer on a straight run.');
-          j.defl = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)));
+          j.defl = Math.PI - Math.acos(clamp(dot, -1, 1));
           j.R = 1.5 * nmax * 0.0254;
           j.t = j.R * Math.tan(j.defl / 2);
           setTrim(L, j.t);
@@ -247,13 +441,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (br.n === nh) { j.type = 'tee'; setTrim(hdr, TEE_C[nh]); setTrim([br], TEE_C[nh]); }
         else if (br.n <= nh / 2) { j.type = 'olet'; setTrim([br], 0.06); }
         else { j.type = 'rtee'; setTrim(hdr, TEE_C[nh]); setTrim([br], TEE_C[br.n]); }
-      } else if (cnt >= 4) {
+      } else {
         j.type = 'cross'; setTrim(L, TEE_C[nmax]);
       }
     });
 
-    // 3. Pipes, trimmed to their fittings.
-    var total = 0;
+    // 4. Pipes, trimmed to their fittings.
+    var pipeMesh = {}, total = 0;
     model.pipes.forEach(function (p, i) {
       var a = V(p.a), b = V(p.b), d = b.clone().sub(a), Lp = d.length();
       if (Lp < 0.001) return;
@@ -265,12 +459,33 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       m.position.copy(a).addScaledVector(dir, ta + len / 2);
       m.quaternion.setFromUnitVectors(UP, dir);
       m.userData = { kind: 'pipe', i: i };
-      world.add(m);
+      world.add(m); pipeMesh[i] = m;
       add('pipe', 'Pipe, NPS ' + p.n + ' SCH ' + s + ', BE', len, 'm');
-      total += len;
+      total += len; weight += len * lineWeight(p.n, s);
+      if (showDims) {
+        var sp = label(String(Math.round(Lp * 1000)));
+        sp.position.copy(a).addScaledVector(dir, Lp / 2); sp.position.y += r + 0.14; world.add(sp);
+      }
     });
 
-    // 4. Fittings.
+    // 5. Clash check between pipes that do not share a joint.
+    var ends = model.pipes.map(function (p) { return [key(p.a), key(p.b)]; }), clashN = 0;
+    for (var x = 0; x < model.pipes.length; x++) {
+      for (var y = x + 1; y < model.pipes.length; y++) {
+        if (ends[x][0] === ends[y][0] || ends[x][0] === ends[y][1] || ends[x][1] === ends[y][0] || ends[x][1] === ends[y][1]) continue;
+        var px = model.pipes[x], py = model.pipes[y];
+        var lim = (OD[px.n] + OD[py.n]) / 2000 - 0.002;
+        var dd = segDist(V(px.a), V(px.b), V(py.a), V(py.b));
+        if (dd < lim) {
+          clashN++;
+          if (clashN <= 5) warns.push('Clash: pipe ' + (x + 1) + ' and pipe ' + (y + 1) + ' overlap by ' + Math.round((lim - dd) * 1000) + ' mm.');
+          [x, y].forEach(function (q) { if (pipeMesh[q]) pipeMesh[q].material.emissive.setHex(0x7a1d14); });
+        }
+      }
+    }
+    if (clashN > 5) warns.push((clashN - 5) + ' more clashes not listed.');
+
+    // 6. Fittings.
     Object.keys(joints).forEach(function (k) {
       var j = joints[k];
       if (!j.type) return;
@@ -279,10 +494,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var d1 = L[0].d, d2 = L[1].d;
         var A = P.clone().addScaledVector(d1, j.t), B = P.clone().addScaledVector(d2, j.t);
         var C = P.clone().addScaledVector(d1.clone().add(d2).normalize(), j.R / Math.cos(j.defl / 2));
-        var x = A.clone().sub(C).normalize(), xb = B.clone().sub(C).normalize();
-        var z = x.clone().cross(xb).normalize(), y = z.clone().cross(x).normalize();
+        var x1 = A.clone().sub(C).normalize(), xb = B.clone().sub(C).normalize();
+        var z1 = x1.clone().cross(xb).normalize(), y1 = z1.clone().cross(x1).normalize();
         mesh = new T.Mesh(new T.TorusGeometry(j.R, r, 16, 28, j.defl), mat(0xc9d6dc, 0.35));
-        mesh.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(x, y, z));
+        mesh.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(x1, y1, z1));
         mesh.position.copy(C);
         add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° LR BW, NPS ' + n + ' SCH ' + j.s, 1, 'pc');
       } else if (j.type === 'reducer') {
@@ -303,6 +518,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mesh = new T.Mesh(new T.CylinderGeometry(OD[j.br.n] / 2000 * 1.4, OD[j.br.n] / 2000 * 1.4, 0.06, 24), mat(0xf2f6f8, 0.35));
         mesh.position.copy(P).addScaledVector(j.br.d, 0.03); mesh.quaternion.setFromUnitVectors(UP, j.br.d);
         add('olet', 'Weldolet BW, ' + sizeText(j.nh, j.br.n) + ' SCH ' + j.s, 1, 'pc');
+      } else if (j.type === 'cap') {
+        var E = CAP_E[n], out = L[0].d.clone().negate();
+        mesh = new T.Group();
+        var cyl = new T.Mesh(new T.CylinderGeometry(r * 1.02, r * 1.02, E * 0.5, 24), mat(0xc9d6dc, 0.35)); cyl.position.y = E * 0.25; mesh.add(cyl);
+        var dome = new T.Mesh(new T.SphereGeometry(r * 1.02, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xc9d6dc, 0.35));
+        dome.scale.y = E * 0.5 / r; dome.position.y = E * 0.5; mesh.add(dome);
+        mesh.position.copy(P).addScaledVector(L[0].d, E); mesh.quaternion.setFromUnitVectors(UP, out);
+        add('cap', 'Cap BW, NPS ' + n + ' SCH ' + j.s, 1, 'pc');
       } else {
         mesh = new T.Mesh(new T.SphereGeometry(r * 1.5, 20, 14), mat(0xf2f6f8, 0.35)); mesh.position.copy(P);
         add('cross', 'Cross BW, NPS ' + n + ' SCH ' + j.s, 1, 'pc');
@@ -310,25 +533,61 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       world.add(mesh);
     });
 
-    // 5. Valves sit inline, so their face-to-face length comes off the pipe.
+    // 7. Valves sit inline, so their face-to-face length comes off the pipe.
     model.valves.forEach(function (v, i) {
-      var r = OD[v.n] / 2000, R = r * 1.9, L = GATE_FF[v.n];
-      var g = new T.Group(), bm = mat(0xff6b5e, 0.4);
-      var c1 = new T.Mesh(new T.CylinderGeometry(R, 0, L / 2, 20), bm); c1.position.y = -L / 4;
-      var c2 = new T.Mesh(new T.CylinderGeometry(0, R, L / 2, 20), bm); c2.position.y = L / 4;
-      var st = new T.Mesh(new T.CylinderGeometry(r * 0.22, r * 0.22, R * 2.2, 10), mat(0xc9d6dc)); st.rotation.z = Math.PI / 2; st.position.x = R * 1.1;
-      var hw = new T.Mesh(new T.TorusGeometry(R * 0.9, r * 0.12, 8, 24), mat(0xffb21f)); hw.rotation.y = Math.PI / 2; hw.position.x = R * 2.2;
-      g.add(c1, c2, st, hw);
+      var kind = VALVE_FF[v.k] ? v.k : 'gate';
+      var r = OD[v.n] / 2000, R = r * 1.9, L = VALVE_FF[kind][v.n];
+      var g = new T.Group(), bm = mat(kind === 'check' ? 0x6bb0ff : kind === 'ball' ? 0x6bd18f : 0xff6b5e, 0.4);
+      if (kind === 'globe' || kind === 'ball') {
+        var sph = new T.Mesh(new T.SphereGeometry(R * 1.05, 20, 14), bm); g.add(sph);
+        var nk = new T.Mesh(new T.CylinderGeometry(r * 1.1, r * 1.1, L, 20), bm); g.add(nk);
+      } else if (kind === 'check') {
+        var cb2 = new T.Mesh(new T.CylinderGeometry(R * 0.9, R * 0.9, L, 24), bm); g.add(cb2);
+        var cap = new T.Mesh(new T.CylinderGeometry(R * 0.6, R * 0.6, R * 0.8, 20), bm); cap.position.y = 0; cap.position.x = R * 0.8; cap.rotation.z = Math.PI / 2; g.add(cap);
+      } else {
+        var c1 = new T.Mesh(new T.CylinderGeometry(R, 0, L / 2, 20), bm); c1.position.y = -L / 4; g.add(c1);
+        var c2 = new T.Mesh(new T.CylinderGeometry(0, R, L / 2, 20), bm); c2.position.y = L / 4; g.add(c2);
+      }
+      if (kind !== 'check') {
+        var st = new T.Mesh(new T.CylinderGeometry(r * 0.22, r * 0.22, R * 2.2, 10), mat(0xc9d6dc)); st.rotation.z = Math.PI / 2; st.position.x = R * 1.1; g.add(st);
+        var hw = kind === 'ball'
+          ? new T.Mesh(new T.BoxGeometry(r * 0.2, r * 0.2, R * 2.2), mat(0xffb21f))
+          : new T.Mesh(new T.TorusGeometry(R * 0.9, r * 0.12, 8, 24), mat(0xffb21f));
+        if (kind !== 'ball') hw.rotation.y = Math.PI / 2;
+        hw.position.x = R * 2.2; g.add(hw);
+      }
       g.position.copy(V(v.p));
       g.quaternion.setFromUnitVectors(UP, V(v.d).normalize());
       g.traverse(function (m) { m.userData = { kind: 'valve', i: i }; });
       world.add(g);
-      add('valve', 'Gate valve BW, NPS ' + v.n, 1, 'pc');
+      add('valve', VALVE_NAME[kind] + ' flanged 150#, NPS ' + v.n, 1, 'pc');
       add('pipe', 'Pipe, NPS ' + v.n + ' SCH ' + (v.s || 40) + ', BE', -L, 'm');
-      total -= L;
+      total -= L; weight -= L * lineWeight(v.n, v.s || 40);
     });
+
+    // 8. Flange pairs (two weld-neck flanges, a gasket and a bolt set).
+    model.flanges.forEach(function (f, i) {
+      var fo = FL[f.n][0] / 2, ft = FL[f.n][1], gap = 0.004;
+      var g = new T.Group(), fm = mat(0xdfe8ec, 0.35);
+      [-1, 1].forEach(function (sgn) {
+        var disc = new T.Mesh(new T.CylinderGeometry(fo, fo, ft, 36), fm); disc.position.y = sgn * (ft / 2 + gap); g.add(disc);
+      });
+      var gk = new T.Mesh(new T.CylinderGeometry(fo * 0.85, fo * 0.85, gap * 2, 36), mat(0x222a2e, 0.9)); g.add(gk);
+      g.position.copy(V(f.p)); g.quaternion.setFromUnitVectors(UP, V(f.d).normalize());
+      g.traverse(function (m) { m.userData = { kind: 'flange', i: i }; });
+      world.add(g);
+      add('flange', 'Weld-neck flange 150# BW, NPS ' + f.n + ' SCH ' + (f.s || 40), 2, 'pc');
+      add('flange', 'Gasket 150# spiral wound, NPS ' + f.n, 1, 'pc');
+      add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
+    });
+
     if (total > 0.001) add('stock', 'Pipe stock, ' + STOCK + ' m lengths (estimate)', Math.ceil(total / STOCK), 'pc');
-    renderBom();
+    if (weight > 0.05) add('weight', 'Pipe weight, steel, empty', weight, 'kg');
+
+    if (sel) world.traverse(function (o) {
+      if (o.userData && o.userData.kind === sel.kind && o.userData.i === sel.i && o.material && o.material.emissive) o.material.emissive.setHex(0x664400);
+    });
+    renderBom(); showInsp();
     $('undo').disabled = !hist.length;
   }
 
@@ -337,13 +596,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return Object.keys(lines).map(function (k) { return lines[k]; })
       .filter(function (l) { return Math.abs(l.qty) > 0.0005; })
       .sort(function (a, b) { return a.cat - b.cat || (a.desc < b.desc ? -1 : 1); })
-      .map(function (l) { return [l.desc, l.unit === 'm' ? l.qty.toFixed(2) + ' m' : String(l.qty)]; });
+      .map(function (l) { return [l.desc, l.unit === 'm' ? l.qty.toFixed(2) + ' m' : l.unit === 'kg' ? l.qty.toFixed(1) + ' kg' : String(l.qty)]; });
   }
   function renderBom() {
     var rows = bomRows(), h = '<h2>Bill of materials</h2><p class="empty" style="margin:0 0 8px;font-size:12px">ASME B36.10 pipe · B16.9 butt-weld fittings · carbon steel</p>';
     if (!rows.length) h += '<p class="empty">Nothing drawn yet. Pick Pipe and tap the grid to start a run.</p>';
-    else h += '<table>' + rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
-    if (warns.length) h += '<h2 style="margin-top:14px;color:var(--danger)">Check</h2><ul style="margin:0;padding-left:18px;font-size:12.5px">' + warns.map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
+    else h += '<table>' + rows.map(function (r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
+    if (warns.length) h += '<h2 style="margin-top:14px;color:var(--danger)">Check</h2><ul style="margin:0;padding-left:18px;font-size:12.5px">' + warns.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
     h += '<div class="actions"><button id="copy"' + (rows.length ? '' : ' disabled') + '>Copy as text</button></div>';
     $('bom').innerHTML = h;
     var cp = $('copy');
@@ -355,13 +614,30 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function toast(t) {
     var el = $('toast'); el.textContent = t; el.classList.add('on');
-    clearTimeout(toast.t); toast.t = setTimeout(function () { el.classList.remove('on'); }, 1600);
+    clearTimeout(toast.t); toast.t = setTimeout(function () { el.classList.remove('on'); }, 2200);
   }
 
-// ---------- editing ----------
+  // ---------- editing ----------
   function pushHist() { hist.push(JSON.stringify(model)); if (hist.length > 100) hist.shift(); }
   function changed() { sample = false; $('mode').textContent = 'My layout'; save(); rebuild(); updateUi(); }
-  var r1 = function (v) { return Math.round(v * 10) / 10; };
+
+  function splitAt(pt) {                                            // make a joint where a pipe end lands on another pipe
+    var P = V(pt), did = false;
+    for (var i = 0; i < model.pipes.length; i++) {
+      var p = model.pipes[i], a = V(p.a), b = V(p.b), ab = b.clone().sub(a), L2 = ab.lengthSq();
+      if (L2 < 1e-9) continue;
+      var t = P.clone().sub(a).dot(ab) / L2;
+      if (t <= 0.0005 || t >= 0.9995) continue;
+      if (a.clone().addScaledVector(ab, t).distanceTo(P) > 0.002) continue;
+      var m = mm3(P), q = { a: m, b: p.b, n: p.n, s: p.s, ln: p.ln };
+      p.b = m; model.pipes.splice(i + 1, 0, q); did = true; i++;
+    }
+    return did;
+  }
+  function addPipe(a, b, n, s, ln) {
+    model.pipes.push({ a: a, b: b, n: n, s: s || 40, ln: ln || 'L-001' });
+    splitAt(b); splitAt(a);
+  }
 
   var ray = new T.Raycaster(), ndc = new T.Vector2();
   function setRay(e) {
@@ -374,104 +650,250 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var hit = new T.Vector3();
     return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -elev), hit) ? hit : null;
   }
-  function snapStart(p) {
+  function pickMeshes(e, kind) {
+    setRay(e); world.updateMatrixWorld(true);
+    return ray.intersectObjects(world.children, true).filter(function (h) { return h.object.userData.kind && (!kind || h.object.userData.kind === kind); });
+  }
+  function snapPoint(p) {                                           // existing pipe end or equipment nozzle near the tap
     var best = null, bd = 0.3;
     model.pipes.forEach(function (q) {
       [q.a, q.b].forEach(function (e) {
         var d = Math.hypot(e[0] - p.x, e[2] - p.z);
-        if (Math.abs(e[1] - elev) < 0.01 && d < bd) { bd = d; best = e; }
+        if (Math.abs(e[1] - elev) < 0.01 && d < bd) { bd = d; best = e.slice(); }
       });
     });
-    return best ? best.slice() : [r1(p.x), elev, r1(p.z)];
+    nozList.forEach(function (z) {
+      var d = z.p.distanceTo(new T.Vector3(p.x, elev, p.z));
+      if (d < bd) { bd = d; best = mm3(z.p); }
+    });
+    return best;
+  }
+  function onPipe(hit) {                                            // point on a pipe under the tap, snapped along its length
+    var p = model.pipes[hit.object.userData.i]; if (!p) return null;
+    var a = V(p.a), b = V(p.b), L = a.distanceTo(b), dir = b.clone().sub(a).normalize();
+    var s = clamp(Math.round(hit.point.clone().sub(a).dot(dir) / snap) * snap, 0, L);
+    if (s < 0.04) s = 0; if (L - s < 0.04) s = L;
+    return { pt: mm3(a.clone().addScaledVector(dir, s)), pipe: p, dir: dir, s: s, L: L };
   }
   function constrain(p) {
-    var dx = p.x - cursor[0], dz = p.z - cursor[2];
-    var useX = Math.abs(dx) >= Math.abs(dz), d = useX ? dx : dz;
-    var len = r1(Math.abs(d));
-    if (len < 0.1) return null;
-    var s = d < 0 ? -1 : 1;
-    var q = cursor.slice();
-    if (useX) q[0] = Math.round((cursor[0] + s * len) * 1000) / 1000; else q[2] = Math.round((cursor[2] + s * len) * 1000) / 1000;
+    var dx = p.x - cursor[0], dz = p.z - cursor[2], q = cursor.slice(), ux, uz, len;
+    if (ang45) {
+      var an = Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) * (Math.PI / 4);
+      ux = Math.cos(an); uz = Math.sin(an);
+      len = rs(dx * ux + dz * uz);
+      if (len < snap * 0.99) return null;
+    } else {
+      var useX = Math.abs(dx) >= Math.abs(dz), d = useX ? dx : dz;
+      len = rs(Math.abs(d)); if (len < snap * 0.99) return null;
+      var sg = d < 0 ? -1 : 1; ux = useX ? sg : 0; uz = useX ? 0 : sg;
+    }
+    q[0] = Math.round((cursor[0] + ux * len) * 1000) / 1000; q[2] = Math.round((cursor[2] + uz * len) * 1000) / 1000;
     return q;
   }
-  function pickMeshes(e, filter) {
-    setRay(e);
-    return ray.intersectObjects(world.children, true).filter(function (h) { return h.object.userData.kind && (!filter || h.object.userData.kind === filter); });
+  function startPoint(e) {                                          // where a new run begins: nozzle/end, then mid-pipe, then grid
+    var p = planePoint(e), s = p ? snapPoint(p) : null;
+    if (s) return s;
+    var hit = pickMeshes(e, 'pipe')[0], op = hit ? onPipe(hit) : null;
+    if (op) return op.pt;
+    return p ? [rs(p.x), elev, rs(p.z)] : null;
   }
 
   function onTap(e) {
+    var hit;
     if (tool === 'pipe') {
-      var p = planePoint(e); if (!p) return;
-      if (!cursor) { cursor = snapStart(p); elev = cursor[1]; }
-      else {
+      if (!cursor) {
+        var st = startPoint(e); if (!st) return;
+        var before = JSON.stringify(model);
+        if (splitAt(st)) { hist.push(before); changed(); }
+        cursor = st; elev = st[1]; updateUi();
+      } else {
+        var p = planePoint(e); if (!p) return;
         var q = constrain(p);
-        if (q) { pushHist(); model.pipes.push({ a: cursor, b: q, n: curN, s: curS }); cursor = q; changed(); }
+        if (q) { pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; changed(); }
       }
-      updateUi(); ghost(e);
-    } else if (tool === 'valve') {
-      var h = pickMeshes(e, 'pipe')[0]; if (!h) return;
-      var pp = model.pipes[h.object.userData.i], a = V(pp.a), b = V(pp.b), L = a.distanceTo(b);
-      if (L < 0.5) { toast('Pipe is too short for a valve'); return; }
-      var dir = b.clone().sub(a).normalize();
-      var s = Math.min(Math.max(Math.round(h.point.clone().sub(a).dot(dir) * 20) / 20, 0.25), L - 0.25);
-      var pos = a.clone().add(dir.clone().multiplyScalar(s));
+      ghost(e);
+    } else if (tool === 'valve' || tool === 'flange') {
+      hit = pickMeshes(e, 'pipe')[0]; if (!hit) return;
+      var op = onPipe(hit); if (!op) return;
+      var need = tool === 'valve' ? VALVE_FF[vk][op.pipe.n] / 2 + 0.05 : FL[op.pipe.n][1] + 0.05;
+      if (op.L < need * 2 + 0.1) { toast('Pipe is too short for that'); return; }
+      var s = clamp(op.s, need, op.L - need), pos = V(op.pipe.a).addScaledVector(op.dir, s);
       pushHist();
-      model.valves.push({ p: [Math.round(pos.x * 1000) / 1000, Math.round(pos.y * 1000) / 1000, Math.round(pos.z * 1000) / 1000], d: [dir.x, dir.y, dir.z], n: pp.n, s: pp.s || 40 });
+      if (tool === 'valve') model.valves.push({ p: mm3(pos), d: [op.dir.x, op.dir.y, op.dir.z], n: op.pipe.n, s: op.pipe.s || 40, k: vk });
+      else model.flanges.push({ p: mm3(pos), d: [op.dir.x, op.dir.y, op.dir.z], n: op.pipe.n, s: op.pipe.s || 40 });
       changed();
+    } else if (tool === 'cap') {
+      hit = pickMeshes(e, 'pipe')[0]; if (!hit) { toast('Tap near an open pipe end'); return; }
+      var cp = model.pipes[hit.object.userData.i], ea = V(cp.a), eb = V(cp.b);
+      var end = hit.point.distanceTo(ea) < hit.point.distanceTo(eb) ? cp.a : cp.b;
+      var used = 0; model.pipes.forEach(function (q) { if (key(q.a) === key(end)) used++; if (key(q.b) === key(end)) used++; });
+      var atNoz = nozList.some(function (z) { return z.p.distanceTo(V(end)) < 0.01; });
+      var capped = model.caps.some(function (c2) { return key(c2) === key(end); });
+      if (used !== 1 || atNoz || capped) { toast(capped ? 'Already capped' : 'That end is connected'); return; }
+      pushHist(); model.caps.push(end.slice()); changed();
+    } else if (tool === 'equip') {
+      var pp = planePoint(e); if (!pp) return;
+      pushHist(); model.equip.push({ k: eqk, p: [rs(pp.x), elev, rs(pp.z)], r: curRot }); changed();
+    } else if (tool === 'measure') {
+      var mp = planePoint(e); if (!mp) return;
+      var pt = snapPoint(mp) || [rs(mp.x), elev, rs(mp.z)];
+      if (!mA) { mA = pt; measLine.visible = false; $('pos').textContent = 'A set. Tap point B.'; }
+      else {
+        var A = V(mA), B = V(pt), D = A.distanceTo(B);
+        measLine.geometry.setFromPoints([A, B]); measLine.visible = true;
+        $('pos').textContent = Math.round(D * 1000) + ' mm  ΔX ' + Math.round((B.x - A.x) * 1000) + '  ΔY ' + Math.round((B.y - A.y) * 1000) + '  ΔZ ' + Math.round((B.z - A.z) * 1000);
+        mA = null;
+      }
+    } else if (tool === 'sel') {
+      hit = pickMeshes(e)[0];
+      sel = hit ? { kind: hit.object.userData.kind, i: hit.object.userData.i } : null;
+      rebuild();
     } else if (tool === 'del') {
-      var hit = pickMeshes(e)[0]; if (!hit) return;
-      pushHist();
-      if (hit.object.userData.kind === 'pipe') model.pipes.splice(hit.object.userData.i, 1);
-      else model.valves.splice(hit.object.userData.i, 1);
-      changed();
+      hit = pickMeshes(e)[0]; if (!hit) return;
+      removeItem(hit.object.userData.kind, hit.object.userData.i);
     }
+  }
+  function removeItem(kind, i) {
+    pushHist();
+    var list = { pipe: 'pipes', valve: 'valves', flange: 'flanges', equip: 'equip' }[kind];
+    model[list].splice(i, 1);
+    sel = null; changed();
   }
 
   function ghost(e) {
-    if (tool !== 'pipe') { ghostLine.visible = marker.visible = false; return; }
+    if (tool === 'measure') {
+      var mp = planePoint(e); if (!mp) return;
+      var pt = snapPoint(mp) || [rs(mp.x), elev, rs(mp.z)];
+      marker.visible = true; marker.position.set(pt[0], pt[1], pt[2]);
+      if (mA) { ghostLine.visible = true; ghostLine.geometry.setFromPoints([V(mA), V(pt)]); } else ghostLine.visible = false;
+      return;
+    }
+    if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
     var p = planePoint(e), t = null;
-    if (p) t = cursor ? constrain(p) : snapStart(p);
+    if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
+    else if (cursor) { if (p) t = constrain(p); }
+    else t = startPoint(e);
     if (t) {
       marker.visible = true; marker.position.set(t[0], t[1], t[2]);
-      $('pos').textContent = 'X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[1] * 1000) + '  Z ' + Math.round(t[2] * 1000) + ' mm' + (cursor ? '  L ' + Math.round(new T.Vector3(t[0], t[1], t[2]).distanceTo(V(cursor)) * 1000) + ' mm' : '');
-      if (cursor) { ghostLine.visible = true; ghostLine.geometry.setFromPoints([V(cursor), new T.Vector3(t[0], t[1], t[2])]); } else ghostLine.visible = false;
+      $('pos').textContent = 'X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[1] * 1000) + '  Z ' + Math.round(t[2] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : '');
+      if (cursor && tool === 'pipe') { ghostLine.visible = true; ghostLine.geometry.setFromPoints([V(cursor), V(t)]); } else ghostLine.visible = false;
     } else { marker.visible = false; ghostLine.visible = false; }
   }
 
-  function updateUi() {
-    ['nav', 'pipe', 'valve', 'del'].forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
-    $('finish').disabled = !cursor;
-    $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
-    $('undo').disabled = !hist.length;
-    curMark.visible = !!cursor && tool === 'pipe';
-    if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
-    var hints = {
-      nav: 'Drag to orbit. Two fingers to pan and zoom.',
-      pipe: cursor ? 'Tap to extend the run. Pipes snap to X or Z in 100 mm steps. ▲ ▼ add a vertical pipe.' : 'Tap the grid to set a start point, or tap an existing pipe end to branch.',
-      valve: 'Tap a pipe to place a valve on it.',
-      del: 'Tap a pipe or valve to remove it.'
-    };
-    $('hint').textContent = hints[tool];
-    if (tool !== 'pipe') { ghostLine.visible = marker.visible = false; }
+  // ---------- inspector ----------
+  function opts(list, cur) { return list.map(function (v) { return '<option value="' + v[0] + '"' + (String(v[0]) === String(cur) ? ' selected' : '') + '>' + v[1] + '</option>'; }).join(''); }
+  var NPS_OPTS = [[2, 'NPS 2'], [3, 'NPS 3'], [4, 'NPS 4'], [6, 'NPS 6']], SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
+  function showInsp() {
+    var el = $('insp');
+    if (!sel || tool !== 'sel') { el.hidden = true; return; }
+    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip }[sel.kind], it = list && list[sel.i];
+    if (!it) { sel = null; el.hidden = true; return; }
+    var h = '';
+    if (sel.kind === 'pipe') {
+      var L = V(it.a).distanceTo(V(it.b));
+      h = '<h2>Pipe ' + (sel.i + 1) + '</h2><div class="row"><label>Size<select id="i-n">' + opts(NPS_OPTS, it.n) + '</select></label><label>Schedule<select id="i-s">' + opts(SCH_OPTS, it.s) + '</select></label></div>'
+        + '<div class="row"><label>Line number<input type="text" id="i-ln" value="' + esc(it.ln) + '" maxlength="12" style="width:100%"></label></div>'
+        + '<p>Length ' + Math.round(L * 1000) + ' mm · ' + (L * lineWeight(it.n, it.s)).toFixed(1) + ' kg</p>';
+    } else if (sel.kind === 'valve') {
+      h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts([['gate', 'Gate'], ['globe', 'Globe'], ['check', 'Check'], ['ball', 'Ball']], it.k) + '</select></label></div>'
+        + '<p>NPS ' + it.n + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
+    } else if (sel.kind === 'flange') {
+      h = '<h2>Flange pair ' + (sel.i + 1) + '</h2><p>NPS ' + it.n + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
+    } else {
+      h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' NPS ' + z.n; }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
+    }
+    h += '<div class="row"><button id="i-del">Delete</button><button id="i-x">Close</button></div>';
+    el.innerHTML = h; el.hidden = false;
+    function edit(fn) { return function () { pushHist(); fn(this.value); changed(); }; }
+    if ($('i-n')) $('i-n').onchange = edit(function (v) { it.n = +v; });
+    if ($('i-s')) $('i-s').onchange = edit(function (v) { it.s = +v; });
+    if ($('i-ln')) $('i-ln').onchange = edit(function (v) { it.ln = v.trim() || 'L-001'; });
+    if ($('i-k')) $('i-k').onchange = edit(function (v) { it.k = v; });
+    if ($('i-rot')) $('i-rot').onclick = function () { pushHist(); it.r = ((it.r || 0) + 1) % 4; changed(); };
+    $('i-del').onclick = function () { removeItem(sel.kind, sel.i); };
+    $('i-x').onclick = function () { sel = null; rebuild(); };
+  }
+
+  // ---------- exports ----------
+  function saveBlob(name, blob) {
+    try {
+      var f = new File([blob], name, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f] }).catch(function () {}); return; }
+    } catch (x) {}
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function csv() {
+    return 'Item,Quantity\n' + bomRows().map(function (r) { return '"' + r[0].replace(/"/g, '""') + '","' + r[1] + '"'; }).join('\n') + '\n';
+  }
+  function dxf() {                                                  // centrelines in mm, Z up
+    var o = ['0', 'SECTION', '2', 'ENTITIES'], mm = function (v) { return (v * 1000).toFixed(1); };
+    model.pipes.forEach(function (p) {
+      o.push('0', 'LINE', '8', 'PIPE_NPS' + p.n + '_SCH' + p.s, '10', mm(p.a[0]), '20', mm(p.a[2]), '30', mm(p.a[1]), '11', mm(p.b[0]), '21', mm(p.b[2]), '31', mm(p.b[1]));
+    });
+    model.valves.forEach(function (v) { o.push('0', 'POINT', '8', 'VALVE', '10', mm(v.p[0]), '20', mm(v.p[2]), '30', mm(v.p[1])); });
+    model.flanges.forEach(function (f) { o.push('0', 'POINT', '8', 'FLANGE', '10', mm(f.p[0]), '20', mm(f.p[2]), '30', mm(f.p[1])); });
+    model.equip.forEach(function (q) { o.push('0', 'POINT', '8', 'EQUIPMENT', '10', mm(q.p[0]), '20', mm(q.p[2]), '30', mm(q.p[1])); });
+    o.push('0', 'ENDSEC', '0', 'EOF');
+    return o.join('\n') + '\n';
+  }
+  function isoSvg() {
+    var W = 1000, H = 700, M = 80, c30 = Math.cos(Math.PI / 6);
+    function pr(p) { return [(p[0] - p[2]) * c30, -(p[1] + (p[0] + p[2]) * 0.5)]; }
+    var pts = []; model.pipes.forEach(function (p) { pts.push(pr(p.a), pr(p.b)); });
+    if (!pts.length) return null;
+    var x0 = Math.min.apply(null, pts.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, pts.map(function (q) { return q[0]; }));
+    var y0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, pts.map(function (q) { return q[1]; }));
+    var sc = Math.min((W - 2 * M) / Math.max(x1 - x0, 0.5), (H - 2 * M - 70) / Math.max(y1 - y0, 0.5), 160);
+    var ox = (W - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc + 10;
+    function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
+    var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="#f5f6f4"/>';
+    s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="#14191c" stroke-width="1.5"/>';
+    model.pipes.forEach(function (p) {
+      var a = sp(p.a), b = sp(p.b);
+      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="#14191c" stroke-width="' + (1.6 + p.n * 0.3) + '" stroke-linecap="round"/>';
+    });
+    model.pipes.forEach(function (p) {
+      var a = sp(p.a), b = sp(p.b), L = V(p.a).distanceTo(V(p.b));
+      s += '<text x="' + ((a[0] + b[0]) / 2).toFixed(1) + '" y="' + ((a[1] + b[1]) / 2 - 8).toFixed(1) + '" font-size="12" text-anchor="middle" fill="#14191c" stroke="#f5f6f4" stroke-width="4" paint-order="stroke">' + Math.round(L * 1000) + '</text>';
+    });
+    var seen = {};
+    model.pipes.forEach(function (p) { [p.a, p.b].forEach(function (e) { var k = key(e); if (!seen[k]) { seen[k] = 1; var q = sp(e); s += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="3.2" fill="#14191c"/>'; } }); });
+    model.valves.forEach(function (v) {
+      var a = sp(v.p), b = sp([v.p[0] + v.d[0] * 0.1, v.p[1] + v.d[1] * 0.1, v.p[2] + v.d[2] * 0.1]);
+      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+      s += '<g transform="translate(' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><polygon points="-10,-7 0,0 -10,7" fill="#f5f6f4" stroke="#14191c" stroke-width="1.6"/><polygon points="10,-7 0,0 10,7" fill="#f5f6f4" stroke="#14191c" stroke-width="1.6"/></g>';
+    });
+    model.flanges.forEach(function (f) {
+      var a = sp(f.p), b = sp([f.p[0] + f.d[0] * 0.1, f.p[1] + f.d[1] * 0.1, f.p[2] + f.d[2] * 0.1]);
+      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI + 90;
+      s += '<g transform="translate(' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><line x1="-9" y1="-3" x2="9" y2="-3" stroke="#14191c" stroke-width="2.2"/><line x1="-9" y1="3" x2="9" y2="3" stroke="#14191c" stroke-width="2.2"/></g>';
+    });
+    var byLn = {}; model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
+    var tl = Object.keys(byLn).map(function (k) { return esc(k) + ' ' + byLn[k].toFixed(2) + ' m'; }).join('   ');
+    s += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="#14191c" stroke-width="1.5"/>';
+    s += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="#14191c">PIPEDRAFT 3D · ISOMETRIC</text>';
+    s += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="#14191c">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm, centreline lengths</text>';
+    return s + '</svg>';
   }
 
   // ---------- input ----------
-  var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null;
+  var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
+  function penNow() { return performance.now() - lastPen < 350; }
   function pinchState() {
     var k = Object.keys(ptrs), a = ptrs[k[0]], b = ptrs[k[1]];
     return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   }
   function pan(dx, dy) {
-    var h = cv.clientHeight, s = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / h;
+    var h = cv.clientHeight, s = 2 * dist * Math.tan(camP.fov * Math.PI / 360) / h;
     var right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
     var up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
   }
-  var lastPen = 0;
-  function penNow() { return performance.now() - lastPen < 350; }
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
-    else if (e.pointerType === 'touch' && penNow()) return;      // palm resting while the Pencil is in use
+    else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
     if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
@@ -508,61 +930,135 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointercancel', end);
   cv.addEventListener('wheel', function (e) { e.preventDefault(); dist = Math.min(60, Math.max(0.8, dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
 
-  // ---------- controls ----------
-  document.querySelectorAll('[data-tool]').forEach(function (b) {
-    b.onclick = function () { tool = b.getAttribute('data-tool'); updateUi(); };
-  });
+  // ---------- UI ----------
+  var TOOLS = ['nav', 'sel', 'pipe', 'valve', 'flange', 'cap', 'equip', 'measure', 'del'];
+  function setTool(t) {
+    tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
+    if (t !== 'sel') sel = null;
+    rebuild(); updateUi();
+  }
+  function updateUi() {
+    TOOLS.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
+    document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
+    $('finish').disabled = !cursor;
+    $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
+    $('undo').disabled = !hist.length;
+    $('ang').setAttribute('aria-pressed', String(ang45));
+    $('ortho').setAttribute('aria-pressed', String(orthoOn));
+    $('dims').setAttribute('aria-pressed', String(showDims));
+    curMark.visible = !!cursor && tool === 'pipe';
+    if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
+    var hints = {
+      nav: 'Drag to orbit. Two fingers to pan and zoom.',
+      sel: 'Tap a pipe, valve, flange or equipment to edit it.',
+      pipe: cursor ? 'Tap to extend the run. ' + (ang45 ? 'Snaps to 45° steps. ' : 'Snaps to X or Z. ') + '▲ ▼ add a vertical pipe.' : 'Tap to start: grid, a pipe end, a nozzle, or anywhere on a pipe to branch.',
+      valve: 'Tap a pipe to place a ' + VALVE_NAME[vk].toLowerCase() + '.',
+      flange: 'Tap a pipe to place a flange pair with gasket and bolts.',
+      cap: 'Tap an open pipe end to cap it.',
+      equip: 'Tap the grid to place the ' + EQUIP[eqk].name.toLowerCase() + '. Its nozzles are start points for pipes.',
+      measure: 'Tap two points to measure. Pipe ends and nozzles snap.',
+      del: 'Tap a pipe, valve, flange or equipment to remove it.'
+    };
+    $('hint').textContent = hints[tool];
+    if (tool !== 'pipe' && tool !== 'equip' && tool !== 'measure') { ghostLine.visible = marker.visible = false; }
+  }
+  TOOLS.forEach(function (t) { $('t-' + t).onclick = function () { setTool(t); }; });
   $('nps').onchange = function () { curN = +$('nps').value; };
   $('sched').onchange = function () { curS = +$('sched').value; };
+  $('ln').onchange = function () { curL = $('ln').value.trim() || 'L-001'; $('ln').value = curL; };
+  $('snap').onchange = function () { snap = +$('snap').value; };
+  $('ang').onclick = function () { ang45 = !ang45; updateUi(); };
+  $('vk').onchange = function () { vk = $('vk').value; updateUi(); };
+  $('eqk').onchange = function () { eqk = $('eqk').value; updateUi(); };
+  $('rot').onclick = function () { curRot = (curRot + 1) % 4; toast('Rotation ' + curRot * 90 + '°'); };
   $('finish').onclick = function () { cursor = null; updateUi(); };
   $('undo').onclick = function () {
     if (!hist.length) return;
-    model = JSON.parse(hist.pop()); cursor = null; save(); rebuild(); updateUi();
-  };
-  $('clear').onclick = function () {
-    if ($('clear').dataset.arm !== '1') {
-      $('clear').dataset.arm = '1'; $('clear').textContent = 'Tap again';
-      setTimeout(function () { $('clear').dataset.arm = ''; $('clear').textContent = 'Clear'; }, 2500);
-      return;
-    }
-    $('clear').dataset.arm = ''; $('clear').textContent = 'Clear';
-    pushHist(); model = { pipes: [], valves: [] }; cursor = null; changed();
+    model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
   };
   $('bomBtn').onclick = function () { var b = $('bom'); b.hidden = !b.hidden; $('bomBtn').setAttribute('aria-pressed', String(!b.hidden)); };
+  $('fileBtn').onclick = function () { var f = $('file'); f.hidden = !f.hidden; $('fileBtn').setAttribute('aria-pressed', String(!f.hidden)); };
   function vertical(sign) {
     if (cursor) {
       var y = Math.round((cursor[1] + sign * STEP) * 1000) / 1000;
       if (y < 0) return;
       pushHist();
       var q = [cursor[0], y, cursor[2]];
-      model.pipes.push({ a: cursor, b: q, n: curN, s: curS }); cursor = q; elev = y; changed();
+      addPipe(cursor, q, curN, curS, curL); cursor = q; elev = y; changed();
     } else {
       elev = Math.max(0, Math.round((elev + sign * STEP) * 1000) / 1000); updateUi();
     }
   }
   $('up').onclick = function () { vertical(1); };
   $('down').onclick = function () { vertical(-1); };
+  ['iso', 'top', 'front', 'right'].forEach(function (v) { $('v-' + v).onclick = function () { setView(v); }; });
+  $('v-fit').onclick = fit;
+  $('ortho').onclick = function () { orthoOn = !orthoOn; updateUi(); };
+  $('dims').onclick = function () { showDims = !showDims; rebuild(); updateUi(); };
+  $('isoBtn').onclick = function () {
+    var svg = isoSvg();
+    $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
+    $('iso').hidden = false;
+  };
+  $('iso-close').onclick = function () { $('iso').hidden = true; };
+  $('iso-save').onclick = function () { var s = isoSvg(); if (s) saveBlob('pipedraft-iso.svg', new Blob([s], { type: 'image/svg+xml' })); else toast('Nothing to save'); };
+  $('f-save').onclick = function () { saveBlob('pipedraft.json', new Blob([JSON.stringify({ app: 'pipedraft', version: 2, model: model }, null, 1)], { type: 'application/json' })); };
+  $('f-open').onclick = function () { $('openf').click(); };
+  $('openf').onchange = function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      try {
+        var d = JSON.parse(rd.result), m = d && d.model ? d.model : d;
+        if (!m || !Array.isArray(m.pipes)) throw new Error('bad');
+        pushHist(); model = normalize(m); cursor = null; sel = null; changed(); fit(); toast('Project opened');
+      } catch (x) { toast('That file is not a PipeDraft project'); }
+    };
+    rd.readAsText(f); this.value = '';
+  };
+  $('f-csv').onclick = function () { saveBlob('pipedraft-bom.csv', new Blob([csv()], { type: 'text/csv' })); };
+  $('f-dxf').onclick = function () { saveBlob('pipedraft.dxf', new Blob([dxf()], { type: 'application/dxf' })); };
+  $('f-png').onclick = function () { renderer.render(scene, camera); cv.toBlob(function (b) { if (b) saveBlob('pipedraft.png', b); }); };
+  $('f-clear').onclick = function () {
+    var b = $('f-clear');
+    if (b.dataset.arm !== '1') {
+      b.dataset.arm = '1'; b.textContent = 'Tap again to clear';
+      setTimeout(function () { b.dataset.arm = ''; b.textContent = 'Clear everything'; }, 2500);
+      return;
+    }
+    b.dataset.arm = ''; b.textContent = 'Clear everything';
+    pushHist(); model = blank(); cursor = null; sel = null; changed();
+  };
 
   // ---------- iPad niceties ----------
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
   cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  window.addEventListener('keydown', function (e) {                   // Magic Keyboard / Smart Keyboard
+  window.addEventListener('keydown', function (e) {                 // Magic Keyboard / Smart Keyboard
+    var tg = e.target && e.target.tagName;
+    if (tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA') return;
     var k = e.key.toLowerCase();
-    if ((e.metaKey || e.ctrlKey) && k === 'z') { e.preventDefault(); $('undo').click(); }
-    else if (k === 'escape' || k === 'enter') { cursor = null; updateUi(); }
-    else if (k === 'n') { tool = 'nav'; updateUi(); }
-    else if (k === 'p') { tool = 'pipe'; updateUi(); }
-    else if (k === 'v') { tool = 'valve'; updateUi(); }
-    else if (k === 'd' || k === 'delete' || k === 'backspace') { tool = 'del'; updateUi(); }
+    if (e.metaKey || e.ctrlKey) { if (k === 'z') { e.preventDefault(); $('undo').click(); } return; }
+    var map = { n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
+    if (k === 'escape' || k === 'enter') { cursor = null; sel = null; mA = null; rebuild(); updateUi(); }
+    else if (map[k]) setTool(map[k]);
     else if (k === 'arrowup') vertical(1);
     else if (k === 'arrowdown') vertical(-1);
   });
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (x) {}
 
+  // Hook for the headless tests in test/.
+  window.PipeDraft = {
+    load: function (m) { model = normalize(m); sel = null; rebuild(); },
+    get model() { return model; },
+    addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
+    nozzles: function () { return nozList; }, iso: isoSvg, dxf: dxf, csv: csv,
+    project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
+  };
+
   // ---------- boot ----------
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
-  if ($('bom').hidden === false && window.innerWidth < 900) { $('bom').hidden = true; $('bomBtn').setAttribute('aria-pressed', 'false'); }
+  if (window.innerWidth < 900) { $('bom').hidden = true; $('bomBtn').setAttribute('aria-pressed', 'false'); }
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
