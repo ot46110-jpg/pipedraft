@@ -162,7 +162,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <button id="ax-y" aria-pressed="false" aria-label="Lock to Y">Y</button>
           <button id="ax-z" aria-pressed="false" aria-label="Lock to Z, up and down">Z↑</button>
         </div>
-        <button id="ang" aria-pressed="false" aria-label="Allow 45 degree turns">45° turns</button>
         <button id="finish">Finish run</button>
       </div>
       <div data-for="equip"><button id="rot">Rotate 90°</button></div>
@@ -175,6 +174,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <label class="field">Line number<input type="text" id="ln" value="L-001" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <label class="field">Flow on new pipe<select id="flow"><option value="1" selected>Along drawing direction</option><option value="0">Not set</option></select></label>
         <label class="field">Grid snap<select id="snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select></label>
+        <label class="field">Turns<select id="ang"><option value="0" selected>90° only</option><option value="1">90° and 45°</option></select></label>
       </div>
     </div>
     <div id="elev" class="float"><button id="up" aria-label="Raise 0.5 m">▲</button><output id="elv">EL +0.000 m</output><button id="down" aria-label="Lower 0.5 m">▼</button></div>
@@ -1867,12 +1867,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     RAIL.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
     $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
     $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) syncParts();
-    $('psum').textContent = 'NPS ' + curN + ' · SCH ' + curS + ' · ' + curL;
+    $('psum').textContent = 'NPS ' + curN + ' · SCH ' + curS + ' · ' + curL + (ang45 ? ' · 45°' : '');
+    $('axis').hidden = !cursor; $('finish').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
     $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
     $('undo').disabled = !hist.length;
-    $('ang').setAttribute('aria-pressed', String(ang45));
+    $('ang').value = ang45 ? '1' : '0';
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
     $('dims').setAttribute('aria-pressed', String(showDims));
@@ -1911,7 +1912,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('ln').onchange = function () { curL = $('ln').value.trim() || 'L-001'; $('ln').value = curL; updateUi(); };
   $('flow').onchange = function () { curFlow = +$('flow').value; };
   $('snap').onchange = function () { snap = +$('snap').value; };
-  $('ang').onclick = function () { ang45 = !ang45; updateUi(); };
+  $('ang').onchange = function () { ang45 = $('ang').value === '1'; updateUi(); };
   function setSpec(k, v) { pushHist(); model.spec[k] = v; changed(); }
   $('sp-el').onchange = function () { setSpec('elbow', this.value); };
   $('sp-red').onchange = function () { setSpec('reducer', this.value); };

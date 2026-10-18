@@ -48,7 +48,7 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Header: view buttons (Iso, Top, Front, Right), Fit, Undo, BOM, and the ⋯ menu (isometric sheet, project spec, orthographic, pipe lengths, file actions).
 - Left rail: six tools only: View, Select, Pipe, Parts, Measure, Delete. Parts opens a narrow scrolling list (218 px) with one folding section per category (Valves, Flanges, Inline, Ends, Equipment, Supports, Instruments), one section open at a time. Choosing a row arms that part, then tap the canvas. The list is built once by `buildParts()` and `syncParts()` only changes classes, so the scroll position survives every tap.
 - The ⋯ menu has three folding groups (Sheets, Project, File), one open at a time. Put new menu actions into a group, do not add loose buttons.
-- Bottom centre: context bar shown only for Pipe (settings summary, 45° turns, Finish run) and Equipment (Rotate). The summary button opens the pipe settings sheet (size, schedule, line number, snap).
+- Bottom centre: context bar shown only for Pipe and Equipment (Rotate). For Pipe it is the settings summary alone until a run starts, then the axis buttons (Auto, X, Y, Z↑) and Finish run appear. The summary button opens the pipe settings sheet (size, schedule, line number, snap, flow on new pipes, 45° turns).
 - Right column: inspector, project spec and BOM, shown only when opened. Elevation up and down sit bottom right.
 - Do not add toolbar buttons. New parts go into `PARTS` as chips, new actions into the ⋯ menu, new per-item settings into the inspector.
 - Touch targets are at least 48 px. Tapping the canvas closes the pipe settings and the ⋯ menu.
