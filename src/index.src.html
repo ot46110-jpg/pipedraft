@@ -763,7 +763,20 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         [[0, 1, 2], [0, 2, 1], [1, 2, 0]].forEach(function (c3) {
           if (!hdr && L[c3[0]].d.dot(L[c3[1]].d) < -0.999) { hdr = [L[c3[0]], L[c3[1]]]; br = L[c3[2]]; }
         });
-        if (!hdr) { warns.push('Three pipes meet without a straight run through. Only tees, laterals and branches are supported.'); return; }
+        if (!hdr) {                                                 // a corner with a third pipe: an elbow on two of them, the third branches off the elbow
+          var prs = [[0, 1], [0, 2], [1, 2]].map(function (c) { return { c: c, n: L[c[0]].n + L[c[1]].n, ix: L[c[0]].i + L[c[1]].i }; }).sort(function (a, b) { return b.n - a.n || a.ix - b.ix; });
+          var e0 = L[prs[0].c[0]], e1 = L[prs[0].c[1]], b3 = L[3 - prs[0].c[0] - prs[0].c[1]], d3 = e0.d.dot(e1.d);
+          if (d3 > 0.999) { j.bad = true; warns.push('Pipes ' + (e0.i + 1) + ' and ' + (e1.i + 1) + ' leave the same point in the same direction, so they overlap.'); return; }
+          j.type = 'elbow'; j.kind = ov.el || spec.elbow; j.elL = [e0, e1]; j.nmax = Math.max(e0.n, e1.n);
+          j.defl = Math.PI - Math.acos(clamp(d3, -1, 1)); j.R = ELBOW_F[j.kind] * Math.max(j.nmax, 1) * 0.0254; j.t = j.R * Math.tan(j.defl / 2);
+          setTrim([e0, e1], j.t);
+          var k3 = ov.br === 'stubpad' ? 'stubpad' : (ov.br === 'olet' || (!ov.br && b3.n <= j.nmax / 2)) ? 'olet' : 'stub';
+          if (k3 === 'olet' && b3.n >= j.nmax) k3 = 'stub';
+          j.corner = { leg: b3, kind: k3 === 'olet' ? 'olet' : 'stub', pad: k3 === 'stubpad', oletKind: ov.olet || spec.olet };
+          setTrim([b3], (j.R / Math.cos(j.defl / 2) - j.R) + (k3 === 'olet' ? 0.06 : 0));
+          warns.push('Three pipes meet at a bend, so the branch is made on the elbow (' + (k3 === 'olet' ? 'olet' : 'stub-in') + '). Check it with the stress engineer, or move the branch onto a straight run for a tee.');
+          return;
+        }
         var nh = Math.max(hdr[0].n, hdr[1].n), dB = Math.abs(br.d.dot(hdr[0].d));
         if (hdr[0].n !== hdr[1].n) warns.push('Header changes size at a branch, ' + sz(hdr[0].n) + ' to ' + nl(hdr[1].n) + '. Add a reducer.');
         j.hdr = hdr; j.br = br; j.nh = nh;
@@ -771,7 +784,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           if (Math.abs(dB - 0.7071) < 0.03) {
             j.type = 'lat'; j.H = 1.5 * OD[nh] / 1000; j.B = 2.5 * OD[br.n] / 1000;
             setTrim(hdr, j.H); setTrim([br], j.B);
-          } else warns.push('A branch meets the header at an angle that is not 90° or 45°. No fitting for it.');
+          } else { j.bad = true; warns.push('A branch meets the header at an angle that is not 90° or 45°. No fitting for it.'); }
           return;
         }
         var kind = ov.br || (spec.branch === 'tee' ? 'tee' : (br.n <= nh / 2 ? 'olet' : 'tee'));
@@ -781,7 +794,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         else if (br.n === nh) { j.type = 'tee'; setTrim(hdr, TEE_C[nh]); setTrim([br], TEE_C[nh]); }
         else { j.type = 'rtee'; setTrim(hdr, TEE_C[nh]); setTrim([br], TEE_C[br.n]); }
       } else {
-        j.type = 'cross'; setTrim(L, TEE_C[nmax]);
+        var xo = cnt === 4 ? [1, 2, 3].filter(function (m) { return L[0].d.dot(L[m].d) < -0.999; }) : [];
+        var xr = xo.length === 1 ? [1, 2, 3].filter(function (m) { return m !== xo[0]; }) : [];
+        if (xr.length === 2 && L[xr[0]].d.dot(L[xr[1]].d) < -0.999) { j.type = 'cross'; j.crossAxis = [L[0].d, L[xr[0]].d]; setTrim(L, TEE_C[nmax]); }
+        else { j.bad = true; warns.push(cnt + ' pipes meet at one point and they do not make a cross. No fitting for it.'); }
       }
     });
 
@@ -832,28 +848,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (gap > SPAN[p.n] + 0.001) warns.push('Pipe ' + (i + 1) + ' spans ' + gap.toFixed(1) + ' m without a support. Keep it under about ' + SPAN[p.n] + ' m for ' + sz(p.n) + '.');
     });
 
-    // 5. Clash check between pipes that do not share a joint.
-    var ends = model.pipes.map(function (p) { return [key(p.a), key(p.b)]; }), clashN = 0;
-    for (var x = 0; x < model.pipes.length; x++) {
-      for (var y = x + 1; y < model.pipes.length; y++) {
-        if (ends[x][0] === ends[y][0] || ends[x][0] === ends[y][1] || ends[x][1] === ends[y][0] || ends[x][1] === ends[y][1]) continue;
-        var px = model.pipes[x], py = model.pipes[y];
-        var lim = (OD[px.n] + OD[py.n]) / 2000 - 0.002;
-        var dd = segDist(V(px.a), V(px.b), V(py.a), V(py.b));
-        if (dd < lim) {
-          clashN++;
-          if (clashN <= 5) warns.push('Clash: pipe ' + (x + 1) + ' and pipe ' + (y + 1) + ' overlap by ' + Math.round((lim - dd) * 1000) + ' mm.');
-          [x, y].forEach(function (q) { if (pipeMesh[q]) pipeMesh[q].material.emissive.setHex(0x7a1d14); });
-        }
-      }
-    }
-    if (clashN > 5) warns.push((clashN - 5) + ' more clashes not listed.');
+    // 5. Clash check, see clashes(). The pipes that run into something turn red.
+    var clashList = clashes();
+    clashList.slice(0, 8).forEach(function (x) { warns.push(x.text + ' near ' + cadText(x.at) + '.'); });
+    if (clashList.length > 8) warns.push((clashList.length - 8) + ' more clashes not listed.');
+    clashList.forEach(function (x) { [x.i, x.kind === 'pipe' ? x.j : -1].forEach(function (q) { if (q >= 0 && pipeMesh[q] && pipeMesh[q].material.emissive) pipeMesh[q].material.emissive.setHex(0x7a1d14); }); });
 
     // Two 90° elbows with no straight pipe between them, bending the same way, are one return bend.
     model.pipes.forEach(function (p, i) {
       if (!(pipeLen[i] < 0.002)) return;
       var ja = joints[key(p.a)], jb = joints[key(p.b)];
-      if (!ja || !jb || ja.type !== 'elbow' || jb.type !== 'elbow') return;
+      if (!ja || !jb || ja.type !== 'elbow' || jb.type !== 'elbow' || ja.legs.length !== 2 || jb.legs.length !== 2) return;
       if (Math.abs(ja.defl - Math.PI / 2) > 0.05 || Math.abs(jb.defl - Math.PI / 2) > 0.05) return;
       var oa = ja.legs.filter(function (l) { return l.i !== i; })[0], ob = jb.legs.filter(function (l) { return l.i !== i; })[0];
       if (!oa || !ob || oa.d.dot(ob.d) < 0.999) return;
@@ -863,11 +868,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // 6. Fittings.
     Object.keys(joints).forEach(function (k) {
       var j = joints[k];
+      if (j.bad) {                                                  // no fitting can be made here: a red ball shows where
+        var bm0 = new T.Mesh(new T.SphereGeometry(Math.max(OD[j.nmax || 4] / 2000 * 1.5, 0.07), 16, 12), new T.MeshBasicMaterial({ color: 0xd9534f, transparent: true, opacity: 0.55 }));
+        bm0.position.copy(V(j.pos)); world.add(bm0); return;
+      }
       if (!j.type) return;
       curRef = ['joint', k];
       var P = V(j.pos), L = j.legs, n = j.nmax, r = OD[n] / 2000, mesh, fm = 0xf2f6f8;
       if (j.type === 'elbow') {
-        var d1 = L[0].d, d2 = L[1].d;
+        var EL = j.elL || L, d1 = EL[0].d, d2 = EL[1].d;
         var A = P.clone().addScaledVector(d1, j.t), B = P.clone().addScaledVector(d2, j.t);
         var C = P.clone().addScaledVector(d1.clone().add(d2).normalize(), j.R / Math.cos(j.defl / 2));
         var x1 = A.clone().sub(C).normalize(), xb = B.clone().sub(C).normalize();
@@ -877,6 +886,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mesh.position.copy(C);
         if (j.ret) { if (j.retMain) add('elbow', 'Return bend 180° ' + j.kind + ' ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc'); }
         else add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind + ' ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
+        if (j.corner) {                                             // the third pipe leaves the elbow through an olet or a stub-in
+          var cg = new T.Group(); cg.add(mesh);
+          var cb = j.corner, bl = cb.leg, gapc = j.R / Math.cos(j.defl / 2) - j.R;
+          if (cb.kind === 'olet') {
+            var obr = OD[bl.n] / 2000 * 1.4, oln = 0.06, boss = new T.Mesh(new T.CylinderGeometry(obr, obr, oln, 24), mat(fm, 0.35));
+            boss.position.copy(P).addScaledVector(bl.d, gapc + oln / 2); boss.quaternion.setFromUnitVectors(UP, bl.d); cg.add(boss);
+            add('olet', OLET_NAME[cb.oletKind] + ' on elbow, ' + sizeText(j.nmax, bl.n) + ' SCH ' + j.s, 1, 'pc');
+          } else add('olet', 'Stub-in branch' + (cb.pad ? ' with reinforcing pad' : '') + ' on elbow, PE, ' + sizeText(j.nmax, bl.n) + ' SCH ' + j.s, 1, 'pc');
+          mesh = cg;
+        }
       } else if (j.type === 'reducer') {
         var big = L[0].n >= L[1].n ? L[0] : L[1], sm = big === L[0] ? L[1] : L[0];
         mesh = new T.Mesh(new T.CylinderGeometry(OD[big.n] / 2000, OD[sm.n] / 2000, j.rl, 24), mat(j.ecc ? 0xe6d9ae : j.swage ? 0xcfe0b0 : j.bush ? 0xe0c9a0 : j.rc ? 0xd0d8e0 : 0xc9d6dc, 0.35));
@@ -924,7 +943,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mesh.position.copy(P).addScaledVector(L[0].d, E); mesh.quaternion.setFromUnitVectors(UP, out);
         add('cap', (j.plug ? 'Plug, round head, THD' : 'Cap ' + endConn(n)) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
       } else {
-        mesh = new T.Mesh(new T.SphereGeometry(r * 1.5, 20, 14), mat(fm, 0.35)); mesh.position.copy(P);
+        mesh = new T.Group();                                       // a cross is two pipes through each other
+        (j.crossAxis || [UP]).forEach(function (ax) { var cx = new T.Mesh(new T.CylinderGeometry(r * 1.08, r * 1.08, TEE_C[n] * 2, 24), mat(fm, 0.35)); cx.quaternion.setFromUnitVectors(UP, ax); mesh.add(cx); });
+        mesh.position.copy(P);
         add('cross', 'Cross ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
       }
       mesh.traverse(function (x) { x.userData = { kind: 'fit', i: k }; });
@@ -1134,7 +1155,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
-    clashWarnings();
     hydroWarnings();
     matDirty = true;
     renderBom(); showInsp();
@@ -1211,6 +1231,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (J.type === 'olet' && (side === 'a' ? tr[0] : tr[1]) < 0.001) {   // the header runs on through an olet, it is one pipe
           union(pc.id, 'J' + key(J.pos)); (oletEnds[key(J.pos)] = oletEnds[key(J.pos)] || []).push({ pc: pc, side: side }); return;
         }
+        if (J.type && J.corner && J.corner.leg.i === i) { var wc = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(wc, pc.id, 'J' + key(J.pos)); return; }
         if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
         if (J.legs.length === 2) {
           var pk = 'P@' + k, w3 = byPair[pk];
@@ -1308,11 +1329,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
     });
     return out;
-  }
-  function clashWarnings() {
-    var c = clashes();
-    c.slice(0, 8).forEach(function (x) { warns.push(x.text + ' near ' + cadText(x.at) + '.'); });
-    if (c.length > 8) warns.push((c.length - 8) + ' more clashes not listed.');
   }
 
   // ---------- line list ----------
@@ -2400,11 +2416,24 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.1 + Math.sqrt(p.n) * 0.45).toFixed(2) + '" stroke-linecap="round"/>';
     });
     // Butt welds at fittings.
-    fabrication().welds.forEach(function (w) {
-      var q = sp(w.pos), tx = 'W' + w.no, tw = tagText(tx, 7.5);
+    var fabI = fabrication();
+    fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
+      var q = sp(w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
+      function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
       body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
-      want(1, q[0], q[1], tw, 9, [[tw / 2 + 3, 9]].concat([[-tw / 2 - 3, 9], [tw / 2 + 3, -9], [-tw / 2 - 3, -9]], ring([14, 20, 28], [-45, 45, -135, 135, -90, 90, 0, 180])),
-        function (cx, cy, d) { return (d > 14 ? leader(q[0], q[1], cx, cy, 4) : '') + svgText(cx, cy + 2.6, tx, 7.5, 'middle'); });
+      want(1, q[0], q[1], rr * 2 + 1, rr * 2 + 1, ring([rr + 6, rr + 12, rr + 20, rr + 30], [-45, 45, -135, 135, -90, 90, 0, 180]),
+        function (cx, cy) {
+          return leader(q[0], q[1], cx, cy, 8) + '<polygon points="' + hex(cx, cy, 9) + '" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>'
+            + (w.field ? '<polygon points="' + hex(cx, cy, 11.5) + '" fill="none" stroke="' + INK + '" stroke-width="0.9"/>' : '')
+            + svgText(cx, cy + 2.6, tx, tx.length > 3 ? 5.5 : 7, 'middle', 600);
+        });
+    });
+    fabI.spools.forEach(function (s) {                              // the spool number, on the longest piece of the spool
+      var big = s.pieces.slice().sort(function (a, b) { return b.len - a.len; })[0]; if (!big) return;
+      var q = sp([(big.pa[0] + big.pb[0]) / 2, (big.pa[1] + big.pb[1]) / 2, (big.pa[2] + big.pb[2]) / 2]);
+      want(2, q[0], q[1], 34, 13, sides(34, 13), function (cx, cy, d) {
+        return (d > 24 ? leader(q[0], q[1], cx, cy, 8) : '') + '<rect x="' + f1(cx - 15) + '" y="' + f1(cy - 6.5) + '" width="30" height="13" rx="2" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>' + svgText(cx, cy + 3.2, s.id, 8.5, 'middle', 600);
+      });
     });
 
     // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
@@ -2450,12 +2479,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       want(2, cx, cy, tagText(st, 8.5), 10, sides(tagText(st, 8.5), 10).map(function (c) { return [c[0], c[1] + ny * 6]; }), function (px, py) { return svgText(px, py + 3, st, 8.5, 'middle'); });
     });
 
-    // Flow arrows near the far end of each pipe, clear of the dimension.
+    // Flow arrows: on the longest pipes, well apart, a few for each line rather than one on every pipe.
+    var fcand = [];
     model.pipes.forEach(function (p) {
       if (!p.fl) return;
-      var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1];
-      if (Math.hypot(dx, dy) < 40) return;
-      body += '<g class="flow" transform="translate(' + f1(a[0] + dx * 0.7) + ' ' + f1(a[1] + dy * 0.7) + ') rotate(' + f1(Math.atan2(dy, dx) * 180 / Math.PI + (p.fl > 0 ? 0 : 180)) + ')" fill="' + INK + '">' + SYM.flow.svg + '</g>';
+      var a0 = sp(p.a), b0 = sp(p.b), dx = b0[0] - a0[0], dy = b0[1] - a0[1], L0 = Math.hypot(dx, dy);
+      if (L0 >= 40) fcand.push({ p: p, a: a0, dx: dx, dy: dy, L: L0 });
+    });
+    var fkept = [];
+    fcand.sort(function (x, y) { return y.L - x.L; }).forEach(function (c) {
+      var mx = c.a[0] + c.dx * 0.55, my = c.a[1] + c.dy * 0.55, near = fkept.some(function (k) { return Math.hypot(k.x - mx, k.y - my) < (k.ln === c.p.ln ? 170 : 90); });
+      if (near && fkept.some(function (k) { return k.ln === c.p.ln; })) return;
+      if (near) return;
+      fkept.push({ x: mx, y: my, ln: c.p.ln });
+      body += '<g class="flow" transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(Math.atan2(c.dy, c.dx) * 180 / Math.PI + (c.p.fl > 0 ? 0 : 180)) + ')" fill="' + INK + '">' + SYM.flow.svg + '</g>';
+      occ.push([mx - 8, my - 8, mx + 8, my + 8]);
     });
 
     // Item balloons point at the material list.
@@ -2514,7 +2552,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var q9 = sp(j.pos), ft = { top: 'FOT', bottom: 'FOB', side: 'FOS' }[j.flatEff || 'bottom'];
         want(3, q9[0], q9[1], 24, 10, sides(24, 10), function (cx, cy) { return svgText(cx, cy + 3, ft, 8.5, 'middle', 600); });
       }
-      if (j.type && (j.type !== 'elbow' || j.retMain)) balloon(compDesc.joint[k], j.pos, 4);
+      if (j.type && (j.type !== 'elbow' || j.retMain || j.corner)) balloon(compDesc.joint[k], j.pos, 4);
     });
     // One balloon per pipe row, on its longest run.
     var longest = {};
@@ -2536,7 +2574,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // Axes, material list and title block.
     var ax = 64, ay = H - TB - 52;
-    [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y'], [[0, 1, 0], 'Z']].forEach(function (a3) {
+    [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y (N)'], [[0, 1, 0], 'Z']].forEach(function (a3) {
       var v = pr(a3[0]), ex = ax + v[0] * 38, ey = ay + v[1] * 38;
       o += '<line x1="' + ax + '" y1="' + ay + '" x2="' + f1(ex) + '" y2="' + f1(ey) + '" stroke="' + INK + '" stroke-width="1.2"/>' + svgText(ex + v[0] * 8, ey + v[1] * 8 + 3, a3[1], 10, 'middle', 600);
     });

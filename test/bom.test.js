@@ -48,7 +48,7 @@ check('45 degree elbow', has('Elbow 45° LR BW, NPS 4 SCH 40 | 1'), rows());
 
 // Clash between unconnected pipes.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [2, -1, 0], b: [2, 1, 0], n: 4 }], valves: [] });
-check('clash reported', PD.warns().some(w => w.startsWith('Clash')), PD.warns().join('\n'));
+check('clash reported', PD.warns().some(w => w.includes('run into each other')), PD.warns().join('\n'));
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [2, 0, 1], b: [2, 2, 1], n: 4 }], valves: [] });
 check('no clash when apart', !PD.warns().some(w => w.startsWith('Clash')));
 
@@ -401,7 +401,7 @@ check('dimension lines run along the pipe with the centreline length', (isoP.mat
 check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
 check('equipment is a dashed outline with its nozzles and tag', isoP.includes('stroke-dasharray="6 3"') && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
-check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y<') && isoP.includes('>Z<'));
+check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y (N)<') && isoP.includes('>Z<'));
 check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('skewed into the plane of its pipe'));
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
 check('a bare pipe has a balloon for its pipe row', PD.iso().includes('r="9.5"') && PD.iso().includes('Pipe, NPS 4 SCH 40, BE'));
@@ -558,7 +558,15 @@ check('two collinear pipes meet in one butt weld', fb.welds.length === 1 && fb.p
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 1 }, { a: [4, 0, 0], b: [4, 0, 2], n: 1 }], valves: [] }); fb = PD.fab();
 check('small bore welds are socket welds by default', fb.welds.length === 2 && fb.welds.every(w => w.kind === 'SW'), JSON.stringify(fb.welds.map(w => w.kind)));
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [] });
-check('the iso sheet numbers the welds', PD.iso().includes('>W1<') && PD.iso().includes('>W2<'));
+check('the iso sheet numbers the welds in circles and marks the spools', PD.iso().includes('>W1</text>') && PD.iso().includes('>W2</text>') && PD.iso().includes('>S01<'));
+const flowCount = svg => (svg.match(/class="flow"/g) || []).length;
+PD.load({ pipes: [0, 1, 2, 3, 4, 5].map(i => ({ a: [i, 0, 0], b: [i + 1, 0, 0], n: 4, fl: 1 })), valves: [] });
+check('flow arrows are not drawn on every short pipe of a line', flowCount(PD.iso('', 0)) >= 1 && flowCount(PD.iso('', 0)) < 6, String(flowCount(PD.iso('', 0))));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [6, 0, 0], n: 4, fl: 1 }, { a: [0, 0, 3], b: [6, 0, 3], n: 4, fl: -1, ln: 'L-002' }], valves: [] });
+check('every line with a flow keeps at least one arrow', flowCount(PD.iso('', 0)) === 2);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [6, 0, 0], n: 4 }], valves: [] });
+check('no flow set means no arrow', flowCount(PD.iso('', 0)) === 0);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [] });
 
 // Isometric sheet: auto layout, one sheet per line, auto view, title block.
 const dots = svg => [...svg.matchAll(/<circle cx="([\d.\-]+)" cy="([\d.\-]+)" r="9.5"/g)].map(m => [+m[1], +m[2]]);
@@ -756,6 +764,23 @@ check('a wafer valve goes between two flanges', PD.model.flanges.length === 2);
 fresh(run4()); ve('auto'); chipTap('valve', 'gate'); tapOn([0.5, 1, 0]);
 check('a valve close to the end of a pipe that is already taken is placed in the pipe with room for its flanges', PD.model.valves.length === 1);
 ve('auto');
+
+// Three pipes at a bend, a real cross, and joints that cannot be made.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 3], n: 4 }, { a: [3, 0, 0], b: [3, 3, 0], n: 4 }], valves: [] });
+check('a branch at a bend becomes an elbow with a stub-in', has('Elbow 90° LR BW, NPS 4 SCH 40 | 1') && has('Stub-in branch on elbow, PE, NPS 4 SCH 40 | 1'), rows());
+check('and the bend warns once to check it', PD.warns().some(w => w.includes('meet at a bend')) && !PD.warns().some(w => w.includes('without a straight run')), PD.warns().join());
+check('the pipes are cut back for the elbow, so none is left overlapping', Math.abs(pipeQty() - (9 - 2 * 0.1524 - 0.0632)) < 0.02, String(pipeQty()));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 3], n: 4 }, { a: [3, 0, 0], b: [3, 3, 0], n: 2 }], valves: [] });
+check('a branch at half size or less on a bend is an olet', has('Weldolet BW on elbow, NPS 4×2 SCH 40 | 1'), rows());
+const fb2 = PD.fab();
+check('the cut list covers the bend: welds at every pipe end, one spool', fb2.welds.length === 3 && fb2.spools.length === 1 && fb2.pieces.length === 3, JSON.stringify([fb2.welds.length, fb2.spools.length, fb2.pieces.length]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0, 0], n: 4 }, { a: [3, 0, -2], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 2], n: 4 }], valves: [] });
+check('four pipes through one point make a cross', has('Cross BW, NPS 4 SCH 40 | 1') && !PD.warns().some(w => w.includes('do not make a cross')), rows() + PD.warns().join());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 2], n: 4 }, { a: [3, 0, 0], b: [3, 2, 0], n: 4 }], valves: [] });
+check('four pipes that are not a cross are reported and get no fitting', PD.warns().some(w => w.includes('4 pipes meet at one point')) && !has('Cross BW'), rows() + PD.warns().join());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0, 0], n: 4 }, { a: [3, 0, 0], b: [4.5, 0, 0.6], n: 4 }], valves: [] });
+check('a branch at an odd angle is reported', PD.warns().some(w => w.includes('not 90° or 45°')), PD.warns().join());
+check('and the joint with no fitting makes no weld numbers', PD.fab().welds.filter(w => Math.abs(w.pos[0] - 3) < 0.2).length === 0, JSON.stringify(PD.fab().welds.map(w => w.pos)));
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
