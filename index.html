@@ -247,6 +247,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <summary>File</summary>
         <button id="f-save">Save project (.json)</button>
         <button id="f-open">Open project</button>
+        <button id="f-bk">Backups</button>
         <button id="f-csv">Export BOM (.csv)</button>
         <button id="f-fab">Export cut list and welds (.csv)</button>
         <button id="f-dxf">Export centrelines (.dxf)</button>
@@ -274,6 +275,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <section id="fab" class="sheet" hidden aria-label="Cut list and welds">
       <header><h2>Cut list and welds</h2><button id="fab-csv">Save .csv</button><button id="fab-close">Close</button></header>
       <div id="fabBody"></div>
+    </section>
+    <section id="bk" class="sheet" hidden aria-label="Backups">
+      <header><h2>Backups</h2><button id="bk-close">Close</button></header>
+      <div id="bkBody"></div>
     </section>
     <div id="toast" role="status"></div>
   </main>
@@ -454,7 +459,35 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- storage ----------
-  function save() { try { localStorage.setItem(STORE, JSON.stringify(model)); } catch (e) {} }
+  var BK = 'pipedraft.backups.v1', BK_KEEP = 8, BK_EVERY = 120000, saveFailed = false;
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(model)); saveFailed = false; }
+    catch (e) { if (!saveFailed) { saveFailed = true; try { toast('This device could not store the project. Save a .json file from the File menu.'); } catch (e2) {} } return; }
+    takeBackup(false);
+  }
+  function readBackups() { try { var l = JSON.parse(localStorage.getItem(BK) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+  function takeBackup(force) {                                      // a rolling set of snapshots, so a slip or a cleared project can be undone days later
+    if (!model.pipes.length && !model.equip.length) return;
+    var list = readBackups(), s = JSON.stringify(model);
+    if (list[0] && list[0].json === s) return;
+    if (!force && list[0] && Date.now() - list[0].t < BK_EVERY) return;
+    list.unshift({ t: Date.now(), json: s, n: model.pipes.length });
+    list = list.slice(0, BK_KEEP);
+    for (var k = 0; k < 3; k++) { try { localStorage.setItem(BK, JSON.stringify(list)); return; } catch (e) { list = list.slice(0, Math.max(1, Math.floor(list.length / 2))); } }
+  }
+  function backupsHtml() {
+    var list = readBackups();
+    if (!list.length) return '<p class="empty">No backups yet. One is kept every couple of minutes while you work, and before a project is cleared or replaced.</p>';
+    return '<p class="empty">The last ' + list.length + ' snapshots kept on this device. Restoring one can be undone with Undo. For a copy that survives clearing the browser data, use File, Save project.</p>'
+      + '<div class="scroll"><table class="tbl"><thead><tr><th>Saved</th><th>Pipes</th><th></th></tr></thead><tbody>' + list.map(function (b, i) {
+        var d = new Date(b.t), pad = function (v) { return String(v).padStart(2, '0'); };
+        return '<tr><td>' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</td><td>' + b.n + '</td><td><button data-bk="' + i + '">Restore</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  function restoreBackup(i) {
+    var b = readBackups()[i]; if (!b) return false;
+    try { var m = JSON.parse(b.json); if (!m || !Array.isArray(m.pipes)) return false; takeBackup(true); pushHist(); model = normalize(m); cursor = null; sel = null; changed(); fit(); return true; } catch (e) { return false; }
+  }
   function load() {
     try { var s = localStorage.getItem(STORE); if (s) { var m = JSON.parse(s); if (m && m.pipes) { model = normalize(m); sample = false; return true; } } } catch (e) {}
     return false;
@@ -2971,6 +3004,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-save').onclick = function () { if (isoCur) saveBlob(isoName, new Blob([isoCur], { type: 'image/svg+xml' })); else toast('Nothing to save'); };
   $('f-save').onclick = function () { saveBlob('pipedraft.json', new Blob([JSON.stringify({ app: 'pipedraft', version: 2, model: model }, null, 1)], { type: 'application/json' })); };
   $('f-open').onclick = function () { $('openf').click(); };
+  $('f-bk').onclick = function () { $('more').hidden = true; $('bkBody').innerHTML = backupsHtml(); $('bk').hidden = false; };
+  $('bk-close').onclick = function () { $('bk').hidden = true; };
+  $('bkBody').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button[data-bk]') : null; if (!b) return;
+    if (restoreBackup(Number(b.getAttribute('data-bk')))) { $('bk').hidden = true; toast('Backup restored'); } else toast('That backup could not be read');
+  });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}   // ask the browser not to clear this site's data
   $('openf').onchange = function () {
     var f = this.files && this.files[0]; if (!f) return;
     var rd = new FileReader();
@@ -2978,7 +3018,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       try {
         var d = JSON.parse(rd.result), m = d && d.model ? d.model : d;
         if (!m || !Array.isArray(m.pipes)) throw new Error('bad');
-        pushHist(); model = normalize(m); cursor = null; sel = null; changed(); fit(); toast('Project opened');
+        takeBackup(true); pushHist(); model = normalize(m); cursor = null; sel = null; changed(); fit(); toast('Project opened');
       } catch (x) { toast('That file is not a PipeDraft project'); }
     };
     rd.readAsText(f); this.value = '';
@@ -2994,7 +3034,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return;
     }
     b.dataset.arm = ''; b.textContent = 'Clear everything';
-    pushHist(); model = blank(); cursor = null; sel = null; changed();
+    takeBackup(true); pushHist(); model = blank(); cursor = null; sel = null; changed();
   };
 
   // ---------- iPad niceties ----------
@@ -3019,7 +3059,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }

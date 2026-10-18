@@ -5,12 +5,13 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x => x[1]);
 const app = scripts[scripts.length - 2];
 const els = {};
+const memStore = {}; let memFull = false;                               // an in-memory localStorage, which can be made to refuse writes
 const L = {};                                                           // listeners per element, so the tests can tap the canvas
 const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector() { return null; }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
 const doc = { getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
 const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
-  localStorage: { getItem() { return null; }, setItem() {} }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
+  localStorage: { getItem(k) { return k in memStore ? memStore[k] : null; }, setItem(k, v) { if (memFull) throw new Error('quota'); memStore[k] = String(v); } }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'vendor/three.min.js'), 'utf8'), ctx);
 vm.runInContext('THREE.WebGLRenderer=function(){return{setPixelRatio(){},setSize(){},render(){}}}', ctx);
@@ -613,6 +614,27 @@ PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, sl: 100, sld: 1 }], valves
 check('a slope note shows on the iso', PD.iso('', 0).includes('SLOPE 1:100'));
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
 check('no slope note without a slope', !PD.iso('', 0).includes('SLOPE'));
+
+// Backups.
+const nowReal = Date.now; let clock = nowReal();
+const sandboxDate = ctx.Date;
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
+memStore['pipedraft.backups.v1'] = '[]';
+PD.backup(true);
+check('a backup is kept', PD.backups().length === 1 && PD.backups()[0].n === 1);
+PD.backup(true);
+check('an unchanged project is not backed up twice', PD.backups().length === 1);
+for (let i = 0; i < 12; i++) { PD.model.pipes.push({ a: [0, 0, i + 1], b: [4, 0, i + 1], n: 4, s: 40, ln: 'L-001', fl: 0 }); PD.backup(true); }
+check('only the latest eight are kept, newest first', PD.backups().length === 8 && PD.backups()[0].n === 13 && PD.backups()[7].n === 6, JSON.stringify(PD.backups().map(b => b.n)));
+check('restoring a backup brings that project back', (() => { const ok = PD.restore(7); return ok && PD.model.pipes.length === 6; })(), String(PD.model.pipes.length));
+check('restoring first backs up the current project', PD.backups()[0].n === 6 || PD.backups().some(b => b.n === 13));
+check('a bad backup index is refused', PD.restore(99) === false);
+check('the backup list prints a Restore button per snapshot', (PD.backupsHtml().match(/data-bk=/g) || []).length === PD.backups().length);
+check('a plain save does not back up again within two minutes', (() => { const n = PD.backups().length; PD.model.pipes.pop(); PD.backup(false); return PD.backups().length === n; })());
+memFull = true; PD.backup(true); memFull = false;
+check('a full device does not break the app', PD.model.pipes.length >= 1);
+PD.load({ pipes: [], valves: [] }); PD.backup(true);
+check('an empty project is never backed up over a real one', PD.backups()[0].n > 0);
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
