@@ -196,7 +196,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   var EQUIP = {
     pump: {
-      name: 'Centrifugal pump',
+      name: 'Centrifugal pump', short: 'Pump',
       noz: [{ p: [-0.35, 0.4, 0], d: [-1, 0, 0], n: 4 }, { p: [-0.15, 0.7, 0], d: [0, 1, 0], n: 3 }],
       build: function (g, m) {
         var base = new T.Mesh(new T.BoxGeometry(1.5, 0.08, 0.55), m); base.position.set(0.2, 0.04, 0); g.add(base);
@@ -205,7 +205,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
     },
     vessel: {
-      name: 'Vertical vessel',
+      name: 'Vertical vessel', short: 'Vessel',
       noz: [{ p: [0, 2.55, 0], d: [0, 1, 0], n: 4 }, { p: [0.6, 1.8, 0], d: [1, 0, 0], n: 4 }, { p: [0, 0.4, 0.6], d: [0, 0, 1], n: 4 }],
       build: function (g, m) {
         var body = new T.Mesh(new T.CylinderGeometry(0.6, 0.6, 2.4, 32), m); body.position.y = 1.2; g.add(body);
@@ -379,19 +379,31 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     lines = {}; warns = []; nozList = [];
     var weight = 0;
 
-    // 1. Equipment and its nozzles.
+    // 1. Equipment and its nozzles. A nozzle turns green once a pipe ends on it.
+    var atKey = {};
+    model.pipes.forEach(function (p) {
+      var a = V(p.a), b = V(p.b); if (a.distanceTo(b) < 0.001) return;
+      var d = b.clone().sub(a).normalize();
+      (atKey[key(p.a)] = atKey[key(p.a)] || []).push({ n: p.n, d: d });
+      (atKey[key(p.b)] = atKey[key(p.b)] || []).push({ n: p.n, d: d.clone().negate() });
+    });
     model.equip.forEach(function (e, i) {
       var def = EQUIP[e.k]; if (!def) return;
-      var g = new T.Group(), m = mat(0x5f7a88, 0.6);
+      var g = new T.Group(), m = mat(0x5f7a88, 0.6), zs = equipNozzles(e);
       def.build(g, m);
-      def.noz.forEach(function (z) {
-        var s = new T.Mesh(new T.CylinderGeometry(OD[z.n] / 2000 * 1.4, OD[z.n] / 2000 * 1.4, 0.12, 20), mat(0xc9d6dc, 0.4));
+      def.noz.forEach(function (z, k) {
+        var legs = atKey[key(mm3(zs[k].p))], ok = !!legs;
+        if (legs && legs.length === 1) {
+          if (legs[0].n !== z.n) warns.push(def.short + ' nozzle N' + (k + 1) + ' is NPS ' + z.n + ' but the pipe is NPS ' + legs[0].n + '.');
+          else if (legs[0].d.dot(zs[k].d) < 0.999) warns.push('Pipe on ' + def.short.toLowerCase() + ' nozzle N' + (k + 1) + ' does not leave along the nozzle axis.');
+        }
+        var s = new T.Mesh(new T.CylinderGeometry(OD[z.n] / 2000 * 1.4, OD[z.n] / 2000 * 1.4, 0.12, 20), mat(ok ? 0x6bd18f : 0xc9d6dc, 0.4));
         s.position.copy(V(z.p)).addScaledVector(V(z.d), -0.06); s.quaternion.setFromUnitVectors(UP, V(z.d)); g.add(s);
       });
       g.position.copy(V(e.p)); g.rotation.y = (e.r || 0) * Math.PI / 2;
       g.traverse(function (x) { x.userData = { kind: 'equip', i: i }; });
       world.add(g);
-      equipNozzles(e).forEach(function (z) { nozList.push(z); });
+      zs.forEach(function (z) { nozList.push(z); });
       add('equip', def.name, 1, 'pc');
     });
 
@@ -675,6 +687,48 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (s < 0.04) s = 0; if (L - s < 0.04) s = L;
     return { pt: mm3(a.clone().addScaledVector(dir, s)), pipe: p, dir: dir, s: s, L: L };
   }
+  function screenSnap(e) {                                          // pipe end or nozzle near the tap on screen, at any height
+    var r = cv.getBoundingClientRect(), best = null, bd = e.pointerType === 'mouse' ? 20 : 34;
+    function test(pt, noz) {
+      var v = V(pt).project(camera); if (v.z > 1) return;
+      var d = Math.hypot((v.x + 1) / 2 * r.width + r.left - e.clientX, (1 - v.y) / 2 * r.height + r.top - e.clientY);
+      if (d < bd) { bd = d; best = { pt: pt, noz: noz || null }; }
+    }
+    model.pipes.forEach(function (q) { test(q.a); test(q.b); });
+    nozList.forEach(function (z) { test(mm3(z.p), z); });
+    return best;
+  }
+  function atNozzle(z) {
+    var k = key(mm3(z.p));
+    return model.pipes.some(function (q) { return key(q.a) === k || key(q.b) === k; });
+  }
+  function startAtNozzle(z) {                                       // first pipe leaves along the nozzle axis, same size as the nozzle
+    var end = mm3(z.p.clone().addScaledVector(z.d, 0.3));
+    curN = z.n; $('nps').value = String(z.n);
+    addPipe(mm3(z.p), end, z.n, curS, curL);
+    cursor = end; elev = end[1];
+  }
+  function routeTo(from, to, noz) {                                 // axis-aligned legs from the run end to a pipe end or nozzle
+    var goal = noz ? mm3(V(to).addScaledVector(noz.d, 0.3)) : to, pts = [from.slice()], cur = from.slice();
+    var ni = noz ? (Math.abs(noz.d.x) > 0.5 ? 0 : Math.abs(noz.d.y) > 0.5 ? 1 : 2) : -1;   // nozzle axis goes first, so the pipe leaves outward
+    var order = noz ? [ni].concat([0, 2, 1].filter(function (k) { return k !== ni; })) : [0, 2, 1];
+    order.forEach(function (i) {
+      if (Math.abs(goal[i] - cur[i]) > 0.001) { cur = cur.slice(); cur[i] = goal[i]; pts.push(cur); }
+    });
+    if (noz) pts.push(to.slice());
+    var out = [pts[0]];                                             // drop points that sit on a straight line
+    for (var i = 1; i < pts.length; i++) {
+      var a = V(out[out.length - 1]), b = V(pts[i]);
+      if (a.distanceTo(b) < 0.001) continue;
+      if (out.length >= 2) {
+        var prev = V(out[out.length - 2]);
+        if (b.clone().sub(a).normalize().dot(a.clone().sub(prev).normalize()) > 0.9999) out.pop();
+      }
+      out.push(pts[i]);
+    }
+    for (var j = 0; j < out.length - 1; j++) addPipe(out[j], out[j + 1], curN, curS, curL);
+    cursor = noz ? null : out[out.length - 1]; elev = out[out.length - 1][1];
+  }
   function constrain(p) {
     var dx = p.x - cursor[0], dz = p.z - cursor[2], q = cursor.slice(), ux, uz, len;
     if (ang45) {
@@ -701,11 +755,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function onTap(e) {
     var hit;
     if (tool === 'pipe') {
+      var ss = screenSnap(e);
       if (!cursor) {
-        var st = startPoint(e); if (!st) return;
-        var before = JSON.stringify(model);
-        if (splitAt(st)) { hist.push(before); changed(); }
-        cursor = st; elev = st[1]; updateUi();
+        if (ss && ss.noz && !atNozzle(ss.noz)) { pushHist(); startAtNozzle(ss.noz); changed(); }
+        else {
+          var st = ss ? ss.pt : startPoint(e); if (!st) return;
+          var before = JSON.stringify(model);
+          if (splitAt(st)) { hist.push(before); changed(); }
+          cursor = st; elev = st[1]; updateUi();
+        }
+      } else if (ss && key(ss.pt) !== key(cursor)) {
+        pushHist(); routeTo(cursor, ss.pt, ss.noz); changed();
       } else {
         var p = planePoint(e); if (!p) return;
         var q = constrain(p);
@@ -769,8 +829,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return;
     }
     if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
-    var p = planePoint(e), t = null;
+    var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null;
     if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
+    else if (ss && !(cursor && key(ss.pt) === key(cursor))) t = ss.pt;
     else if (cursor) { if (p) t = constrain(p); }
     else t = startPoint(e);
     if (t) {
@@ -1052,6 +1113,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     nozzles: function () { return nozList; }, iso: isoSvg, dxf: dxf, csv: csv,
+    startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
 
