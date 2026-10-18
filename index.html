@@ -234,6 +234,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="pidBtn">P&amp;ID sheet</button>
         <button id="hydBtn">Hydraulics</button>
         <button id="fabBtn">Cut list and welds</button>
+        <button id="llBtn">Line list</button>
         <button id="legendBtn">Piping symbols</button>
       </details>
       <details name="menu">
@@ -250,6 +251,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="f-bk">Backups</button>
         <button id="f-csv">Export BOM (.csv)</button>
         <button id="f-fab">Export cut list and welds (.csv)</button>
+        <button id="f-ll">Export line list (.csv)</button>
         <button id="f-dxf">Export centrelines (.dxf)</button>
         <button id="f-png">Save image (.png)</button>
         <button id="f-clear">Clear everything</button>
@@ -279,6 +281,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <section id="bk" class="sheet" hidden aria-label="Backups">
       <header><h2>Backups</h2><button id="bk-close">Close</button></header>
       <div id="bkBody"></div>
+    </section>
+    <section id="ll" class="sheet" hidden aria-label="Line list">
+      <header><h2>Line list</h2><button id="ll-csv">Save .csv</button><button id="ll-close">Close</button></header>
+      <div id="llBody"></div>
     </section>
     <div id="toast" role="status"></div>
   </main>
@@ -1241,6 +1247,37 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var o = 'Piece,Spool,Line,Pipe,Cut length (mm)\n' + f.pieces.map(function (p) { return [q(p.label), q(p.spool), q(p.ln), q(compDesc.pipe[p.i] || ''), Math.round(p.len * 1000)].join(','); }).join('\n');
     o += '\n\nWeld,Type,Size,Line,X (mm),Y (mm),Z (mm),Made\n' + f.welds.map(function (w) { return ['W' + w.no, q(WELD_NAME[w.kind]), q(w.n ? szs(w.n) : ''), q(w.ln), Math.round(w.pos[0] * 1000), Math.round(w.pos[2] * 1000), Math.round(w.pos[1] * 1000), w.field ? 'Field' : 'Shop'].join(','); }).join('\n');
     return o + '\n';
+  }
+
+  // ---------- line list ----------
+  var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none']];
+  function lineList() {                                             // one row per line number: what is drawn, plus the data typed for it
+    var f = fabrication(), L = {};
+    model.pipes.forEach(function (p) {
+      var r = L[p.ln] = L[p.ln] || { ln: p.ln, sizes: {}, len: 0, valves: 0, welds: 0, pieces: 0 };
+      r.sizes[p.n] = 1; r.len += V(p.a).distanceTo(V(p.b));
+    });
+    model.valves.forEach(function (v) { var i = hostOf(v.p); if (i >= 0 && L[model.pipes[i].ln]) L[model.pipes[i].ln].valves++; });
+    f.welds.forEach(function (w) { if (L[w.ln]) L[w.ln].welds++; });
+    f.pieces.forEach(function (pc) { if (L[pc.ln]) L[pc.ln].pieces++; });
+    return Object.keys(L).sort().map(function (k) {
+      var d = model.lines[k] || {}, r = L[k];
+      return { ln: k, size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
+    });
+  }
+  function lineListHtml() {
+    var rows = lineList(); if (!rows.length) return '<p class="empty">No pipe yet.</p>';
+    return '<p class="empty">Service, class, pressure, temperature and insulation are typed by you and appear in the title block of that line\'s isometric sheet. Class defaults to ' + esc(std().cls) + '. The other columns come from the drawing.</p>'
+      + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Size</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
+      + rows.map(function (r) {
+        return '<tr><td>' + esc(r.ln) + '</td><td>' + esc(r.size) + '</td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[2]) + '"></td>'; }).join('')
+          + '<td>' + (r.q || '–') + '</td><td>' + r.len.toFixed(2) + '</td><td>' + r.valves + '</td><td>' + r.welds + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  function lineCsv() {
+    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
+    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds\n'
+      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds].join(','); }).join('\n') + '\n';
   }
 
   // ---------- BOM ----------
@@ -3041,6 +3078,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('hydBtn').onclick = showHyd;
   $('hyd-close').onclick = function () { $('hyd').hidden = true; };
   $('fabBtn').onclick = function () { $('more').hidden = true; showFab(); };
+  $('llBtn').onclick = function () { $('more').hidden = true; $('llBody').innerHTML = lineListHtml(); $('ll').hidden = false; };
+  $('ll-close').onclick = function () { $('ll').hidden = true; };
+  $('ll-csv').onclick = $('f-ll').onclick = function () { saveBlob('pipedraft-linelist.csv', new Blob([lineCsv()], { type: 'text/csv' })); };
+  $('llBody').addEventListener('change', function (e) {
+    var t = e.target, f = t && t.getAttribute ? t.getAttribute('data-ll') : null, ln = t && t.getAttribute ? t.getAttribute('data-ln') : null; if (!f || ln == null) return;
+    model.lines[ln] = model.lines[ln] || {}; var v = String(t.value).trim(); if (v) model.lines[ln][f] = v; else delete model.lines[ln][f];
+    save();
+  });
   $('fab-close').onclick = function () { $('fab').hidden = true; };
   $('fab-csv').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
   $('f-fab').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
@@ -3117,7 +3162,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }

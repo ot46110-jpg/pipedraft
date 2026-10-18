@@ -666,6 +666,23 @@ check('every xref entry points at its object', [1, 2, 3, 4, 5].every(n => { cons
 check('the JPEG bytes are embedded untouched', Buffer.from(pdfBytes).includes(Buffer.from(fakeJpg)) && /\/Length 300 >>/.test(pdfStr));
 check('the image is scaled to fit an A3 page', (() => { const m = /q ([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/.exec(pdfStr); return m && +m[1] <= 1190.55 - 39 && +m[2] <= 841.89 - 39 && Math.abs(+m[1] / +m[2] - 2400 / 1900) < 0.01; })());
 
+// Line list.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'L-002' }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, ln: 'L-002' }, { a: [4, 0, 3], b: [8, 0, 3], n: 3, ln: 'L-002' }, { a: [0, 0, 5], b: [6, 0, 5], n: 2, ln: 'L-001' }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [3, 0, 5], d: [1, 0, 0], n: 2, k: 'globe' }], lines: { 'L-001': { q: 12, svc: 'Cooling water' } } });
+const ll = PD.lineList();
+check('the line list has one sorted row per line', ll.length === 2 && ll[0].ln === 'L-001' && ll[1].ln === 'L-002');
+check('it counts length, valves and welds from the drawing', Math.abs(ll[1].len - 11) < 0.001 && ll[1].valves === 1 && ll[0].valves === 1 && ll[1].welds >= 3 && ll[0].welds === 0, JSON.stringify(ll));
+check('sizes are listed largest first', ll[1].size === 'NPS 4 / NPS 3' || ll[1].size.includes('/'), ll[1].size);
+check('typed line data and the flow come through', ll[0].svc === 'Cooling water' && ll[0].q === 12 && ll[1].svc === '');
+const lcsv = PD.lineCsv();
+check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
+check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 10);
+L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: ' 16 bar g ' } });
+check('editing a field in the line list stores it trimmed', PD.model.lines['L-002'].pdes === '16 bar g' && PD.lineList()[1].pdes === '16 bar g');
+L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: '' } });
+check('and clearing it removes it', PD.model.lines['L-002'].pdes === undefined);
+PD.model.lines['L-002'].cls = 'JIS 10K SGP';
+check('the class typed in the line list reaches the title block of that line sheet', PD.iso('L-002', 0).includes('JIS 10K SGP'));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
