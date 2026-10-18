@@ -28,6 +28,11 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Views: Iso, Top, Front, Right, Fit, orthographic toggle, dimension labels. Iso sheet is generated as SVG with centreline lengths and a line-number summary.
 - Checks: clash detection between pipes that share no joint, size changes at elbows or tee headers, pipes shorter than their fittings.
 - File: save and open project JSON, BOM CSV, DXF centrelines (mm, Z up), PNG image. On iPad these go through the share sheet.
+- Fitting catalogue, all derived from joints by `rebuild()`: elbow (LR 1.5D, SR 1.0D, 3D, any angle), reducer (concentric, eccentric), tee, reducing tee, lateral 45°, weldolet, sockolet, threadolet, sweepolet, stub-in, cross, cap, plug. Pipes are cut back to each fitting.
+- `model.spec` holds project defaults (`elbow`, `reducer`, `olet`, `branch`). `model.fit` maps a joint key (`"x,y,z"` in mm) to overrides (`el`, `red`, `br`, `olet`). Select a fitting to edit its override; the Spec button edits the defaults.
+- Placed items: valves (gate, globe, check, ball, butterfly, plug, control), flange pairs (weld-neck, slip-on, lap-joint with stub ends), blind flange on a pipe end (`flanges` with `t: 'bl'`), inline fittings in `items` (coupling, union, Y-strainer, expansion joint, spectacle blind, orifice plate), end closures in `caps` (`[x, y, z, 'cap' | 'plug']`).
+- Eccentric reducers are drawn concentric in a different colour. The centrelines stay on the pipe axis.
+- Inline item lengths and the lateral dimensions are rough figures, not from a standard.
 - Model arrays: `pipes`, `valves`, `flanges`, `caps` (pipe end points), `equip` (`{k, p, r}`). `normalize()` fills defaults so old saves load.
 - `window.PipeDraft` exists only for the headless tests.
 
