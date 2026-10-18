@@ -592,6 +592,28 @@ const sL3 = PD.iso('');
 check('the title block shows the project fields', ['Plant A', '>C<', 'KS', 'TM', 'Acme'].every(t => sL3.includes(t)), '');
 check('and the sheet for all lines names every line', sL3.includes('L-001') && sL3.includes('L-002'));
 
+// Eccentric reducer flat side, pump suction warning, vents and drains, slope notes.
+const eccModel = flat => ({ spec: { reducer: 'ecc', eccFlat: flat }, pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [6, 1, 0], n: 3 }], valves: [] });
+['top', 'bottom', 'side'].forEach(f => { PD.load(eccModel(f)); check('eccentric reducer flat on ' + f + ' goes to the BOM', has('Reducer eccentric (flat on ' + f + ') BW, NPS 4×3'), rows()); });
+PD.load(eccModel('top')); PD.model.fit['3000,1000,0'] = { flat: 'bottom' }; PD.rebuild();
+check('a joint can override the flat side', has('(flat on bottom)'), rows());
+PD.load(eccModel('top')); check('the iso marks the flat side', PD.iso('', 0).includes('>FOT<'));
+PD.load({ spec: { reducer: 'ecc', eccFlat: 'bottom' }, equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }], pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n: 4 }, { a: [-2, 0.4, 0], b: [-4, 0.4, 0], n: 6 }], valves: [] });
+check('flat on bottom at a pump suction is warned about', PD.warns().some(w => w.includes('pump suction')), PD.warns().join());
+PD.model.spec.eccFlat = 'top'; PD.rebuild();
+check('and flat on top is not', !PD.warns().some(w => w.includes('pump suction')), PD.warns().join());
+fresh(run4()); chipTap('cap', 'vent'); tapOn([3, 1, 0]);
+check('vent tool adds a branch up, a ball valve and a plug', PD.model.pipes.length === 3 && PD.model.valves.some(v => v.k === 'ball' && v.d[1] > 0.9) && PD.model.caps.some(c => c[3] === 'plug' && c[1] > 1.2), JSON.stringify([PD.model.pipes.length, PD.model.valves, PD.model.caps]));
+check('the vent is on the BOM', has('Ball valve SW 800#, NPS 3/4 | 1') && has('Plug, round head, THD, NPS 3/4') && has('Weldolet BW, NPS 4×3/4'), rows());
+fresh(run4()); chipTap('cap', 'drain'); tapOn([3, 1, 0]);
+check('drain tool goes underneath', PD.model.valves.some(v => v.k === 'ball' && v.d[1] < -0.9) && PD.model.caps.some(c => c[1] < 0.8), JSON.stringify(PD.model.caps));
+PD.load({ pipes: [{ a: [0, 0.1, 0], b: [6, 0.1, 0], n: 4 }], valves: [] }); chipTap('cap', 'drain'); tapOn([3, 0.1, 0]);
+check('a drain with no room below is refused', PD.model.valves.length === 0 && PD.model.pipes.length === 1);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, sl: 100, sld: 1 }], valves: [] });
+check('a slope note shows on the iso', PD.iso('', 0).includes('SLOPE 1:100'));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
+check('no slope note without a slope', !PD.iso('', 0).includes('SLOPE'));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
