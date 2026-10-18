@@ -704,6 +704,59 @@ check('a pipe leaving a nozzle is not', PD.clashes().length === 0, JSON.stringif
 PD.load({ pipes: [{ a: [3, 0.4, 3], b: [6, 0.4, 3], n: 4 }], valves: [], equip: [{ k: 'vessel', p: [0, 0, 0], r: 0 }] });
 check('and a pipe away from equipment is not', PD.clashes().length === 0);
 
+// Flanges at pipe ends, valve ends and flanges fitted against valves.
+const ve = id => els['ve-' + id].onclick();
+fresh(run4()); ve('auto'); chipTap('flange', 'wn'); tapOn([5.9, 1, 0]);
+check('a flange tapped at a free pipe end is one flange on that end', PD.model.flanges.length === 1 && PD.model.flanges[0].e === 1 && near(PD.model.flanges[0].p, [6, 1, 0]) && PD.model.flanges[0].d[0] > 0.9, JSON.stringify(PD.model.flanges));
+check('and the BOM has one flange with its gasket and bolts', has('Weld-neck flange 150# BW, NPS 4 SCH 40 | 1') && has('Gasket 150# spiral wound, NPS 4 | 1') && has('Stud bolt set 150#, 8× 5/8 | 1') || (has('Weld-neck flange 150# BW, NPS 4 SCH 40 | 1') && has('Gasket 150# spiral wound, NPS 4 | 1')), rows());
+tapOn([5.9, 1, 0]);
+check('the same end cannot take a second flange', PD.model.flanges.length === 1);
+fresh(run4()); chipTap('flange', 'so'); tapOn([0.1, 1, 0]);
+check('at the start end it faces the other way', PD.model.flanges.length === 1 && near(PD.model.flanges[0].p, [0, 1, 0]) && PD.model.flanges[0].d[0] < -0.9 && has('Slip-on flange 150# SO, NPS 4 | 1'), JSON.stringify(PD.model.flanges));
+fresh(run4()); chipTap('flange', 'wn'); tapOn([3, 1, 0]);
+check('in the middle of a pipe it is still a pair', PD.model.flanges.length === 1 && !PD.model.flanges[0].e && has('Weld-neck flange 150# BW, NPS 4 SCH 40 | 2'), rows());
+fresh(run4()); chipTap('flange', 'wn'); tapOn([5.9, 1, 0]);
+let fq = PD.fab();
+check('an end flange takes its thickness out of the pipe and is welded once', fq.welds.length === 1 && Math.abs(fq.pieces.reduce((a, p) => a + p.len, 0) - pipeQty()) < 0.01 && fq.pieces[0].len < 6 - 0.02, JSON.stringify(fq.pieces.map(p => p.len)));
+// valves
+fresh(run4()); ve('auto'); chipTap('valve', 'gate'); tapOn([3, 1, 0]);
+let vv = PD.model.valves[0], vf = PD.model.flanges;
+check('a flanged valve in the middle of a pipe gets a flange against each face', vf.length === 2 && vf.every(f => f.m === 1) && Math.abs(Math.abs(vf[0].p[0] - vv.p[0]) - 0.229 / 2) < 0.002 && Math.abs(Math.abs(vf[1].p[0] - vv.p[0]) - 0.229 / 2) < 0.002 && vf[0].p[0] !== vf[1].p[0], JSON.stringify([vv, vf]));
+check('the flanges face the valve', vf.every(f => (vv.p[0] - f.p[0]) * f.d[0] > 0), JSON.stringify(vf.map(f => f.d)));
+check('the BOM has two flanges, two gaskets and two bolt sets with the valve', has('Weld-neck flange 150# BW, NPS 4 SCH 40 | 2') && has('Gasket 150# spiral wound, NPS 4 | 2') && has('Gate valve flanged 150#, NPS 4 | 1'), rows());
+fq = PD.fab();
+check('the pipe lengths allow for the valve and both flanges', Math.abs(fq.pieces.reduce((a, p) => a + p.len, 0) - pipeQty()) < 0.01 && fq.pieces.length === 2, JSON.stringify(fq.pieces.map(p => p.len)));
+check('the flanges are welded to the pipe and bolted to the valve', fq.welds.length === 2 && fq.joints.length === 2, JSON.stringify([fq.welds.length, fq.joints.length]));
+check('the valve stays its own spool, the pipe pieces are separate', fq.spools.length === 2);
+els['t-sel'].onclick(); tapOn(vv.p);
+els['i-pos'].value = '2000'; els['i-pos'].onchange();
+check('moving the valve takes its flanges with it', near(PD.model.valves[0].p, [2, 1, 0]) && PD.model.flanges.every(f => Math.abs(Math.abs(f.p[0] - 2) - 0.1145) < 0.002), JSON.stringify(PD.model.flanges.map(f => f.p)));
+PD.model.valves[0].k = 'globe'; PD.rebuild();
+els['t-sel'].onclick(); tapOn([2, 1, 0]);
+els['i-k'].value = 'ball'; els['i-k'].onchange();
+check('changing the valve type refits the flanges to the new face to face length', PD.model.flanges.length === 2 && PD.model.flanges.every(f => Math.abs(Math.abs(f.p[0] - 2) - 0.229 / 2) < 0.002), JSON.stringify(PD.model.flanges.map(f => f.p)));
+els['i-ve'].value = 'thd'; els['i-ve'].onchange();
+check('making it threaded takes the flanges away', PD.model.flanges.length === 0 && PD.model.valves[0].e === 'thd' && has('Ball valve THD 150#, NPS 4 | 1'), rows());
+els['i-ve'].value = 'flg'; els['i-ve'].onchange();
+check('and flanged puts them back', PD.model.flanges.length === 2 && PD.model.valves[0].e === 'flg');
+els['i-del'].onclick();
+check('deleting the valve deletes its flanges', PD.model.valves.length === 0 && PD.model.flanges.length === 0);
+fresh(run4()); ve('thd'); chipTap('valve', 'gate'); tapOn([3, 1, 0]);
+check('a threaded valve gets no flanges', PD.model.flanges.length === 0 && PD.model.valves[0].e === 'thd' && has('Gate valve THD 150#, NPS 4'), rows());
+ve('weld'); chipTap('valve', 'globe'); tapOn([4.5, 1, 0]);
+check('a welded valve is BW on large pipe', PD.model.valves[1].e === 'weld' && PD.model.flanges.length === 0 && has('Globe valve BW, NPS 4'), rows());
+check('and its ends are welds in the cut list', PD.fab().welds.filter(w => w.kind === 'BW').length >= 2);
+ve('auto'); fresh([{ a: [0, 1, 0], b: [6, 1, 0], n: 1 }]); chipTap('valve', 'gate'); tapOn([3, 1, 0]);
+check('small bore valves stay socket-weld and need no flanges', PD.model.flanges.length === 0 && has('Gate valve SW 800#, NPS 1'), rows());
+fresh(run4()); ve('flg'); chipTap('valve', 'gate'); tapOn([5.95, 1, 0]);
+vv = PD.model.valves[0];
+check('a valve tapped at a free pipe end sits on the end with one flange on the pipe side', near(vv.p, [6 - 0.229 / 2, 1, 0]) && PD.model.flanges.length === 1 && PD.model.flanges[0].p[0] < vv.p[0], JSON.stringify([vv, PD.model.flanges]));
+fresh(run4()); ve('auto'); chipTap('valve', 'butterfly'); tapOn([3, 1, 0]);
+check('a wafer valve goes between two flanges', PD.model.flanges.length === 2);
+fresh(run4()); ve('auto'); chipTap('valve', 'gate'); tapOn([0.5, 1, 0]);
+check('a valve close to the end of a pipe that is already taken is placed in the pipe with room for its flanges', PD.model.valves.length === 1);
+ve('auto');
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
