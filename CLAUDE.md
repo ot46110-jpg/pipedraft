@@ -47,6 +47,7 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 ## iPad input
 - Finger: one-finger drag orbits, two fingers pan and zoom, tap places.
 - Apple Pencil in Pipe, Valve and Delete tools: touch and drag to aim, lift to place. Touches within 350 ms of the pen are ignored as palm contact.
+- Smoothness rules: pen and hover moves go through `queueGhost`, which runs the preview once per frame. Preview lines reuse one buffer (`setLine`). Object matrices are refreshed only after a rebuild (`matDirty`). The marker turns white and larger when it locks onto a pipe end or nozzle. Keep per-event work in the pointer handlers close to zero.
 - Hover preview works only where Safari reports pen hover.
 - Keyboard: P pipe, V valve, D delete, N navigate, Esc or Enter finish run, arrow up and down for vertical pipe, Cmd+Z undo.
 - Not verified on a real iPad: pen aim-and-lift, palm rejection, standalone full screen.
