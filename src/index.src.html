@@ -4,10 +4,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: one-screen CAD viewport. Tool bar and option bar on top, 3D canvas in the middle, status line below. Floating panels sit over the canvas. Single dark drafting look by choice. */
+/* Layout: the 3D canvas fills the screen. A slim header holds the view and project actions. A left rail holds six tools, a parts palette opens beside it, a small context bar sits at the bottom centre, and the side column on the right holds only what was opened. Single dark drafting look by choice. */
 :root {
   --bg: #0d1418;
   --panel: #141d23;
+  --raise: #1a262d;
   --line: #25343d;
   --fg: #d5e1e6;
   --dim: #8399a3;
@@ -18,165 +19,163 @@
   --ink: #14191c;
   --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --gutter-l: max(14px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(14px, env(safe-area-inset-right, 0px));
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--font-ui); overflow: hidden; -webkit-user-select: none; user-select: none; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 var(--font-ui); overflow: hidden; -webkit-user-select: none; user-select: none; }
 #app { display: flex; flex-direction: column; height: 100%; }
-.bar { background: var(--panel); border-color: var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-#top, #opts { display: flex; align-items: center; gap: 12px; overflow-x: auto; }
-#top { border-bottom: 1px solid var(--line); padding-block: 8px; }
-#opts { border-bottom: 1px solid var(--line); padding-block: 6px; min-height: 0; }
-#opts:not(:has(.group:not([hidden]))) { display: none; }
-#top::-webkit-scrollbar, #opts::-webkit-scrollbar { display: none; }
-.brand { font-weight: 600; letter-spacing: .02em; white-space: nowrap; margin-right: 4px; }
-.brand small { display: block; font: 400 10px/1.2 var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
-.group { display: flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid var(--line); flex: none; }
-.group:first-child { border-left: 0; padding-left: 0; }
-button, select, input[type="text"] { font: 500 13px var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; cursor: pointer; white-space: nowrap; }
-input[type="text"] { cursor: text; width: 110px; background: var(--bg); -webkit-user-select: text; user-select: text; font-family: var(--font-data); }
+button, select, input[type="text"] { font: 500 14px var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 10px; min-height: 48px; min-width: 48px; padding: 0 14px; cursor: pointer; white-space: nowrap; }
+input[type="text"] { cursor: text; background: var(--bg); -webkit-user-select: text; user-select: text; font-family: var(--font-data); width: 100%; }
+select { background: var(--bg); width: 100%; }
 button:hover:not(:disabled), select:hover { border-color: var(--dim); }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button:disabled { opacity: .35; cursor: default; }
-select { background: var(--bg); }
-.lbl { font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; padding-right: 2px; }
+.bar { background: var(--panel); border-color: var(--line); padding-left: var(--gutter-l); padding-right: var(--gutter-r); }
+#top { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding-block: 8px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); overflow-x: auto; }
+#top::-webkit-scrollbar { display: none; }
+#top > * { flex: none; }
+.grow { flex: 1 !important; }
+.brand { font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+.brand small { display: block; font: 400 10px/1.2 var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
 #stage { position: relative; flex: 1; min-height: 0; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; gap: 4px; }
-#views { top: 12px; left: max(16px, env(safe-area-inset-left, 0px)); flex-wrap: wrap; max-width: calc(100% - 32px); }
-#views button { min-width: 44px; padding: 0 10px; }
-#elev { bottom: 12px; left: max(16px, env(safe-area-inset-left, 0px)); align-items: center; }
-#elev output { font: 500 12px var(--font-data); color: var(--accent); padding: 0 8px; min-width: 96px; text-align: center; font-variant-numeric: tabular-nums; }
-.sheet { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow: auto; max-height: calc(100% - 24px); }
-.sheet h2 { margin: 0 0 8px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
-#bom { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(360px, calc(100% - 32px)); }
+.float, .sheet { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.float { padding: 6px; display: flex; gap: 6px; align-items: center; }
+.sheet { padding: 14px; overflow: auto; max-height: calc(100% - 24px); }
+.sheet h2 { margin: 0 0 10px; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.empty { color: var(--dim); font-size: 13px; }
+.actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; flex: 1; min-width: 110px; }
+.field select, .field input { text-transform: none; letter-spacing: 0; font-family: var(--font-ui); }
+.field input { font-family: var(--font-data); }
+/* left tool rail */
+#rail { left: var(--gutter-l); top: 12px; flex-direction: column; }
+#rail button { width: 66px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; font-size: 11px; border-color: transparent; }
+#rail svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* parts palette */
+#parts { left: calc(var(--gutter-l) + 82px); top: 12px; width: min(460px, calc(100% - 120px - var(--gutter-l) - var(--gutter-r))); }
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 2px; }
+.tabs button { flex: none; }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
+.chips button { white-space: normal; line-height: 1.2; min-height: 54px; text-align: center; }
+/* context bar and pipe settings */
+#ctx { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 160px); overflow-x: auto; }
+#ctx:not(:has([data-for]:not([hidden]))) { display: none; }
+#ctx [data-for] { display: flex; gap: 6px; }
+#psum { font-family: var(--font-data); font-size: 13px; }
+#pset { bottom: 78px; left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - 32px)); z-index: 5; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* elevation */
+#elev { right: var(--gutter-r); bottom: 12px; flex-direction: column; width: 70px; }
+#elev button { width: 100%; }
+#elev output { font: 500 12px/1.2 var(--font-data); color: var(--accent); text-align: center; font-variant-numeric: tabular-nums; padding: 2px 0; }
+/* right column */
+#side { position: absolute; top: 12px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
+#side .sheet { position: static; flex: none; pointer-events: auto; max-height: none; }
+#insp p { margin: 0 0 10px; font: 400 12.5px var(--font-data); color: var(--fg); }
 #bom table { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
 #bom td { padding: 6px 0; border-bottom: 1px solid var(--line); }
 #bom td:last-child { text-align: right; color: var(--accent); padding-left: 10px; white-space: nowrap; }
-.empty { color: var(--dim); font-size: 13px; }
-.actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
-#file { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(260px, calc(100% - 32px)); z-index: 5; display: flex; flex-direction: column; gap: 6px; }
-#file button { text-align: left; }
-#spec { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); width: min(300px, calc(100% - 32px)); z-index: 4; }
-#spec .row { margin-bottom: 8px; }
-#spec label { display: flex; flex-direction: column; gap: 4px; font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
-#spec label select { width: 100%; text-transform: none; letter-spacing: 0; }
-#insp { bottom: 76px; left: max(16px, env(safe-area-inset-left, 0px)); width: min(320px, calc(100% - 32px)); }
-#insp .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-#insp label { display: flex; flex-direction: column; gap: 4px; font: 400 11px var(--font-data); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; flex: 1; min-width: 100px; }
-#insp label select, #insp label input { width: 100%; text-transform: none; letter-spacing: 0; }
-#insp p { margin: 0 0 10px; font: 400 12.5px var(--font-data); color: var(--fg); }
-#iso { inset: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); z-index: 6; display: flex; flex-direction: column; gap: 10px; }
+/* more menu */
+#more { top: 12px; right: var(--gutter-r); width: min(280px, calc(100% - 32px)); z-index: 7; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+#more button { text-align: left; width: 100%; }
+#more hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+/* isometric sheet */
+#iso { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
 #iso header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #iso header h2 { margin: 0 auto 0 0; }
-#isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 6px; overflow: auto; }
+#isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; }
 #isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
-#status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; font: 400 12px var(--font-data); color: var(--dim); }
+#status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font: 400 12px var(--font-data); color: var(--dim); }
 #status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #status #pos { color: var(--fg); flex: none; }
-#toast { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 6px; padding: 8px 14px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 9; max-width: calc(100% - 32px); }
+#toast { position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 8px; padding: 10px 16px; font-weight: 500; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 9; max-width: calc(100% - 32px); }
 #toast.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
-/* iPad: full-screen standalone, no rubber-band or callouts, roomy touch targets */
+/* iPad: full-screen standalone, no rubber-band or callouts */
 html { overscroll-behavior: none; }
 body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
-#top { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
-#status { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-@media (pointer: coarse) { button, select, input[type="text"] { min-height: 48px; min-width: 48px; } }
-</style>
+/* narrow windows: palette and side column stack over the canvas */
+@media (max-width: 760px) { #parts { width: calc(100% - 120px); } #side { bottom: 12px; } #elev { display: none; } }
+</style></style>
 
 <div id="app">
   <header id="top" class="bar">
     <div class="brand">PipeDraft 3D<small id="mode">Example layout</small></div>
-    <div class="group" role="group" aria-label="Tools">
-      <button id="t-nav" data-tool="nav" aria-pressed="false">Navigate</button>
-      <button id="t-sel" data-tool="sel" aria-pressed="false">Select</button>
-      <button id="t-pipe" data-tool="pipe" aria-pressed="true">Pipe</button>
-      <button id="t-valve" data-tool="valve" aria-pressed="false">Valve</button>
-      <button id="t-flange" data-tool="flange" aria-pressed="false">Flange</button>
-      <button id="t-item" data-tool="item" aria-pressed="false">Fitting</button>
-      <button id="t-cap" data-tool="cap" aria-pressed="false">Cap</button>
-      <button id="t-equip" data-tool="equip" aria-pressed="false">Equipment</button>
-      <button id="t-measure" data-tool="measure" aria-pressed="false">Measure</button>
-      <button id="t-del" data-tool="del" aria-pressed="false">Delete</button>
+    <div class="seg" id="views" role="group" aria-label="View">
+      <button id="v-iso">Iso</button><button id="v-top">Top</button><button id="v-front">Front</button><button id="v-right">Right</button>
     </div>
-    <div class="group">
-      <button id="undo">Undo</button>
-      <button id="isoBtn">Iso sheet</button>
-      <button id="specBtn" aria-pressed="false">Spec</button>
-      <button id="bomBtn" aria-pressed="true">BOM</button>
-      <button id="fileBtn" aria-pressed="false">File</button>
-    </div>
+    <button id="v-fit" aria-label="Fit drawing to screen">Fit</button>
+    <span class="grow"></span>
+    <button id="undo">Undo</button>
+    <button id="bomBtn" aria-pressed="false">BOM</button>
+    <button id="moreBtn" aria-label="More actions" aria-pressed="false">⋯</button>
   </header>
-  <div id="opts" class="bar">
-    <div class="group" data-for="pipe">
-      <select id="nps" aria-label="Pipe size">
-        <option value="2">NPS 2 · 60.3 mm</option>
-        <option value="3">NPS 3 · 88.9 mm</option>
-        <option value="4" selected>NPS 4 · 114.3 mm</option>
-        <option value="6">NPS 6 · 168.3 mm</option>
-      </select>
-      <select id="sched" aria-label="Schedule"><option value="40" selected>SCH 40</option><option value="80">SCH 80</option></select>
-      <input type="text" id="ln" value="L-001" maxlength="12" aria-label="Line number" autocomplete="off" autocapitalize="characters" spellcheck="false">
-    </div>
-    <div class="group" data-for="pipe">
-      <span class="lbl">Snap</span>
-      <select id="snap" aria-label="Grid snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select>
-      <button id="ang" aria-pressed="false" aria-label="Allow 45 degree turns">45° turns</button>
-      <button id="finish">Finish run</button>
-    </div>
-    <div class="group" data-for="valve">
-      <span class="lbl">Type</span>
-      <select id="vk" aria-label="Valve type"><option value="gate" selected>Gate</option><option value="globe">Globe</option><option value="check">Check</option><option value="ball">Ball</option><option value="butterfly">Butterfly</option><option value="plug">Plug</option><option value="control">Control</option></select>
-    </div>
-    <div class="group" data-for="item">
-      <span class="lbl">Item</span>
-      <select id="ik" aria-label="Inline fitting"><option value="coupling" selected>Coupling</option><option value="union">Union</option><option value="strainer">Y-strainer</option><option value="expansion">Expansion joint</option><option value="spectacle">Spectacle blind</option><option value="orifice">Orifice plate</option></select>
-    </div>
-    <div class="group" data-for="flange">
-      <span class="lbl">Type</span>
-      <select id="fk" aria-label="Flange type"><option value="wn" selected>Weld-neck pair</option><option value="so">Slip-on pair</option><option value="lj">Lap-joint pair</option><option value="bl">Blind (pipe end)</option></select>
-    </div>
-    <div class="group" data-for="cap">
-      <span class="lbl">Type</span>
-      <select id="ck" aria-label="End closure"><option value="cap" selected>Cap BW</option><option value="plug">Plug THD</option></select>
-    </div>
-    <div class="group" data-for="equip">
-      <span class="lbl">Item</span>
-      <select id="eqk" aria-label="Equipment"><option value="pump" selected>Centrifugal pump</option><option value="vessel">Vertical vessel</option></select>
-      <button id="rot">Rotate 90°</button>
-    </div>
-  </div>
   <main id="stage">
     <canvas id="cv"></canvas>
-    <div id="views" class="float" role="group" aria-label="Views">
-      <button id="v-iso">Iso</button><button id="v-top">Top</button><button id="v-front">Front</button><button id="v-right">Right</button>
-      <button id="v-fit">Fit</button><button id="ortho" aria-pressed="false">Ortho</button><button id="dims" aria-pressed="false">Dims</button>
+    <nav id="rail" class="float" aria-label="Tools">
+      <button id="t-nav" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>View</button>
+      <button id="t-sel" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 7-6 2-2 6z"/></svg>Select</button>
+      <button id="t-pipe" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10a4 4 0 0 1 4-4h9"/><circle cx="4" cy="19" r="1.5"/><circle cx="18" cy="6" r="1.5"/></svg>Pipe</button>
+      <button id="t-parts" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><path d="M16.5 13v7M13 16.5h7"/></svg>Parts</button>
+      <button id="t-measure" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg>Measure</button>
+      <button id="t-del" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>Delete</button>
+    </nav>
+    <div id="parts" class="sheet" hidden></div>
+    <div id="ctx" class="float">
+      <div data-for="pipe">
+        <button id="psum" aria-label="Pipe settings">NPS 4</button>
+        <button id="ang" aria-pressed="false" aria-label="Allow 45 degree turns">45° turns</button>
+        <button id="finish">Finish run</button>
+      </div>
+      <div data-for="equip"><button id="rot">Rotate 90°</button></div>
     </div>
-    <div id="elev" class="float"><button id="down" aria-label="Lower 0.5 m">▼</button><output id="elv">EL +0.000 m</output><button id="up" aria-label="Raise 0.5 m">▲</button></div>
-    <div id="insp" class="sheet" hidden></div>
-    <div id="spec" class="sheet" hidden>
-      <h2>Project spec</h2>
-      <div class="row"><label>Elbow radius<select id="sp-el"><option value="LR">Long radius 1.5D</option><option value="SR">Short radius 1.0D</option><option value="3D">3D bend</option></select></label></div>
-      <div class="row"><label>Reducer<select id="sp-red"><option value="conc">Concentric</option><option value="ecc">Eccentric, flat on bottom</option></select></label></div>
-      <div class="row"><label>Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
-      <div class="row"><label>Olet type<select id="sp-olet"><option value="weldolet">Weldolet BW</option><option value="sockolet">Sockolet SW</option><option value="threadolet">Threadolet THD</option><option value="sweepolet">Sweepolet BW</option></select></label></div>
-      <p class="empty" style="margin:0;font-size:12px">Applies to every joint. Tap a fitting with Select to change just that one.</p>
+    <div id="pset" class="sheet" hidden>
+      <h2>Pipe settings</h2>
+      <div class="grid2">
+        <label class="field">Size<select id="nps"><option value="2">NPS 2 · 60.3 mm</option><option value="3">NPS 3 · 88.9 mm</option><option value="4" selected>NPS 4 · 114.3 mm</option><option value="6">NPS 6 · 168.3 mm</option></select></label>
+        <label class="field">Schedule<select id="sched"><option value="40" selected>SCH 40</option><option value="80">SCH 80</option></select></label>
+        <label class="field">Line number<input type="text" id="ln" value="L-001" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+        <label class="field">Grid snap<select id="snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select></label>
+      </div>
     </div>
-    <aside id="bom" class="sheet" aria-label="Bill of materials"></aside>
-    <div id="file" class="sheet" hidden>
-      <h2>File</h2>
+    <div id="elev" class="float"><button id="up" aria-label="Raise 0.5 m">▲</button><output id="elv">EL +0.000 m</output><button id="down" aria-label="Lower 0.5 m">▼</button></div>
+    <div id="side">
+      <div id="insp" class="sheet" hidden></div>
+      <div id="spec" class="sheet" hidden>
+        <h2>Project spec</h2>
+        <div class="row"><label class="field">Elbow radius<select id="sp-el"><option value="LR">Long radius 1.5D</option><option value="SR">Short radius 1.0D</option><option value="3D">3D bend</option></select></label></div>
+        <div class="row"><label class="field">Reducer<select id="sp-red"><option value="conc">Concentric</option><option value="ecc">Eccentric, flat on bottom</option></select></label></div>
+        <div class="row"><label class="field">Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
+        <div class="row"><label class="field">Olet type<select id="sp-olet"><option value="weldolet">Weldolet BW</option><option value="sockolet">Sockolet SW</option><option value="threadolet">Threadolet THD</option><option value="sweepolet">Sweepolet BW</option></select></label></div>
+        <p class="empty" style="margin:0;font-size:12px">Applies to every joint. Select a fitting to change just that one.</p>
+      </div>
+      <aside id="bom" class="sheet" aria-label="Bill of materials" hidden></aside>
+    </div>
+    <div id="more" class="sheet" hidden>
+      <button id="isoBtn">Isometric sheet</button>
+      <button id="specBtn" aria-pressed="false">Project spec</button>
+      <button id="ortho" aria-pressed="false">Orthographic view</button>
+      <button id="dims" aria-pressed="false">Show pipe lengths</button>
+      <hr>
       <button id="f-save">Save project (.json)</button>
       <button id="f-open">Open project</button>
       <button id="f-csv">Export BOM (.csv)</button>
       <button id="f-dxf">Export centrelines (.dxf)</button>
       <button id="f-png">Save image (.png)</button>
+      <hr>
       <button id="f-clear">Clear everything</button>
-      <input type="file" id="openf" accept=".json,application/json" hidden>
     </div>
+    <input type="file" id="openf" accept=".json,application/json" hidden>
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
       <header><h2>Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
       <div id="isoSheet"></div>
@@ -1113,6 +1112,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
+    $('pset').hidden = true; $('more').hidden = true;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
     if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
@@ -1150,14 +1150,41 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('wheel', function (e) { e.preventDefault(); dist = Math.min(60, Math.max(0.8, dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
 
   // ---------- UI ----------
-  var TOOLS = ['nav', 'sel', 'pipe', 'valve', 'flange', 'item', 'cap', 'equip', 'measure', 'del'];
+  var RAIL = ['nav', 'sel', 'pipe', 'measure', 'del'];
+  var PARTS = {
+    valve: { label: 'Valves', items: [['gate', 'Gate'], ['globe', 'Globe'], ['check', 'Check'], ['ball', 'Ball'], ['butterfly', 'Butterfly'], ['plug', 'Plug'], ['control', 'Control']] },
+    flange: { label: 'Flanges', items: [['wn', 'Weld-neck pair'], ['so', 'Slip-on pair'], ['lj', 'Lap-joint pair'], ['bl', 'Blind, pipe end']] },
+    item: { label: 'Inline', items: [['coupling', 'Coupling'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate']] },
+    cap: { label: 'Ends', items: [['cap', 'Cap BW'], ['plug', 'Plug THD']] },
+    equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] }
+  };
+  var PART_KEYS = Object.keys(PARTS), lastPart = 'valve';
+  function partVal(c) { return { valve: vk, flange: fk, item: ik, cap: ck, equip: eqk }[c]; }
+  function setPart(c, v) {
+    if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else eqk = v;
+    updateUi();
+  }
+  function renderParts() {
+    var tabs = PART_KEYS.map(function (c) { return '<button data-tab="' + c + '" aria-pressed="' + (tool === c) + '">' + PARTS[c].label + '</button>'; }).join('');
+    var chips = PARTS[tool].items.map(function (it) { return '<button data-chip="' + it[0] + '" aria-pressed="' + (partVal(tool) === it[0]) + '">' + it[1] + '</button>'; }).join('');
+    $('parts').innerHTML = '<div class="tabs">' + tabs + '</div><div class="chips">' + chips + '</div>';
+  }
+  $('parts').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+    if (b.dataset.tab) setTool(b.dataset.tab); else if (b.dataset.chip) setPart(tool, b.dataset.chip);
+  });
   function setTool(t) {
     tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
+    if (PARTS[t]) lastPart = t;
+    $('pset').hidden = true; $('more').hidden = true;
     if (t !== 'sel') sel = null;
     rebuild(); updateUi();
   }
   function updateUi() {
-    TOOLS.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
+    RAIL.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
+    $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
+    $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) renderParts();
+    $('psum').textContent = 'NPS ' + curN + ' · SCH ' + curS + ' · ' + curL;
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
     $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
@@ -1166,6 +1193,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
+    $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden));
     $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet;
     curMark.visible = !!cursor && tool === 'pipe';
     if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
@@ -1184,17 +1212,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('hint').textContent = hints[tool];
     if (tool !== 'pipe' && tool !== 'equip' && tool !== 'measure') { ghostLine.visible = marker.visible = false; }
   }
-  TOOLS.forEach(function (t) { $('t-' + t).onclick = function () { setTool(t); }; });
-  $('nps').onchange = function () { curN = +$('nps').value; };
-  $('sched').onchange = function () { curS = +$('sched').value; };
-  $('ln').onchange = function () { curL = $('ln').value.trim() || 'L-001'; $('ln').value = curL; };
+  RAIL.forEach(function (t) { $('t-' + t).onclick = function () { setTool(t); }; });
+  $('t-parts').onclick = function () { setTool(PARTS[tool] ? 'nav' : lastPart); };
+  $('psum').onclick = function () { $('pset').hidden = !$('pset').hidden; $('more').hidden = true; };
+  $('more').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (b && b.id !== 'ortho' && b.id !== 'dims') $('more').hidden = true;
+  });
+  $('nps').onchange = function () { curN = +$('nps').value; updateUi(); };
+  $('sched').onchange = function () { curS = +$('sched').value; updateUi(); };
+  $('ln').onchange = function () { curL = $('ln').value.trim() || 'L-001'; $('ln').value = curL; updateUi(); };
   $('snap').onchange = function () { snap = +$('snap').value; };
   $('ang').onclick = function () { ang45 = !ang45; updateUi(); };
-  $('vk').onchange = function () { vk = $('vk').value; updateUi(); };
-  $('eqk').onchange = function () { eqk = $('eqk').value; updateUi(); };
-  $('ik').onchange = function () { ik = $('ik').value; };
-  $('fk').onchange = function () { fk = $('fk').value; updateUi(); };
-  $('ck').onchange = function () { ck = $('ck').value; };
   function setSpec(k, v) { pushHist(); model.spec[k] = v; changed(); }
   $('sp-el').onchange = function () { setSpec('elbow', this.value); };
   $('sp-red').onchange = function () { setSpec('reducer', this.value); };
@@ -1207,8 +1236,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!hist.length) return;
     model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
   };
-  $('bomBtn').onclick = function () { var b = $('bom'); b.hidden = !b.hidden; $('bomBtn').setAttribute('aria-pressed', String(!b.hidden)); };
-  $('fileBtn').onclick = function () { var f = $('file'); f.hidden = !f.hidden; $('fileBtn').setAttribute('aria-pressed', String(!f.hidden)); };
+  $('bomBtn').onclick = function () { var b = $('bom'); b.hidden = !b.hidden; $('bomBtn').setAttribute('aria-pressed', String(!b.hidden)); $('more').hidden = true; };
+  $('moreBtn').onclick = function () { $('more').hidden = !$('more').hidden; $('pset').hidden = true; $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden)); };
   function vertical(sign) {
     if (cursor) {
       var y = Math.round((cursor[1] + sign * STEP) * 1000) / 1000;
@@ -1290,7 +1319,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- boot ----------
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
-  if (window.innerWidth < 900) { $('bom').hidden = true; $('bomBtn').setAttribute('aria-pressed', 'false'); }
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();

@@ -36,6 +36,14 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Model arrays: `pipes`, `valves`, `flanges`, `caps` (pipe end points), `equip` (`{k, p, r}`). `normalize()` fills defaults so old saves load.
 - `window.PipeDraft` exists only for the headless tests.
 
+## Screen layout (keep it uncluttered)
+- Header: view buttons (Iso, Top, Front, Right), Fit, Undo, BOM, and the ⋯ menu (isometric sheet, project spec, orthographic, pipe lengths, file actions).
+- Left rail: six tools only: View, Select, Pipe, Parts, Measure, Delete. Parts opens a palette with tabs (Valves, Flanges, Inline, Ends, Equipment) and large chips; choosing a chip arms that part, then tap the canvas.
+- Bottom centre: context bar shown only for Pipe (settings summary, 45° turns, Finish run) and Equipment (Rotate). The summary button opens the pipe settings sheet (size, schedule, line number, snap).
+- Right column: inspector, project spec and BOM, shown only when opened. Elevation up and down sit bottom right.
+- Do not add toolbar buttons. New parts go into `PARTS` as chips, new actions into the ⋯ menu, new per-item settings into the inspector.
+- Touch targets are at least 48 px. Tapping the canvas closes the pipe settings and the ⋯ menu.
+
 ## iPad input
 - Finger: one-finger drag orbits, two fingers pan and zoom, tap places.
 - Apple Pencil in Pipe, Valve and Delete tools: touch and drag to aim, lift to place. Touches within 350 ms of the pen are ignored as palm contact.
