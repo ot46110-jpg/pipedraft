@@ -528,6 +528,36 @@ check('typing a position moves the valve along the pipe', near(PD.model.valves[0
 els['i-pos'].value = '20'; els['i-pos'].onchange();
 check('a position too close to an end is refused', near(PD.model.valves[0].p, [2.5, 0, 0]));
 
+// Cut list, weld numbers and spools.
+const pipeQty = () => { const r = PD.rows().find(x => x[0].startsWith('Pipe, ') && /m$/.test(x[1])); return r ? parseFloat(r[1]) : 0; };
+const cutSum = f => f.pieces.reduce((a, p) => a + p.len, 0);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+let fb = PD.fab();
+check('a valve splits its pipe into two cut pieces, and the elbow end makes a third', fb.pieces.length === 3 && Math.abs(fb.pieces[0].len - (2 - 0.229 / 2)) < 0.001, JSON.stringify(fb.pieces.map(p => p.len)));
+check('the cut lengths add up to the BOM pipe quantity', Math.abs(cutSum(fb) - pipeQty()) < 0.01, cutSum(fb) + ' vs ' + pipeQty());
+check('welds are the two elbow ends, the flanged valve is bolted', fb.welds.length === 2 && fb.welds.every(w => w.kind === 'BW') && fb.joints.length === 2 && fb.welds[0].no === 1 && fb.welds[1].no === 2, JSON.stringify(fb.welds.map(w => w.kind)));
+check('spools stay together through shop welds and split at the bolted valve', fb.spools.length === 2 && fb.pieces[0].label === 'S01-1' && fb.pieces[1].spool === 'S02' && fb.pieces[2].spool === 'S02' && fb.pieces[2].label === 'S02-2', JSON.stringify(fb.pieces.map(p => p.label)));
+PD.model.field[fb.welds[0].key] = 1; PD.rebuild(); fb = PD.fab();
+check('marking a weld as field splits the spool there', fb.spools.length === 3 && fb.welds[0].field === true && fb.welds[1].field === false, JSON.stringify(fb.pieces.map(p => p.spool)));
+check('the cut list csv lists pieces and welds', PD.fabCsv().startsWith('Piece,Spool,Line,Pipe,Cut length (mm)\nS01-1,') === false && PD.fabCsv().includes('"S01-1","S01","L-001"') && PD.fabCsv().includes('W1,"Butt weld"') && PD.fabCsv().includes(',Field') && PD.fabCsv().includes(',Shop'));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], flanges: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'wn' }] });
+fb = PD.fab();
+check('a flange pair takes its thickness out of the pipe, in the cut list and in the BOM alike', fb.pieces.length === 2 && Math.abs(cutSum(fb) - pipeQty()) < 0.01 && cutSum(fb) < 4 - 0.02, cutSum(fb) + ' vs ' + pipeQty());
+check('weld-neck flanges are welded to each side, the pair is bolted, so two spools', fb.welds.length === 2 && fb.joints.length === 1 && fb.spools.length === 2, JSON.stringify([fb.welds.length, fb.joints.length, fb.spools.length]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], flanges: [{ p: [4, 0, 0], d: [1, 0, 0], n: 4, t: 'bl' }] });
+fb = PD.fab();
+check('a blind flange on a pipe end shortens that pipe and is welded once', fb.pieces.length === 1 && fb.pieces[0].len < 4 - 0.02 && fb.welds.length === 1 && Math.abs(cutSum(fb) - pipeQty()) < 0.01, JSON.stringify(fb.pieces.map(p => p.len)));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 6 }], valves: [] }); PD.addPipe([2, 0, 0], [2, 0, 2], 3, 40); PD.rebuild(); fb = PD.fab();
+check('an olet is welded to the header and the branch to the olet, all in one spool', fb.welds.length === 2 && fb.spools.length === 1 && fb.pieces.length === 2, JSON.stringify([fb.welds.length, fb.spools.length, fb.pieces.length]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }, { a: [4, 0, 3], b: [8, 0, 3], n: 4 }], valves: [] }); fb = PD.fab();
+check('a straight run of fittings: four welds, one spool, cut lengths sum to the BOM', fb.welds.length === 4 && fb.spools.length === 1 && Math.abs(cutSum(fb) - pipeQty()) < 0.01, JSON.stringify([fb.welds.length, fb.spools.length]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [8, 0, 0], n: 4 }], valves: [] }); fb = PD.fab();
+check('two collinear pipes meet in one butt weld', fb.welds.length === 1 && fb.pieces.length === 2 && fb.spools.length === 1, JSON.stringify([fb.welds.length, fb.pieces.length, fb.spools.length]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 1 }, { a: [4, 0, 0], b: [4, 0, 2], n: 1 }], valves: [] }); fb = PD.fab();
+check('small bore welds are socket welds by default', fb.welds.length === 2 && fb.welds.every(w => w.kind === 'SW'), JSON.stringify(fb.welds.map(w => w.kind)));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [] });
+check('the iso sheet numbers the welds', PD.iso().includes('>W1<') && PD.iso().includes('>W2<'));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));

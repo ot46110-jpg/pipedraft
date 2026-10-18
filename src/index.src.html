@@ -228,6 +228,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="isoBtn">Isometric sheet</button>
         <button id="pidBtn">P&amp;ID sheet</button>
         <button id="hydBtn">Hydraulics</button>
+        <button id="fabBtn">Cut list and welds</button>
         <button id="legendBtn">Piping symbols</button>
       </details>
       <details name="menu">
@@ -242,6 +243,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="f-save">Save project (.json)</button>
         <button id="f-open">Open project</button>
         <button id="f-csv">Export BOM (.csv)</button>
+        <button id="f-fab">Export cut list and welds (.csv)</button>
         <button id="f-dxf">Export centrelines (.dxf)</button>
         <button id="f-png">Save image (.png)</button>
         <button id="f-clear">Clear everything</button>
@@ -255,6 +257,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <section id="hyd" class="sheet" hidden aria-label="Hydraulics">
       <header><h2>Hydraulics</h2><button id="hyd-close">Close</button></header>
       <div id="hydBody"></div>
+    </section>
+    <section id="fab" class="sheet" hidden aria-label="Cut list and welds">
+      <header><h2>Cut list and welds</h2><button id="fab-csv">Save .csv</button><button id="fab-close">Close</button></header>
+      <div id="fabBody"></div>
     </section>
     <div id="toast" role="status"></div>
   </main>
@@ -411,7 +417,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null;
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
   function normalize(m) {
     var o = blank();
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -423,7 +429,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.instr = (m.instr || []).filter(function (q) { return INSTR[q.k]; });
     o.supports = (m.supports || []).filter(function (q) { return SUPPORT_NAME[q.t]; });
     o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
-    o.fit = m.fit || {};
+    o.fit = m.fit || {}; o.field = m.field || {};
     o.spec = Object.assign(o.spec, m.spec || {});
     return o;
   }
@@ -587,7 +593,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- model -> meshes ----------
   var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, item: 11, instr: 12, support: 13, weight: 14 };
-  var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {};
+  var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {}, pipeTrim = {};
   var compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }, curRef = null;
   function add(cat, desc, qty, unit) {
     desc = desc.split('150#').join(std().cls);                      // the rating word follows the chosen standard
@@ -613,7 +619,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
     }
     applyStd();
-    lines = {}; warns = []; nozList = []; pipeLen = {};
+    lines = {}; warns = []; nozList = []; pipeLen = {}; pipeTrim = {};
     compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }; curRef = null;
     var weight = 0;
 
@@ -720,7 +726,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (Lp < 0.001) return;
       var dir = d.clone().normalize(), ta = trims[i + 'a'] || 0, tb = trims[i + 'b'] || 0, len = Lp - ta - tb;
       if (len < -0.0005) warns.push('Pipe ' + (i + 1) + ' (' + Math.round(Lp * 1000) + ' mm) is shorter than the fittings at its ends.');
-      pipeLen[i] = Math.max(len, 0);
+      pipeLen[i] = Math.max(len, 0); pipeTrim[i] = [ta, tb];
       if (len < 0.001) return;
       var s = p.s || 40, r = OD[p.n] / 2000;
       var m = new T.Mesh(new T.CylinderGeometry(r, r, len, 24), mat(new T.Color(COL[p.n]).multiplyScalar(s === 80 ? 0.72 : 1)));
@@ -1020,6 +1026,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else add('flange', 'Weld-neck flange 150# BW, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc');
       add('flange', 'Gasket 150# spiral wound, ' + sz(f.n), 1, 'pc');
       add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
+      var hf = hostOf(f.p);
+      if (hf >= 0) {
+        var Lf = flangeSpan(f);
+        add('pipe', 'Pipe, ' + sz(f.n) + ' SCH ' + sch + ', ' + pipeEnd(f.n), -Lf, 'm');
+        total -= Lf; weight -= Lf * lineWeight(f.n, sch); pipeLen[hf] = Math.max(0, (pipeLen[hf] || 0) - Lf);
+      }
     });
 
     curRef = null;
@@ -1033,6 +1045,125 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     matDirty = true;
     renderBom(); showInsp();
     $('undo').disabled = !hist.length;
+  }
+
+  // ---------- fabrication: cut list, weld numbers, spools ----------
+  // Cut lengths are what is left of each pipe between the fittings, valves, items and flanges on it, so the total
+  // equals the pipe quantity in the BOM. Welds are numbered in the order they are found. A weld is shop unless
+  // the drafter marks it as a field weld; spools are the groups of parts that stay welded together in the shop.
+  function weldKindFor(n) { var s = (model.spec || {}).small || 'SW'; return n > 1.5 ? 'BW' : s === 'THD' ? 'THD' : s === 'BW' ? 'BW' : 'SW'; }
+  function elEnd(el) {                                              // how a pipe meets an in-line part: a weld, a thread or bolting
+    var n = el.n;
+    if (el.what === 'valve') { var t = valveEnd(el.kind, n); return /flanged|wafer/.test(t) ? 'BOLT' : /THD/.test(t) ? 'THD' : 'SW'; }
+    if (el.what === 'item') { var nm = ITEM_NAME[el.kind] || ''; return /flanged/.test(nm) ? 'BOLT' : /THD/.test(nm) ? 'THD' : /SW/.test(nm) ? 'SW' : 'BW'; }
+    var f = el.kind;
+    return f === 'so' ? 'FW' : f === 'th' ? 'THD' : f === 'sw' ? 'SW' : weldKindFor(n);
+  }
+  function flangeSpan(f) { var ft = FL[f.n][1], gap = 0.004; return f.t === 'bl' ? ft + gap : 2 * (ft + gap); }
+  function fabrication() {
+    var field = model.field || {}, welds = [], pieces = [], joints = [], parent = {}, byPair = {}, jpos = {};
+    function find(x) { if (parent[x] == null) parent[x] = x; while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    function union(a, b) { a = find(a); b = find(b); if (a !== b) parent[a] = b; }
+    function mkWeld(kind, n, pos, ln, wkey) {
+      var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey] };
+      if (kind === 'BW' || kind === 'SW' || kind === 'FW') welds.push(w); else joints.push(w);
+      return w;
+    }
+    function link(w, a, b) { if (w.kind !== 'BW' && w.kind !== 'SW' && w.kind !== 'FW' || w.field) return; union(a, b); }
+    var els = {};                                                   // in-line parts by pipe
+    function put(i, el) { (els[i] = els[i] || []).push(el); }
+    model.valves.forEach(function (v, k) { var i = hostOf(v.p); if (i < 0) return; var kind = VALVE_FF[v.k] ? v.k : 'gate'; put(i, { what: 'valve', idx: k, kind: kind, n: v.n, p: v.p, half: VALVE_FF[kind][v.n] / 2 }); });
+    model.items.forEach(function (it, k) { var i = hostOf(it.p); if (i < 0) return; put(i, { what: 'item', idx: k, kind: it.t, n: it.n, p: it.p, half: itemLen(it.t, it.n) / 2 }); });
+    model.flanges.forEach(function (f, k) { var i = hostOf(f.p); if (i < 0) return; put(i, { what: 'flange', idx: k, kind: f.t || 'wn', n: f.n, p: f.p, half: flangeSpan(f) / 2, blind: f.t === 'bl' }); });
+    var oletEnds = {};
+    model.pipes.forEach(function (p, i) {
+      var a = V(p.a), b = V(p.b), Lp = a.distanceTo(b); if (Lp < 0.001) return;
+      var dir = b.clone().sub(a).normalize(), tr = pipeTrim[i] || [0, 0], ln = p.ln || 'L-001', ps = [];
+      function at(t) { return mm3(a.clone().addScaledVector(dir, t)); }
+      var list = (els[i] || []).map(function (e) { e.t = V(e.p).distanceTo(a); return e; }).sort(function (x, y) { return x.t - y.t; });
+      var c0 = tr[0], prev = null;
+      list.forEach(function (e) {
+        var s = e.t - e.half, e0 = e.t + e.half;
+        if (e.blind) { if (e.t > Lp / 2) { s = e.t - 2 * e.half; e0 = e.t; } else { s = e.t; e0 = e.t + 2 * e.half; } }
+        if (s - c0 > 0.0005) ps.push({ t0: c0, t1: s, from: prev, to: e });
+        c0 = Math.max(c0, e0); prev = e;
+      });
+      if (Lp - tr[1] - c0 > 0.0005) ps.push({ t0: c0, t1: Lp - tr[1], from: prev, to: null });
+      ps.forEach(function (pc, k) {
+        pc.i = i; pc.k = k; pc.id = 'P' + i + '.' + k; pc.n = p.n; pc.s = p.s || 40; pc.ln = ln; pc.len = pc.t1 - pc.t0;
+        pc.pa = at(pc.t0); pc.pb = at(pc.t1); pieces.push(pc);
+      });
+      // Welds at each end of each piece.
+      function endJoint(pc, side) {
+        var nb = side === 'a' ? pc.from : pc.to, t = side === 'a' ? pc.t0 : pc.t1, pos = side === 'a' ? pc.pa : pc.pb;
+        if (nb) {
+          var kind = elEnd(nb), w = mkWeld(kind, nb.n, pos, ln, i + '@' + key(pos));
+          var half = (nb.t < t ? 'b' : 'a'), node = nb.what[0].toUpperCase() + nb.idx + (nb.what === 'flange' ? half : '');
+          link(w, pc.id, node); return;
+        }
+        var end = side === 'a' ? p.a : p.b, k = key(end);
+        if (nozzleAt(k)) { mkWeld('BOLT', p.n, pos, ln, i + '@' + key(pos)); return; }
+        var J = jointInfo[k]; if (!J) return;
+        if (J.type === 'olet' && (side === 'a' ? tr[0] : tr[1]) < 0.001) {   // the header runs on through an olet, it is one pipe
+          union(pc.id, 'J' + key(J.pos)); (oletEnds[key(J.pos)] = oletEnds[key(J.pos)] || []).push({ pc: pc, side: side }); return;
+        }
+        if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
+        if (J.legs.length === 2) {
+          var pk = 'P@' + k, w3 = byPair[pk];
+          if (!w3) { w3 = byPair[pk] = mkWeld(weldKindFor(p.n), p.n, J.pos, ln, pk); w3.pcs = []; }
+          w3.pcs.push(pc.id); if (w3.pcs.length === 2) link(w3, w3.pcs[0], w3.pcs[1]);
+        }
+      }
+      ps.forEach(function (pc) { endJoint(pc, 'a'); endJoint(pc, 'b'); });
+    });
+    model.flanges.forEach(function (f, k) { var i = hostOf(f.p); if (i >= 0 && f.t !== 'bl') mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FB@' + k); });
+    // An olet is welded to the header and the branch pipe is welded to the olet.
+    Object.keys(jointInfo).forEach(function (k) {
+      var J = jointInfo[k]; if (J.type !== 'olet') return;
+      var h = hostOf(J.pos), kind = /^(sockolet|halfcoupling)$/.test(J.oletKind) ? 'SW' : J.oletKind === 'threadolet' ? 'THD' : 'BW';
+      var hp = null, tj = h >= 0 ? V(J.pos).distanceTo(V(model.pipes[h].a)) : 0;
+      pieces.forEach(function (pc) { if (pc.i === h && tj >= pc.t0 - 0.001 && tj <= pc.t1 + 0.001) hp = pc; });
+      var w = mkWeld(kind, h >= 0 ? model.pipes[h].n : 0, J.pos, h >= 0 ? model.pipes[h].ln : '', 'O@' + k);
+      if (hp) link(w, hp.id, 'J' + k);
+    });
+    Object.keys(oletEnds).forEach(function (k) {                    // the two halves of a header split at an olet are one cut piece
+      var e = oletEnds[k]; if (e.length !== 2) return;
+      var A0 = e[0].side === 'b' ? e[0].pc : e[1].pc, B0 = e[0].side === 'b' ? e[1].pc : e[0].pc;
+      if (e[0].side === e[1].side) return;
+      A0.len += B0.len; A0.pb = B0.pb; A0.t1 = A0.t0 + A0.len; A0.merged = (A0.merged || []).concat([B0.id]);
+      pieces.splice(pieces.indexOf(B0), 1);
+    });
+    // Spools: parts still joined by shop welds.
+    var sp = {}, order = [];
+    pieces.forEach(function (pc) { var r = find(pc.id); if (!sp[r]) { sp[r] = { id: 'S' + String(order.length + 1).padStart(2, '0'), pieces: [], ln: pc.ln, len: 0, welds: 0 }; order.push(r); } pc.spool = sp[r].id; sp[r].pieces.push(pc); sp[r].len += pc.len; });
+    var count = {};
+    pieces.forEach(function (pc) { count[pc.spool] = (count[pc.spool] || 0) + 1; pc.label = pc.spool + '-' + count[pc.spool]; });
+    welds.forEach(function (w, i) { w.no = i + 1; });
+    return { pieces: pieces, welds: welds, joints: joints, spools: order.map(function (r) { return sp[r]; }) };
+  }
+  var WELD_NAME = { BW: 'Butt weld', SW: 'Socket weld', FW: 'Fillet weld' };
+  function fabHtml() {
+    var f = fabrication(), h = '';
+    if (!f.pieces.length) return '<p class="empty">No pipe to cut yet.</p>';
+    var tot = f.pieces.reduce(function (a, p) { return a + p.len; }, 0), field = f.welds.filter(function (w) { return w.field; }).length;
+    h += '<p class="empty">' + f.spools.length + ' spool' + (f.spools.length === 1 ? '' : 's') + ', ' + f.pieces.length + ' pipe pieces, ' + tot.toFixed(2) + ' m of pipe to cut, ' + f.welds.length + ' welds (' + field + ' field), ' + f.joints.length + ' bolted or threaded joints. Cut lengths are to the faces of the parts they join, with no allowance for gaps or saw cuts. Mark a weld as Field to break a spool there.</p>';
+    h += '<h3>Cut list</h3><div class="scroll"><table class="tbl"><thead><tr><th>Piece</th><th>Line</th><th>Pipe</th><th>Cut length mm</th></tr></thead><tbody>'
+      + f.pieces.map(function (p) { return '<tr><td>' + esc(p.label) + '</td><td>' + esc(p.ln) + '</td><td>' + esc(compDesc.pipe[p.i] || '') + '</td><td><b>' + Math.round(p.len * 1000) + '</b></td></tr>'; }).join('') + '</tbody></table></div>';
+    h += '<h3>Welds</h3><div class="scroll"><table class="tbl"><thead><tr><th>No.</th><th>Type</th><th>Size</th><th>Line</th><th>Where, mm (X, Y, Z)</th><th>Made</th></tr></thead><tbody>'
+      + f.welds.map(function (w) {
+        var c = [w.pos[0], w.pos[2], w.pos[1]].map(function (v) { return Math.round(v * 1000); }).join(', ');
+        return '<tr><td>W' + w.no + '</td><td>' + WELD_NAME[w.kind] + '</td><td>' + (w.n ? szs(w.n) : '') + '</td><td>' + esc(w.ln) + '</td><td>' + c + '</td><td><button data-wk="' + esc(w.key) + '" aria-pressed="' + w.field + '">' + (w.field ? 'Field' : 'Shop') + '</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+    h += '<h3>Spools</h3><div class="scroll"><table class="tbl"><thead><tr><th>Spool</th><th>Line</th><th>Pieces</th><th>Pipe m</th></tr></thead><tbody>'
+      + f.spools.map(function (s) { return '<tr><td>' + s.id + '</td><td>' + esc(s.ln) + '</td><td>' + s.pieces.length + '</td><td>' + s.len.toFixed(2) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    return h;
+  }
+  function showFab() { $('fabBody').innerHTML = fabHtml(); $('fab').hidden = false; }
+  function fabCsv() {
+    var f = fabrication(), q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
+    var o = 'Piece,Spool,Line,Pipe,Cut length (mm)\n' + f.pieces.map(function (p) { return [q(p.label), q(p.spool), q(p.ln), q(compDesc.pipe[p.i] || ''), Math.round(p.len * 1000)].join(','); }).join('\n');
+    o += '\n\nWeld,Type,Size,Line,X (mm),Y (mm),Z (mm),Made\n' + f.welds.map(function (w) { return ['W' + w.no, q(WELD_NAME[w.kind]), q(w.n ? szs(w.n) : ''), q(w.ln), Math.round(w.pos[0] * 1000), Math.round(w.pos[2] * 1000), Math.round(w.pos[1] * 1000), w.field ? 'Field' : 'Shop'].join(','); }).join('\n');
+    return o + '\n';
   }
 
   // ---------- BOM ----------
@@ -1930,9 +2061,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.1 + Math.sqrt(p.n) * 0.45).toFixed(2) + '" stroke-linecap="round"/>';
     });
     // Butt welds at fittings.
-    Object.keys(jointInfo).forEach(function (k) {
-      var j = jointInfo[k]; if (!j.type) return;
-      var q = sp(j.pos); body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + INK + '"/>';
+    fabrication().welds.forEach(function (w) {
+      var q = sp(w.pos);
+      body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>'
+        + svgText(q[0] + 5, q[1] + 11, 'W' + w.no, 7.5, 'start');
     });
 
     // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
@@ -2568,6 +2700,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('isoBtn').onclick = function () { showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso.svg'); };
   $('hydBtn').onclick = showHyd;
   $('hyd-close').onclick = function () { $('hyd').hidden = true; };
+  $('fabBtn').onclick = function () { $('more').hidden = true; showFab(); };
+  $('fab-close').onclick = function () { $('fab').hidden = true; };
+  $('fab-csv').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
+  $('f-fab').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
+  $('fabBody').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button[data-wk]') : null; if (!b) return;
+    var k = b.getAttribute('data-wk'); if (model.field[k]) delete model.field[k]; else model.field[k] = 1;
+    save(); rebuild(); $('fabBody').innerHTML = fabHtml();
+  });
   $('hydBody').addEventListener('change', function (e) {
     var t = e.target; if (!t) return;
     if (t.id === 'h-fl') model.fluid = t.value;
@@ -2629,7 +2770,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
