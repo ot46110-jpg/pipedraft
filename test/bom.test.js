@@ -142,6 +142,33 @@ if (process.env.PD_WRITE_SVG) {                                        // option
   fs.writeFileSync(path.join(process.env.PD_WRITE_SVG, 'legend.svg'), PD.legend());
 }
 
+// Instruments and the P&ID sheet.
+const loop = {
+  equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }, { k: 'vessel', p: [9, 0, 0], r: 0 }],
+  pipes: [{ a: [-0.15, 0.7, 0], b: [-0.15, 2, 0], n: 3 }, { a: [-0.15, 2, 0], b: [4, 2, 0], n: 3 }, { a: [4, 2, 0], b: [7, 2, 0], n: 3 }, { a: [4, 2, 0], b: [4, 2, 3], n: 3 }],
+  valves: [{ p: [1.5, 2, 0], d: [1, 0, 0], n: 3, k: 'control' }, { p: [5.5, 2, 0], d: [1, 0, 0], n: 3, k: 'gate' }],
+  instr: [
+    { k: 'FT', p: [0.9, 2, 0], d: [1, 0, 0], n: 3, num: 101 },
+    { k: 'FIC', p: [2.6, 2, 0], d: [1, 0, 0], n: 3, num: 101, link: 0 },
+    { k: 'PSV', p: [4, 2, 1.5], d: [0, 0, 1], n: 3, num: 101 },
+    { k: 'LT', eq: 1, p: [9.6, 1, 0], num: 101 }
+  ]
+};
+PD.load(loop);
+check('instruments in BOM', has('Flow transmitter FT-101 | 1') && has('Flow controller FIC-101 | 1') && has('Pressure safety valve PSV-101 | 1') && has('Level transmitter LT-101 | 1'), rows());
+const isoI = PD.iso();
+check('iso sheet draws bubbles, PSV symbol and the signal line', isoI.includes('>FIC<') && isoI.includes('>PSV-101<') && isoI.includes('stroke-dasharray="4 3"') && isoI.includes('Signal line') && isoI.includes('Field instrument'));
+const pid = PD.pid();
+check('P&ID sheet renders', /^<svg/.test(pid) && pid.includes('P&amp;ID (SCHEMATIC)') && !pid.includes('NaN'));
+check('P&ID uses the same tags as the iso sheet', ['P-1', 'V-1', 'FCV-1', 'GV-1'].every(t => pid.includes('>' + t + '<') && isoI.includes('>' + t + '<')), pid.match(/>[A-Z]+-\d+</g) + '');
+check('P&ID shows instrument bubbles, loop numbers and a signal line', pid.includes('>FT<') && pid.includes('>FIC<') && pid.includes('>LT<') && pid.includes('>101<') && pid.includes('Signal line'));
+check('P&ID shows line number and size', pid.includes('L-001 · NPS 3'));
+check('P&ID puts the branch on its own row', new Set([...pid.matchAll(/<line x1="[\d.]+" y1="([\d.]+)" x2="[\d.]+" y2="\1" stroke="#14191c" stroke-width="1.8"/g)].map(m => m[1])).size >= 2);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], instr: [{ k: 'PT', p: [2, 1, 1], d: [1, 0, 0], n: 4, num: 101 }] });
+check('instrument off the pipe is reported', PD.warns().some(w => w.includes('PT-101 is not on a pipe')), PD.warns().join('\n'));
+PD.load({ pipes: [], valves: [] });
+check('P&ID empty returns null', PD.pid() === null);
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
