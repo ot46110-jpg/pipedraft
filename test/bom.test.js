@@ -402,7 +402,7 @@ check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
 check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#dde3e6"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
 check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y (N)<') && isoP.includes('>Z<'));
-check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('symbol the isometric sheet draws') && PD.legend().includes('M-8,-6 L8,6 L8,-6 L-8,6Z'));
+check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('symbol the isometric sheet draws') && PD.legend().includes('M-10,-5 L10,5 L10,-5 L-10,5Z'));
 {
   const valveKinds = ['gate', 'globe', 'check', 'ball', 'butterfly', 'plug', 'control', 'angle', 'needle', 'diaphragm', 'knife', 'threeway', 'footv'];
   const pics = new Set(valveKinds.map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k }] }); const m = PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s); return m ? m[1] : ''; }));
@@ -417,8 +417,8 @@ check('the symbol reference sheet says how iso uses the symbols', PD.legend().in
   check('gauges, transmitters and controllers are drawn', ins.every(Boolean));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
   const symSvg = PD.iso('', 0), picSvg = PD.iso('', 0, undefined, 'pic');
-  check('by default a valve is the usual iso bow-tie with its stem and handwheel bar', symSvg.includes('M-8,-6 L8,6 L8,-6 L-8,6Z') && symSvg.includes('stroke-width="2.2"'));
-  check('and the pictures can be chosen instead', picSvg.includes('#dde3e6') && !picSvg.includes('M-8,-6 L8,6 L8,-6 L-8,6Z') && symSvg !== picSvg);
+  check('by default a valve is the usual iso bow-tie with its stem and handwheel bar', symSvg.includes('M-10,-5 L10,5 L10,-5 L-10,5Z'));
+  check('and the pictures can be chosen instead', picSvg.includes('#dde3e6') && !picSvg.includes('M-10,-5 L10,5 L10,-5 L-10,5Z') && symSvg !== picSvg);
   const bowties = new Set(valveKinds.map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k }] }); return (PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s) || [])[1]; }));
   check('each valve type has a different mark in the symbol style too', bowties.size === valveKinds.length, String(bowties.size));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate', hw: 180 }] });

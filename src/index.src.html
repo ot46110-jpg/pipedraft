@@ -2294,29 +2294,59 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // two bars for a flange. Flanged valves get their flange bars from the flanges fitted against them. Parts without a symbol of
   // their own here (strainers, expansion joints and so on) use the pictures above.
   var ISOS = (function () {
-    var DK = '#14191c';
+    var DK = '#14191c', W = '#ffffff';
     function P(d, f) { return '<path d="' + d + '" fill="' + (f || 'none') + '"/>'; }
     function Ln(x1, y1, x2, y2, sw) { return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"' + (sw ? ' stroke-width="' + sw + '"' : '') + '/>'; }
-    function C(cx, cy, r, f) { return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + (f || 'none') + '"/>'; }
-    function E(cx, cy, rx, ry, f) { return '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="' + (f || 'none') + '"/>'; }
-    var BT = P('M-8,-6 L8,6 L8,-6 L-8,6Z', '#ffffff'), STEM = function (y) { return Ln(0, 0, 0, y) + Ln(-5, y, 5, y, 2.2); };
+    function C(cx, cy, r, f) { return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + (f || W) + '"/>'; }
+    function R(x, y, w, h2, f) { return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h2 + '" fill="' + (f || W) + '"/>'; }
+    var BT = P('M-10,-5 L10,5 L10,-5 L-10,5Z', W);
+    var HAND = Ln(0, 0, 0, -12) + Ln(-5, -12, 5, -12, 2);                                   // stem with a handwheel bar
+    var LEVER = P('M0,0 L0,-8 L-7,-8', 'none') + Ln(0, -8, 0, -8);                          // stem bent into a lever
+    var DOME = Ln(0, 0, 0, -9) + P('M-7,-9 A7,7 0 0 1 7,-9Z', W);                          // diaphragm operator
     var s = {};
-    s.gate = BT + STEM(-13);
-    s.globe = BT + C(0, 0, 2.8, DK) + STEM(-13);
-    s.check = BT + P('M-3.5,-3.2 L3.8,0 L-3.5,3.2Z', DK);
-    s.ball = BT + C(0, 0, 3.4, '#ffffff') + Ln(0, 0, 0, -9) + Ln(0, -9, 10, -9, 2.4);
-    s.butterfly = Ln(-2.5, -8, -2.5, 8, 2.2) + Ln(2.5, -8, 2.5, 8, 2.2) + E(0, 0, 1.6, 6, '#ffffff') + Ln(0, 0, 0, -11) + Ln(0, -11, 10, -11, 2.4);
-    s.plug = BT + P('M-3.2,2.6 L3.2,2.6 L2,-2.6 L-2,-2.6Z', DK) + STEM(-13);
-    s.control = BT + Ln(0, 0, 0, -10) + P('M-8,-10 A8,8 0 0 1 8,-10Z', '#ffffff') + Ln(-8, -10, 8, -10);
-    s.angle = P('M-8,-6 L-8,6 L0,0Z', '#ffffff') + P('M0,0 L-6,13 L6,13Z', '#ffffff') + STEM(-13);
-    s.needle = BT + P('M-2.5,-9 L2.5,-9 L0,-3.5Z', DK) + Ln(0, 0, 0, -3.5) + Ln(-4.5, -9, 4.5, -9, 2.2);
-    s.diaphragm = BT + Ln(0, 0, 0, -8) + P('M-5,-8 A5,5 0 0 1 5,-8Z', '#ffffff') + Ln(-5, -8, 5, -8);
-    s.knife = Ln(-2.5, -8, -2.5, 8, 2.2) + Ln(2.5, -8, 2.5, 8, 2.2) + P('M-4.5,-8 L4.5,-8 L0,0Z', '#ffffff') + STEM(-14);
-    s.threeway = BT + Ln(0, 0, 0, 11) + Ln(-5, 11, 5, 11, 2.2) + STEM(-13);
-    s.footv = BT + P('M-3.5,-3.2 L3.8,0 L-3.5,3.2Z', DK) + P('M-4.5,7 L4.5,7 L6.5,15 L-6.5,15Z', '#ffffff') + Ln(-3, 11, 3, 11, 0.8);
-    ['wn', 'so', 'lj', 'th', 'sw'].forEach(function (t) { s['fl-' + t] = Ln(-2.2, -8, -2.2, 8, 2.6) + Ln(2.2, -8, 2.2, 8, 2.6); });
-    s['fl-ro'] = s['fl-wn'] + Ln(0, -8, 0, -14, 1.4) + Ln(0, 8, 0, 14, 1.4);
+    s.gate = BT + HAND;
+    s.globe = BT + C(0, 0, 3, DK) + HAND;
+    s.check = P('M-10,-5 L-10,5 L10,0Z', W) + Ln(10, -5, 10, 5, 2);
+    s.ball = BT + C(0, 0, 3.4, W) + LEVER;
+    s.butterfly = Ln(-7, -5, -7, 5, 2) + Ln(7, -5, 7, 5, 2) + Ln(-5.5, -3, 5.5, 3) + C(0, 0, 2, DK) + LEVER;
+    s.plug = BT + P('M-3.5,-4 L3.5,-4 L0,4Z', DK) + LEVER;
+    s.control = BT + DOME;
+    s.angle = P('M-10,-5 L-10,5 L0,0Z', W) + P('M0,0 L-5,12 L5,12Z', W) + HAND;
+    s.needle = BT + P('M-2.5,-8 L2.5,-8 L0,-3.5Z', DK) + Ln(0, -3.5, 0, 0) + Ln(-5, -8, 5, -8, 2);
+    s.diaphragm = BT + Ln(0, 0, 0, -7) + P('M-5,-7 A5,5 0 0 1 5,-7Z', W) + Ln(0, -12, 0, -12);
+    s.knife = Ln(-7, -5, -7, 5, 2) + Ln(7, -5, 7, 5, 2) + P('M-5,-5 L5,-5 L0,3Z', W) + Ln(0, -5, 0, -14) + Ln(-4, -14, 4, -14, 2) + Ln(-3, -14, -3, -8) + Ln(3, -14, 3, -8);
+    s.threeway = BT + Ln(0, 0, 0, 10) + Ln(-5, 10, 5, 10, 2) + HAND;
+    s.footv = P('M-10,-5 L-10,5 L10,0Z', W) + Ln(10, -5, 10, 5, 2) + P('M-5,6 L5,6 L7,14 L-7,14Z', W);
+    s.strainer = R(-10, -5, 20, 10) + Ln(-10, -5, 10, 5);
+    s.expansion = Ln(-10, -5, -10, 5, 2) + Ln(10, -5, 10, 5, 2) + P('M-8,-5 L-6,5 L-4,-5 L-2,5 L0,-5 L2,5 L4,-5 L6,5 L8,-5', 'none');
+    s.trap = R(-10, -5, 20, 10) + R(-5, -2, 10, 7, 'none');
+    s.spectacle = Ln(0, -4, 0, 4, 2) + C(0, -9, 4, W) + C(0, -17, 4, DK);
+    s.orifice = Ln(-3, -6, -3, 6, 2) + Ln(3, -6, 3, 6, 2) + R(-1.2, -12, 2.4, 6);
+    s.union = R(-8, -5, 16, 10) + Ln(-3, -5, -3, 5) + Ln(3, -5, 3, 5) + Ln(-10, 0, -8, 0) + Ln(8, 0, 10, 0);
+    s.coupling = R(-5, -6, 10, 12);
+    s.nipple = R(-10, -2, 20, 4);
+    s.sight = R(-8, -5, 16, 10) + C(0, 0, 3.2);
+    s.flowmeter = R(-8, -5, 16, 10) + Ln(0, -5, 0, -10) + R(-5, -15, 10, 5);
+    s['sup-shoe'] = Ln(-8, -6, 8, -6) + Ln(-8, 6, 8, 6);
+    s['sup-guide'] = P('M-4.5,8 L4.5,8 L0,1Z', DK) + Ln(-7, -1, 7, -1) + Ln(0, 8, 0, 14) + Ln(-7, 14, 7, 14, 2);
+    s['sup-anchor'] = Ln(-7, 0, 7, 0) + Ln(0, -7, 0, 7) + Ln(-5, -5, 5, 5) + Ln(-5, 5, 5, -5) + C(0, 0, 1.6, DK);
+    s['sup-hanger'] = P('M-3.5,-9 L3.5,-9 L0,-4Z', DK) + Ln(0, -9, 0, -19) + Ln(-7, -19, 7, -19, 2) + Ln(-5, -19, -7, -22) + Ln(0, -19, -2, -22) + Ln(5, -19, 3, -22);
+    s['sup-spring'] = P('M0,-5 L0,-8 L-3.5,-10 L3.5,-12 L-3.5,-14 L3.5,-16 L0,-18 L0,-20', 'none') + Ln(-7, -20, 7, -20, 2) + P('M-3.5,-9 L3.5,-9 L0,-4Z', W);
+    s.reducer = P('M-10,-2 L10,-5 L10,5 L-10,2Z', W);
+    s['reducer-ecc'] = P('M-10,1 L10,-5 L10,5 L-10,5Z', W);
+    s.cap = P('M-10,-5 L-2,-5 Q8,-5 8,0 Q8,5 -2,5 L-10,5Z', W);
+    s['plug-end'] = R(-9, -4, 9, 8) + R(0, -5, 6, 10);
+    s.olet = P('M-4,-2.2 L-2,-5 L2,-5 L4,-2.2 L4,2.2 L2,5 L-2,5 L-4,2.2Z', W);
     s['fl-end'] = Ln(0, -8, 0, 8, 2.8);
+    var pair = R(-4.2, -7, 2.4, 14) + R(1.8, -7, 2.4, 14);
+    ['wn', 'so', 'lj', 'sw'].forEach(function (t) { s['fl-' + t] = pair; });
+    s['fl-th'] = pair + Ln(-10, 0, -4.2, 0) + Ln(4.2, 0, 10, 0);
+    s['fl-ro'] = pair + Ln(0, -7, 0, -14, 1.4) + Ln(0, 7, 0, 14, 1.4);
+    s.fieldweld = C(0, 0, 1.6, DK) + Ln(-4.5, -4.5, 4.5, 4.5, 1) + Ln(-4.5, 4.5, 4.5, -4.5, 1);
+    s.flowarrow = P('M-5,-2.4 L6,0 L-5,2.4Z', DK);
+    s['i-gauge'] = C(0, 0, 6);
+    s['i-xmtr'] = C(0, 0, 6);
+    s['i-ctrl'] = C(0, 0, 6.5) + Ln(-6.5, 0, 6.5, 0);
     return s;
   })();
   var ISOA = (function () {
@@ -2626,7 +2656,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
       var q = sp(w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
       function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
-      body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
+      body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
+        : '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
       want(1, q[0], q[1], rr * 2 + 1, rr * 2 + 1, ring([rr + 6, rr + 12, rr + 20, rr + 30], [-45, 45, -135, 135, -90, 90, 0, 180]),
         function (cx, cy) {
           return leader(q[0], q[1], cx, cy, 8) + '<polygon points="' + hex(cx, cy, 9) + '" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>'
@@ -2698,7 +2729,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (near && fkept.some(function (k) { return k.ln === c.p.ln; })) return;
       if (near) return;
       fkept.push({ x: mx, y: my, ln: c.p.ln });
-      body += '<g class="flow" transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(Math.atan2(c.dy, c.dx) * 180 / Math.PI + (c.p.fl > 0 ? 0 : 180)) + ')" fill="' + INK + '">' + SYM.flow.svg + '</g>';
+      body += '<g class="flow" transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(Math.atan2(c.dy, c.dx) * 180 / Math.PI + (c.p.fl > 0 ? 0 : 180)) + ')" fill="' + INK + '" stroke="' + INK + '" stroke-width="0.6">' + (isoCtx.style === 'pic' ? SYM.flow.svg : ISOS.flowarrow) + '</g>';
       occ.push([mx - 8, my - 8, mx + 8, my + 8]);
     });
 
@@ -2750,7 +2781,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Fittings with a symbol of their own, balloons on every fitting but plain elbows.
     Object.keys(jointInfo).forEach(function (k) {
       var j = jointInfo[k], kk = null, d3 = [1, 0, 0];
-      if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = 'reducer'; d3 = A(big.d); }
+      if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = j.ecc ? 'reducer-ecc' : 'reducer'; d3 = A(big.d); }
       else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; d3 = [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]; }
       else if (j.type === 'olet') { kk = 'olet'; d3 = A(j.legs[0].d); }
       if (kk) body += isoSym(kk, j.pos, d3, 20);
