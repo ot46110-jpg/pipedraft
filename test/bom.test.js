@@ -782,6 +782,23 @@ PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0
 check('a branch at an odd angle is reported', PD.warns().some(w => w.includes('not 90° or 45°')), PD.warns().join());
 check('and the joint with no fitting makes no weld numbers', PD.fab().welds.filter(w => Math.abs(w.pos[0] - 3) < 0.2).length === 0, JSON.stringify(PD.fab().welds.map(w => w.pos)));
 
+// Removing a fitting.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 1], n: 4 }, { a: [4, 0, 1], b: [7, 0, 1], n: 4 }], valves: [{ p: [4, 0, 0.5], d: [0, 0, 1], n: 4, k: 'gate' }] });
+PD.removeItem('fit', '4000,0,0');
+check('removing an elbow removes the shortest pipe at it, with what sits on that pipe', PD.model.pipes.length === 2 && PD.model.valves.length === 0 && PD.model.pipes.every(p => p.b[0] !== 4 || p.b[2] !== 1), JSON.stringify(PD.model.pipes));
+check('and the other elbow stays', has('Elbow 90°') === false || has('Elbow 90° LR BW, NPS 4 SCH 40 | 1'), rows());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], caps: [[4, 0, 0, 'cap']] });
+PD.removeItem('fit', '4000,0,0');
+check('an end cap can be removed', PD.model.caps.length === 0 && PD.model.pipes.length === 1);
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 1], n: 4 }], valves: [], caps: [[3, 0, 1, 'cap']] });
+PD.removeItem('fit', '3000,0,0');
+check('removing a tee removes its short branch and the cap on it', PD.model.pipes.length === 2 && PD.model.caps.length === 0, JSON.stringify([PD.model.pipes.length, PD.model.caps]));
+PD.removeItem('fit', '9999,0,0');
+check('a fitting that is not there changes nothing', PD.model.pipes.length === 2);
+els['t-sel'].onclick(); PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 2], n: 4 }], valves: [] });
+els['t-del'].onclick(); tapOn([3.955, 0, 0.045]);
+check('the delete tool on an elbow now works too', PD.model.pipes.length === 1, String(PD.model.pipes.length));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));

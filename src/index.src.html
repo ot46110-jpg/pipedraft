@@ -1795,15 +1795,35 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       removeItem(hit.object.userData.kind, hit.object.userData.i);
     }
   }
-  function removeItem(kind, i) {
-    var list = { pipe: 'pipes', valve: 'valves', flange: 'flanges', equip: 'equip', item: 'items', instr: 'instr', support: 'supports' }[kind];
-    if (!list) { toast('Fittings follow the pipes. Change them with Select.'); return; }
-    pushHist();
+  var LISTS = { pipe: 'pipes', valve: 'valves', flange: 'flanges', equip: 'equip', item: 'items', instr: 'instr', support: 'supports' };
+  function dropItem(kind, i) {                                      // remove one record and tidy what points at it
+    var list = LISTS[kind];
     if (kind === 'valve') dropValveFlanges(model.valves[i]);
     model[list].splice(i, 1);
     if (kind === 'valve') model.instr.forEach(function (q) { if (q.link === i) delete q.link; else if (q.link > i) q.link--; });
     if (kind === 'equip') model.instr = model.instr.filter(function (q) { if (q.eq === i) return false; if (q.eq > i) q.eq--; return true; });
-    sel = null; changed();
+  }
+  function removeFitting(k) {                                       // a fitting is made from the pipes meeting at a joint, so removing it removes the shortest pipe there
+    var J = jointInfo[k]; if (!J) { toast('That fitting is already gone'); return; }
+    if (J.type === 'cap') { pushHist(); model.caps = model.caps.filter(function (c) { return key(c) !== k; }); sel = null; changed(); toast('End closure removed'); return; }
+    var legs = J.legs.slice().sort(function (a, b) { return V(model.pipes[a.i].a).distanceTo(V(model.pipes[a.i].b)) - V(model.pipes[b.i].a).distanceTo(V(model.pipes[b.i].b)); });
+    var pi = legs[0].i; if (pi == null || !model.pipes[pi]) return;
+    pushHist();
+    ['valve', 'flange', 'item', 'support', 'instr'].forEach(function (kd) {          // what sits on that pipe goes with it
+      var lst = model[LISTS[kd]], gone = [];
+      lst.forEach(function (it, ix) { if (it.eq == null && hostOf(it.p) === pi) gone.push(ix); });
+      gone.reverse().forEach(function (ix) { if (kd === 'flange' && !model.flanges[ix]) return; dropItem(kd, ix); });
+    });
+    var pn = pi + 1;
+    model.pipes.splice(pi, 1);
+    var ends = {}; model.pipes.forEach(function (q) { ends[key(q.a)] = 1; ends[key(q.b)] = 1; });
+    model.caps = model.caps.filter(function (c) { return ends[key(c)]; });
+    sel = null; changed(); toast('Removed pipe ' + pn + ', the shortest at this fitting. Undo brings it back.');
+  }
+  function removeItem(kind, i) {
+    if (kind === 'fit') { removeFitting(i); return; }
+    if (!LISTS[kind]) { toast('Nothing to delete there'); return; }
+    pushHist(); dropItem(kind, i); sel = null; changed();
   }
 
   var lastPos = '';
@@ -2104,7 +2124,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
-    h += '<div class="row">' + (sel.kind === 'fit' ? '' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
+    h += '<div class="row">' + (sel.kind === 'fit' ? '<button id="i-del">Remove fitting</button>' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
     el.innerHTML = h; el.hidden = false;
     function edit(fn) { return function () { pushHist(); fn(this.value); changed(); }; }
     if ($('i-n')) $('i-n').onchange = edit(function (v) { it.n = +v; });
@@ -3327,7 +3347,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
