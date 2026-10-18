@@ -191,21 +191,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <aside id="bom" class="sheet" aria-label="Bill of materials" hidden></aside>
     </div>
     <div id="more" class="sheet" hidden>
-      <details open>
+      <details name="menu" open>
         <summary>Sheets</summary>
         <button id="isoBtn">Isometric sheet</button>
         <button id="pidBtn">P&amp;ID sheet</button>
         <button id="hydBtn">Hydraulics</button>
         <button id="legendBtn">Piping symbols</button>
       </details>
-      <details>
+      <details name="menu">
         <summary>Project</summary>
         <button id="specBtn" aria-pressed="false">Project spec</button>
         <button id="ortho" aria-pressed="false">Orthographic view</button>
         <button id="dims" aria-pressed="false">Show pipe lengths</button>
         <button id="flowBtn" aria-pressed="true">Show flow arrows</button>
       </details>
-      <details>
+      <details name="menu">
         <summary>File</summary>
         <button id="f-save">Save project (.json)</button>
         <button id="f-open">Open project</button>
