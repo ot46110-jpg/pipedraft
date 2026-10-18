@@ -23,7 +23,7 @@ const rows = () => PD.rows().map(r => r[0] + ' | ' + r[1]).join('\n');
 const has = s => rows().includes(s);
 
 // Example layout shown on first open.
-check('example BOM', ['Pipe, NPS 4 SCH 40, BE | 8.26 m', 'Pipe, NPS 3 SCH 40, BE | 0.74 m', 'Elbow 90° LR BW, NPS 4 SCH 40 | 2', 'Reducer concentric BW, NPS 4×3 SCH 40 | 1', 'Tee equal BW, NPS 4 SCH 40 | 1', 'Gate valve flanged 150#, NPS 4 | 2'].every(has), rows());
+check('example BOM', ['Pipe, NPS 4 SCH 40, BE | 8.27 m', 'Pipe, NPS 3 SCH 40, BE | 0.75 m', 'Elbow 90° LR BW, NPS 4 SCH 40 | 2', 'Reducer concentric BW, NPS 4×3 SCH 40 | 1', 'Tee equal BW, NPS 4 SCH 40 | 1', 'Gate valve flanged 150#, NPS 4 | 2'].every(has), rows());
 check('example has no warnings', PD.warns().length === 0, PD.warns().join('\n'));
 
 // Branch from the middle of a pipe makes a tee.
@@ -215,10 +215,10 @@ check('LR elbow drop is 14 fT x velocity head', close(H.fits.find(f => f.label.s
 const redu = fl => ({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4, fl }, { a: [3, 0, 0], b: [6, 0, 0], n: 3, fl }] });
 H = hy(redu(1));
 const dsm = 998 * Math.pow(50 / 3600 / (Math.PI * 0.07792 * 0.07792 / 4), 2) / 2;
-check('reducer contraction K matches the Crane value in fluids (0.0339)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.033853, 0.02) && H.fits[0].label.includes('contraction'), JSON.stringify(H.fits));
-check('reducer drop uses the small-bore velocity head', close(H.fits[0].dp, 0.033853 * dsm, 0.03));
+check('reducer contraction K matches the Crane value in fluids (0.0397)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.039749, 0.02) && H.fits[0].label.includes('contraction'), JSON.stringify(H.fits));
+check('reducer drop uses the small-bore velocity head', close(H.fits[0].dp, 0.039749 * dsm, 0.03));
 H = hy(redu(-1));
-check('reducer expansion K matches the Crane value in fluids (0.0461)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.046142, 0.02) && H.fits[0].label.includes('expansion'), JSON.stringify(H.fits));
+check('reducer expansion K matches the Crane value in fluids (0.0542)', close(H.fits.find(f => f.label.startsWith('Reducer')).K, 0.054178, 0.02) && H.fits[0].label.includes('expansion'), JSON.stringify(H.fits));
 H = hy({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'control' }] });
 check('control valve K from Cv (4.43 for NPS 4)', close(H.fits[0].K, 4.425, 0.01), JSON.stringify(H.fits));
 H = hy({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, fl: 1 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'globe' }, { p: [3, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
@@ -270,6 +270,57 @@ tapAt(s1.x + 60, s1.y);
 check('locking Z keeps the pipe vertical wherever you tap', near(lastPipe().a, [-3, 0, 3]) && lastPipe().b[0] === -3 && lastPipe().b[2] === 3 && lastPipe().b[1] > 0, JSON.stringify(lastPipe()));
 els['ax-auto'].onclick();
 els['finish'].onclick();
+
+// Sizes from NPS 1/2 to 12.
+const hyd = (pipes, q, extra) => { PD.load(Object.assign({ pipes, valves: [], lines: { 'L-001': { q } } }, extra)); return PD.hyd(); };
+H = hyd([{ a: [0, 0, 0], b: [10, 0, 0], n: 0.5, fl: 1 }], 1);
+check('NPS 1/2 line: drop matches fluids (19.75 kPa per 10 m)', close(H.lines['L-001'].dpF, 19751.8, 0.03) && close(H.pipes[0].v, 1.42395, 0.002), JSON.stringify(H.pipes[0]));
+H = hyd([{ a: [0, 0, 0], b: [10, 0, 0], n: 12, fl: 1 }], 300);
+check('NPS 12 line: drop matches fluids (340 Pa per 10 m)', close(H.lines['L-001'].dpF, 340.4, 0.04) && close(H.pipes[0].v, 1.15356, 0.002), JSON.stringify(H.pipes[0]));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 12 }], valves: [] });
+check('NPS 12 pipe weight about 79.7 kg/m', close(parseFloat(PD.rows().find(r => r[0].startsWith('Pipe weight'))[1]), 797.3, 0.005));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [9, 0, 0], n: 6 }, { a: [9, 0, 0], b: [12, 0, 0], n: 4 }], valves: [], lines: { 'L-001': { q: 80 } } });
+H = PD.hyd();
+check('6 x 4 reducer is 140 mm long and its K matches fluids', close(H.fits[0].K, 0.081459, 0.02) && H.pipes[0].len > 8.9 - 0.141 && H.pipes[0].len < 9 - 0.069, JSON.stringify(H.fits) + ' ' + H.pipes[0].len);
+check('all twelve sizes have a full catalogue row', [0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12].every(n => {
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [8, 0, 0], n }, { a: [8, 0, 0], b: [8, 0, 8], n }, { a: [8, 0, 4], b: [14, 0, 4], n }], valves: [{ p: [3, 0, 0], d: [1, 0, 0], n, k: 'gate' }], items: [{ p: [5, 0, 0], d: [1, 0, 0], n, t: 'coupling' }], flanges: [{ p: [6, 0, 0], d: [1, 0, 0], n, t: 'wn' }], lines: { 'L-001': { q: 1 } } });
+  return PD.rows().length > 6 && !PD.rows().some(r => /NaN|undefined/.test(r[0] + r[1])) && PD.hyd().lines['L-001'].total >= 0;
+}));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 1.5 }, { a: [2, 0, 0], b: [2, 0, 2], n: 1.5 }, { a: [2, 0, 2], b: [4, 0, 2], n: 2.5 }], valves: [] });
+check('size labels read as 1-1/2 and 2-1/2', has('Pipe, NPS 1-1/2 SCH 40, PE') && has('Pipe, NPS 2-1/2 SCH 40, BE') && has('Elbow 90° LR SW 3000#, NPS 1-1/2 SCH 40'), rows());
+const small = sp => ({ spec: sp, pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 1 }, { a: [2, 0, 0], b: [2, 0, 2], n: 1 }], valves: [], caps: [[2, 0, 2]] });
+PD.load(small({ small: 'THD' }));
+check('threaded small bore', has('Pipe, NPS 1 SCH 40, TE') && has('Elbow 90° LR THD 3000#, NPS 1 SCH 40') && has('Cap THD 3000#, NPS 1 SCH 40'), rows());
+PD.load(small({ small: 'BW' }));
+check('butt-weld small bore', has('Pipe, NPS 1 SCH 40, BE') && has('Elbow 90° LR BW, NPS 1 SCH 40'), rows());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }, { a: [2, 0, 0], b: [2, 0, 2], n: 4 }], valves: [] });
+check('large bore stays butt-weld whatever the small bore setting', has('Elbow 90° LR BW, NPS 4 SCH 40'));
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 12 }, { a: [3, 0, 0], b: [3, 0, 3], n: 12 }], valves: [] });
+check('large elbow takes 1.5 x 12 inches of radius', close(PD.hyd().pipes[0].len, 3 - 1.5 * 12 * 0.0254, 0.001), String(PD.hyd().pipes[0].len));
+
+// More valves, inline fittings, flanges, branches.
+const kinds = { angle: 'Angle valve flanged 150#, NPS 4', needle: 'Needle valve SW 800#, NPS 1', diaphragm: 'Diaphragm valve flanged 150#, NPS 4', knife: 'Knife gate valve wafer 150#, NPS 4', threeway: 'Three-way valve flanged 150#, NPS 4', footv: 'Foot valve flanged 150#, NPS 4' };
+Object.keys(kinds).forEach(k => {
+  const n = k === 'needle' ? 1 : 4;
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n }], valves: [{ p: [1.5, 0, 0], d: [1, 0, 0], n, k }] });
+  check(k + ' valve', has(kinds[k] + ' | 1'), rows());
+});
+const items = { sight: 'Sight glass, flanged 150#, NPS 4', flowmeter: 'Flow meter, magnetic, flanged 150#, NPS 4', basket: 'Basket strainer, flanged 150#, NPS 4', trap: 'Steam trap, thermodynamic, SW, NPS 4', rupture: 'Rupture disc assembly 150#, NPS 4', flame: 'Flame arrestor, flanged 150#, NPS 4', hose: 'Flexible hose, camlock, NPS 4' };
+PD.load({ pipes: [{ a: [0, 0, 0], b: [14, 0, 0], n: 4 }], valves: [], items: Object.keys(items).map((t, i) => ({ p: [1 + i * 1.8, 0, 0], d: [1, 0, 0], n: 4, t })) });
+check('seven more inline fittings', Object.keys(items).every(t => has(items[t] + ' | 1')), rows());
+check('their lengths come off the pipe', PD.hyd().pipes[0].len < 14 - 1, String(PD.hyd().pipes[0].len));
+const fls = { th: 'Threaded flange 150# THD, NPS 4 | 2', sw: 'Socket-weld flange 150# SW, NPS 4 SCH 40 | 2', ro: 'Orifice flange 150# WN with taps, NPS 4 SCH 40 | 2' };
+Object.keys(fls).forEach(t => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], flanges: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t }] }); check(t + ' flange pair', has(fls[t]), rows()); });
+check('orifice flange pair brings its plate', has('Orifice plate, NPS 4 | 1'));
+PD.load({ spec: { reducer: 'swage' }, pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 2 }, { a: [2, 0, 0], b: [4, 0, 0], n: 1 }], valves: [] });
+check('swage nipple', has('Swage nipple concentric, PBE, NPS 2×1 SCH 40 | 1'), rows());
+const br = (extra, nb) => { PD.load(Object.assign({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 6 }], valves: [] }, extra)); PD.addPipe([2, 0, 0], [2, 0, 2], nb, 40); PD.rebuild(); };
+br({ spec: { olet: 'halfcoupling' } }, 2);
+check('half coupling branch', has('Half coupling SW 3000#, NPS 6×2 SCH 40 | 1'), rows());
+br({ spec: { olet: 'nippolet' } }, 2);
+check('nippolet branch', has('Nippolet BW, NPS 6×2 SCH 40 | 1'), rows());
+br({ fit: { '2000,0,0': { br: 'stubpad' } } }, 4);
+check('stub-in with reinforcing pad', has('Stub-in branch with reinforcing pad, PE, NPS 6×4 SCH 40 | 1'), rows());
 
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
