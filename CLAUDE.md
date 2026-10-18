@@ -85,3 +85,4 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Hover preview works only where Safari reports pen hover.
 - Keyboard: P pipe, V valve, D delete, N navigate, Esc or Enter finish run, arrow up and down for vertical pipe, Cmd+Z undo.
 - Not verified on a real iPad: pen aim-and-lift, palm rejection, standalone full screen.
+- Status, what is done and what is next: see PROGRESS.md.
