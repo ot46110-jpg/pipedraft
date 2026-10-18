@@ -125,6 +125,23 @@ PD.routeTo([-2, 0.7, -1], arr(PD.nozzles()[1]), PD.nozzles()[1]);    // NPS 4 pi
 PD.rebuild();
 check('size mismatch at a nozzle is reported', PD.warns().some(w => w.includes('NPS 3 but the pipe is NPS 4')), PD.warns().join('\n'));
 
+// Isometric sheet symbols, tags and legend.
+PD.load({
+  pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [6, 0, 0], n: 4 }, { a: [6, 0, 0], b: [8, 0, 0], n: 3 }, { a: [3, 0, 0], b: [3, 0, 2], n: 2 }],
+  valves: [{ p: [0.6, 0, 0], d: [1, 0, 0], n: 4, k: 'globe' }, { p: [1.2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [1.8, 0, 0], d: [1, 0, 0], n: 4, k: 'control' }],
+  flanges: [{ p: [2.4, 0, 0], d: [1, 0, 0], n: 4, t: 'so' }],
+  items: [{ p: [4.2, 0, 0], d: [1, 0, 0], n: 4, t: 'strainer' }],
+  caps: [[8, 0, 0, 'plug']], equip: [{ k: 'pump', p: [-2, 0, 0], r: 0 }]
+});
+const iso = PD.iso();
+check('iso sheet tags each item', ['GL-1', 'GV-1', 'FCV-1', 'FL-1', 'ST-1', 'P-1'].every(t => iso.includes('>' + t + '<')), iso.match(/>[A-Z]+-\d+</g) + '');
+check('iso sheet legend lists used symbols only', iso.includes('Globe valve') && iso.includes('Reducer') && iso.includes('Plug, threaded') && iso.includes('Olet or stub-in') && !iso.includes('Butterfly valve'));
+check('symbol reference sheet lists everything', PD.legend().includes('PIPING SYMBOLS') && ['Butterfly valve', 'Lap-joint flange pair', 'Expansion joint', 'Spectacle blind', 'Vertical vessel', 'Butt weld'].every(n => PD.legend().includes(n)));
+if (process.env.PD_WRITE_SVG) {                                        // optional: write the sheets out for a visual check
+  fs.writeFileSync(path.join(process.env.PD_WRITE_SVG, 'sheet.svg'), iso);
+  fs.writeFileSync(path.join(process.env.PD_WRITE_SVG, 'legend.svg'), PD.legend());
+}
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));

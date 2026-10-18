@@ -163,6 +163,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     </div>
     <div id="more" class="sheet" hidden>
       <button id="isoBtn">Isometric sheet</button>
+      <button id="legendBtn">Piping symbols</button>
       <button id="specBtn" aria-pressed="false">Project spec</button>
       <button id="ortho" aria-pressed="false">Orthographic view</button>
       <button id="dims" aria-pressed="false">Show pipe lengths</button>
@@ -177,7 +178,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     </div>
     <input type="file" id="openf" accept=".json,application/json" hidden>
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
-      <header><h2>Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+      <header><h2 id="isoTitle">Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
       <div id="isoSheet"></div>
     </section>
     <div id="toast" role="status"></div>
@@ -1072,51 +1073,121 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.push('0', 'ENDSEC', '0', 'EOF');
     return o.join('\n') + '\n';
   }
+  // ---------- piping symbols (isometric sheet) ----------
+  var INK = '#14191c', PAPER = '#f5f6f4';
+  var BOW = '<polygon points="-10,-7 0,0 -10,7"/><polygon points="10,-7 0,0 10,7"/>';
+  var BAR2 = '<line x1="-3" y1="-8" x2="-3" y2="8" stroke-width="2.4"/><line x1="3" y1="-8" x2="3" y2="8" stroke-width="2.4"/>';
+  // Symbols are drawn along +x, centred on 0, about 20 units long. `tag` is the prefix used for numbering.
+  var SYM = {
+    gate: { name: 'Gate valve', tag: 'GV', svg: BOW },
+    globe: { name: 'Globe valve', tag: 'GL', svg: BOW + '<circle r="3.6" fill="' + INK + '"/>' },
+    check: { name: 'Check valve', tag: 'CV', svg: '<polygon points="-10,-7 7,0 -10,7"/><line x1="7" y1="-8" x2="7" y2="8" stroke-width="2.2"/>' },
+    ball: { name: 'Ball valve', tag: 'BV', svg: BOW + '<circle r="4.2"/>' },
+    butterfly: { name: 'Butterfly valve', tag: 'BF', svg: '<line x1="-3" y1="-8" x2="-3" y2="8"/><line x1="3" y1="-8" x2="3" y2="8"/><line x1="-8" y1="-5" x2="8" y2="5"/>' },
+    plug: { name: 'Plug valve', tag: 'PV', svg: BOW + '<polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="' + INK + '"/>' },
+    control: { name: 'Control valve', tag: 'FCV', svg: BOW, act: true },
+    'fl-wn': { name: 'Weld-neck flange pair', tag: 'FL', svg: BAR2 },
+    'fl-so': { name: 'Slip-on flange pair', tag: 'FL', svg: BAR2 + '<circle r="1.8" fill="' + INK + '" stroke="none"/>' },
+    'fl-lj': { name: 'Lap-joint flange pair', tag: 'FL', svg: BAR2 + '<line x1="-3" y1="-5" x2="-8" y2="-5"/><line x1="3" y1="5" x2="8" y2="5"/>' },
+    'fl-bl': { name: 'Blind flange', tag: 'BL', svg: '<line x1="0" y1="-8" x2="0" y2="8" stroke-width="2.4"/><rect x="-5" y="-4" width="5" height="8" fill="' + INK + '"/>' },
+    coupling: { name: 'Coupling', tag: 'CP', svg: '<rect x="-5" y="-6" width="10" height="12"/>' },
+    union: { name: 'Union', tag: 'UN', svg: '<rect x="-8" y="-6" width="7" height="12"/><rect x="1" y="-6" width="7" height="12"/>' },
+    strainer: { name: 'Y-strainer', tag: 'ST', svg: '<rect x="-9" y="-5" width="18" height="10"/><line x1="0" y1="5" x2="8" y2="13" stroke-width="2.2"/>' },
+    expansion: { name: 'Expansion joint', tag: 'EJ', svg: '<polyline points="-10,0 -7,-6 -3,6 1,-6 5,6 8,-6 10,0" fill="none"/>' },
+    spectacle: { name: 'Spectacle blind', tag: 'SB', svg: '<circle cx="-5" r="5"/><circle cx="5" r="5" fill="' + INK + '"/>' },
+    orifice: { name: 'Orifice plate', tag: 'OP', svg: '<line x1="-6" y1="-8" x2="-6" y2="8" stroke-width="2.4"/><line x1="6" y1="-8" x2="6" y2="8" stroke-width="2.4"/><rect x="-1.5" y="-6" width="3" height="12" fill="' + INK + '"/>' },
+    reducer: { name: 'Reducer (large end right)', tag: 'RD', svg: '<polygon points="-8,-3.5 8,-7 8,7 -8,3.5"/>' },
+    cap: { name: 'Cap', tag: 'CAP', svg: '<line x1="0" y1="-7" x2="0" y2="7" stroke-width="2.6"/><line x1="-6" y1="0" x2="0" y2="0"/>' },
+    'plug-end': { name: 'Plug, threaded', tag: 'PLG', svg: '<rect x="-3" y="-3" width="6" height="6" fill="' + INK + '"/><line x1="3" y1="-7" x2="3" y2="7" stroke-width="2.2"/>' },
+    olet: { name: 'Olet or stub-in', tag: 'OL', svg: '<circle r="4.2"/><circle r="1.6" fill="' + INK + '" stroke="none"/>' },
+    weld: { name: 'Butt weld', tag: 'W', svg: '<circle r="3.2" fill="' + INK + '" stroke="none"/>' },
+    pump: { name: 'Centrifugal pump', tag: 'P', svg: '<circle r="11"/><polygon points="-4,-5 7,0 -4,5" fill="' + INK + '"/>' },
+    vessel: { name: 'Vertical vessel', tag: 'V', svg: '<rect x="-9" y="-16" width="18" height="32" rx="8"/>' }
+  };
+  var SYM_ORDER = Object.keys(SYM);
+  function sym(key, x, y, ang) {
+    var s = SYM[key], g = '<g transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + (ang || 0).toFixed(1) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">' + s.svg + '</g>';
+    if (s.act) g += '<g transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.6"><line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/></g>';
+    return g;
+  }
+  function svgText(x, y, t, size, anchor, weight) {
+    return '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" text-anchor="' + (anchor || 'middle') + '" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="4" paint-order="stroke"' + (weight ? ' font-weight="' + weight + '"' : '') + '>' + esc(t) + '</text>';
+  }
   function isoSvg() {
-    var W = 1000, H = 700, M = 80, c30 = Math.cos(Math.PI / 6);
+    var W = 1000, H = 700, M = 70, LEG = 200, Wd = W - LEG, c30 = Math.cos(Math.PI / 6);
     function pr(p) { return [(p[0] - p[2]) * c30, -(p[1] + (p[0] + p[2]) * 0.5)]; }
     var pts = []; model.pipes.forEach(function (p) { pts.push(pr(p.a), pr(p.b)); });
-    if (!pts.length) return null;
+    model.equip.forEach(function (e) { pts.push(pr(e.p)); });
+    if (!model.pipes.length) return null;
     var x0 = Math.min.apply(null, pts.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, pts.map(function (q) { return q[0]; }));
     var y0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, pts.map(function (q) { return q[1]; }));
-    var sc = Math.min((W - 2 * M) / Math.max(x1 - x0, 0.5), (H - 2 * M - 70) / Math.max(y1 - y0, 0.5), 160);
-    var ox = (W - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc + 10;
+    var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - 2 * M - 70) / Math.max(y1 - y0, 0.5), 160);
+    var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc + 10;
     function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
-    var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="#f5f6f4"/>';
-    s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="#14191c" stroke-width="1.5"/>';
+    function ang(p, d) { var a = sp(p), b = sp([p[0] + d[0] * 0.1, p[1] + d[1] * 0.1, p[2] + d[2] * 0.1]); return Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; }
+    var used = {}, count = {};
+    function tagOf(key) { var t = SYM[key].tag; count[t] = (count[t] || 0) + 1; return t + '-' + count[t]; }
+    var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
+    s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
     model.pipes.forEach(function (p) {
       var a = sp(p.a), b = sp(p.b);
-      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="#14191c" stroke-width="' + (1.6 + p.n * 0.3) + '" stroke-linecap="round"/>';
+      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="' + INK + '" stroke-width="' + (1.6 + p.n * 0.3) + '" stroke-linecap="round"/>';
     });
     model.pipes.forEach(function (p) {
       var a = sp(p.a), b = sp(p.b), L = V(p.a).distanceTo(V(p.b));
-      s += '<text x="' + ((a[0] + b[0]) / 2).toFixed(1) + '" y="' + ((a[1] + b[1]) / 2 - 8).toFixed(1) + '" font-size="12" text-anchor="middle" fill="#14191c" stroke="#f5f6f4" stroke-width="4" paint-order="stroke">' + Math.round(L * 1000) + '</text>';
+      s += svgText((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 8, String(Math.round(L * 1000)), 12);
     });
     var seen = {};
-    model.pipes.forEach(function (p) { [p.a, p.b].forEach(function (e) { var k = key(e); if (!seen[k]) { seen[k] = 1; var q = sp(e); s += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="3.2" fill="#14191c"/>'; } }); });
-    model.valves.forEach(function (v) {
-      var a = sp(v.p), b = sp([v.p[0] + v.d[0] * 0.1, v.p[1] + v.d[1] * 0.1, v.p[2] + v.d[2] * 0.1]);
-      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
-      s += '<g transform="translate(' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><polygon points="-10,-7 0,0 -10,7" fill="#f5f6f4" stroke="#14191c" stroke-width="1.6"/><polygon points="10,-7 0,0 10,7" fill="#f5f6f4" stroke="#14191c" stroke-width="1.6"/></g>';
+    model.pipes.forEach(function (p) { [p.a, p.b].forEach(function (e) { var k = key(e); if (!seen[k]) { seen[k] = 1; var q = sp(e); s += sym('weld', q[0], q[1], 0); used.weld = 1; } }); });
+    // Fittings that have their own symbol.
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k], q = sp(j.pos), kk = null, a = 0;
+      if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = 'reducer'; a = ang(j.pos, [big.d.x, big.d.y, big.d.z]); }
+      else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; a = ang(j.pos, [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]); }
+      else if (j.type === 'olet' || j.type === 'stub') { kk = 'olet'; q = sp(j.pos); }
+      if (!kk) return;
+      used[kk] = 1; s += sym(kk, q[0], q[1], a);
     });
-    model.flanges.forEach(function (f) {
-      var a = sp(f.p), b = sp([f.p[0] + f.d[0] * 0.1, f.p[1] + f.d[1] * 0.1, f.p[2] + f.d[2] * 0.1]);
-      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI + 90;
-      s += '<g transform="translate(' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><line x1="-9" y1="-3" x2="9" y2="-3" stroke="#14191c" stroke-width="2.2"/><line x1="-9" y1="3" x2="9" y2="3" stroke="#14191c" stroke-width="2.2"/></g>';
+    function placed(list, keyOf) {
+      list.forEach(function (it) {
+        var kk = keyOf(it), q = sp(it.p); used[kk] = 1;
+        s += sym(kk, q[0], q[1], ang(it.p, it.d)) + svgText(q[0], q[1] - (SYM[kk].act ? 26 : 16), tagOf(kk), 10);
+      });
+    }
+    placed(model.valves, function (v) { return SYM[v.k] ? v.k : 'gate'; });
+    placed(model.flanges, function (f) { return 'fl-' + (f.t || 'wn'); });
+    placed(model.items, function (it) { return it.t; });
+    model.equip.forEach(function (e) {
+      var q = sp(e.p); used[e.k] = 1;
+      s += sym(e.k, q[0], q[1], 0) + svgText(q[0], q[1] + (e.k === 'vessel' ? 30 : 24), tagOf(e.k), 10);
     });
-    model.items.forEach(function (it) {
-      var a = sp(it.p), b = sp([it.p[0] + it.d[0] * 0.1, it.p[1] + it.d[1] * 0.1, it.p[2] + it.d[2] * 0.1]);
-      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
-      s += '<g transform="translate(' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><rect x="-8" y="-6" width="16" height="12" fill="#f5f6f4" stroke="#14191c" stroke-width="1.6"/></g>';
+    // Legend: only the symbols that appear on this sheet.
+    var lx = Wd + 16, ly = 40;
+    s += '<line x1="' + (Wd) + '" y1="12" x2="' + Wd + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1"/>';
+    s += '<text x="' + lx + '" y="' + ly + '" font-size="11" font-weight="600" fill="' + INK + '">SYMBOLS</text>';
+    SYM_ORDER.filter(function (k) { return used[k]; }).forEach(function (k, i) {
+      var y = ly + 28 + i * 30;
+      s += sym(k, lx + 18, y, 0) + '<text x="' + (lx + 44) + '" y="' + (y + 4) + '" font-size="10.5" fill="' + INK + '">' + esc(SYM[k].name) + '</text>';
     });
     var byLn = {}; model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
     var tl = Object.keys(byLn).map(function (k) { return esc(k) + ' ' + byLn[k].toFixed(2) + ' m'; }).join('   ');
-    s += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="#14191c" stroke-width="1.5"/>';
-    s += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="#14191c">PIPEDRAFT 3D · ISOMETRIC</text>';
-    s += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="#14191c">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm, centreline lengths</text>';
+    s += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1.5"/>';
+    s += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="' + INK + '">PIPEDRAFT 3D · ISOMETRIC</text>';
+    s += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="' + INK + '">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm, centreline lengths</text>';
     return s + '</svg>';
   }
-
+  function legendSvg() {                                            // every symbol, for reference
+    var W = 1000, H = 700, s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
+    s += '<rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
+    s += '<text x="32" y="52" font-size="18" font-weight="600" fill="' + INK + '">PIPING SYMBOLS</text>';
+    s += '<text x="32" y="74" font-size="11" fill="' + INK + '">As drawn on the isometric sheet. The tag prefix numbers each item on the sheet, for example GV-1.</text>';
+    SYM_ORDER.forEach(function (k, i) {
+      var col = i % 2, row = Math.floor(i / 2), x = 40 + col * 480, y = 120 + row * 44;
+      s += sym(k, x + 24, y, 0) + '<text x="' + (x + 64) + '" y="' + (y + 4) + '" font-size="13" fill="' + INK + '">' + esc(SYM[k].name) + '</text>';
+      s += '<text x="' + (x + 400) + '" y="' + (y + 4) + '" font-size="12" text-anchor="end" fill="' + INK + '">' + SYM[k].tag + '</text>';
+    });
+    return s + '</svg>';
+  }
   // ---------- input ----------
   var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
   function penNow() { return performance.now() - lastPen < 350; }
@@ -1276,13 +1347,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('v-fit').onclick = fit;
   $('ortho').onclick = function () { orthoOn = !orthoOn; updateUi(); };
   $('dims').onclick = function () { showDims = !showDims; rebuild(); updateUi(); };
-  $('isoBtn').onclick = function () {
-    var svg = isoSvg();
+  var isoCur = null, isoName = 'pipedraft-iso.svg';
+  function showSheet(title, svg, file) {
+    isoCur = svg; isoName = file; $('isoTitle').textContent = title;
     $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
     $('iso').hidden = false;
-  };
+  }
+  $('isoBtn').onclick = function () { showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso.svg'); };
+  $('legendBtn').onclick = function () { showSheet('Piping symbols', legendSvg(), 'pipedraft-symbols.svg'); };
   $('iso-close').onclick = function () { $('iso').hidden = true; };
-  $('iso-save').onclick = function () { var s = isoSvg(); if (s) saveBlob('pipedraft-iso.svg', new Blob([s], { type: 'image/svg+xml' })); else toast('Nothing to save'); };
+  $('iso-save').onclick = function () { if (isoCur) saveBlob(isoName, new Blob([isoCur], { type: 'image/svg+xml' })); else toast('Nothing to save'); };
   $('f-save').onclick = function () { saveBlob('pipedraft.json', new Blob([JSON.stringify({ app: 'pipedraft', version: 2, model: model }, null, 1)], { type: 'application/json' })); };
   $('f-open').onclick = function () { $('openf').click(); };
   $('openf').onchange = function () {
@@ -1332,7 +1406,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    nozzles: function () { return nozList; }, iso: isoSvg, dxf: dxf, csv: csv,
+    nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
