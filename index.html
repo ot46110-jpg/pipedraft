@@ -961,7 +961,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         hw.position.x = R * 2.2; g.add(hw);
       }
       g.position.copy(V(v.p));
-      g.quaternion.setFromUnitVectors(UP, V(v.d).normalize());
+      var vdn = V(v.d).normalize(), q0 = new T.Quaternion().setFromUnitVectors(UP, vdn);
+      g.quaternion.copy(q0);
+      if (kind !== 'threeway') {                                     // stem, handwheel and actuator point along v.hw degrees around the pipe, 0 is up
+        var ref = Math.abs(vdn.y) > 0.9 ? new T.Vector3(1, 0, 0) : UP.clone().addScaledVector(vdn, -UP.dot(vdn)).normalize();
+        var want = ref.applyAxisAngle(vdn, (v.hw || 0) * Math.PI / 180), x0 = new T.Vector3(1, 0, 0).applyQuaternion(q0);
+        var phi = Math.atan2(vdn.dot(x0.clone().cross(want)), x0.dot(want));
+        g.quaternion.premultiply(new T.Quaternion().setFromAxisAngle(vdn, phi));
+      }
       g.traverse(function (m) { m.userData = { kind: 'valve', i: i }; });
       world.add(g);
       if (port) nozList.push(port);
@@ -1106,6 +1113,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         nozList.forEach(function (z) { if (z.e >= 0 && model.equip[z.e].k === 'pump' && z.idx === 0 && key(mm3(z.p)) === key(far)) warns.push('The eccentric reducer at pump suction N1 is flat on bottom. Suction reducers are normally flat on top. Change it in Select.'); });
       });
     });
+    (function () {                                                  // the same tag on two parts
+      var tg0 = assignTags(), seen = {}, dup = {};
+      ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
+      Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
+    })();
     hydroWarnings();
     matDirty = true;
     renderBom(); showInsp();
@@ -1882,7 +1894,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else if (sel.kind === 'valve') {
       h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts(Object.keys(VALVE_NAME).map(function (k) { return [k, VALVE_NAME[k].replace(' valve', '')]; }), it.k) + '</select></label></div>'
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
-        + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '')
+        + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '<div class="row"><label class="field">Handwheel or actuator, angle around the pipe<select id="i-hw">' + opts([[0, Math.abs(it.d[1]) > 0.9 ? '0° (toward X)' : 'Up'], [45, '45°'], [90, '90°'], [135, '135°'], [180, Math.abs(it.d[1]) > 0.9 ? '180°' : 'Down'], [225, '225°'], [270, '270°'], [315, '315°']], it.hw || 0) + '</select></label></div>')
         + '<p>' + sz(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
     } else if (sel.kind === 'item') {
       h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }), it.t) + '</select></label></div>'
@@ -1915,6 +1927,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else {
       h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
     }
+    if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
     h += '<div class="row">' + (sel.kind === 'fit' ? '' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
     el.innerHTML = h; el.hidden = false;
@@ -1927,6 +1940,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (sel.kind === 'pipe' && $('i-len')) bindGeom(it);
     bindPos(it);
     if ($('i-run')) $('i-run').onclick = function () { setRunFlow(sel.i, it.fl || 1); };
+    if ($('i-tag')) $('i-tag').onchange = edit(function (v) { v = String(v).trim(); if (v) it.tag = v; else delete it.tag; });
+    if ($('i-hw')) $('i-hw').onchange = edit(function (v) { it.hw = Number(v) || 0; if (!it.hw) delete it.hw; });
     if ($('i-rotv')) $('i-rotv').onclick = function () { pushHist(); it.rot = ((it.rot || 0) + 1) % 4; changed(); };
     if ($('i-flip')) $('i-flip').onclick = function () { pushHist(); it.rev = !it.rev; changed(); };
     if ($('i-st')) $('i-st').onchange = edit(function (v) { it.t = v; });
@@ -2184,12 +2199,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var body = '';
 
     // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
-    function isoSym(key, p3, d3, Lpx, flip) {
+    function isoSym(key, p3, d3, Lpx, flip, down) {
       var s0 = SYM[key]; if (!s0) return '';
       var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
       var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = pr(A(d)), ey = pr(wv), k = Lpx / 20, q = sp(p3);
-      var m = [ex[0] * k, ex[1] * k, -ey[0] * k, -ey[1] * k, q[0], q[1]].map(f3).join(' ');
+      var ud = down ? -1 : 1, m = [ex[0] * k, ex[1] * k, -ey[0] * k * ud, -ey[1] * k * ud, q[0], q[1]].map(f3).join(' ');
       var extra = s0.act ? '<line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/>' : '';
       return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">' + s0.svg + extra + '</g>';
     }
@@ -2297,7 +2312,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Valves, flanges, inline fittings and supports.
     model.valves.forEach(function (v, i) {
       var kk = SYM[v.k] ? v.k : 'gate';
-      body += isoSym(kk, v.p, v.d, clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 24, 64), kk === 'check' && v.rev);
+      body += isoSym(kk, v.p, v.d, clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 24, 64), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248);
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
     model.flanges.forEach(function (f, i) { body += isoSym('fl-' + (f.t || 'wn'), f.p, f.d, 20); balloon(compDesc.flange[i], f.p); });
@@ -2452,11 +2467,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function assignTags() {                                           // one tag list for the isometric and P&ID sheets
     var count = {}, t = { valves: [], flanges: [], items: [], equip: [], supports: [] };
     function tg(k) { var p = SYM[k].tag; count[p] = (count[p] || 0) + 1; return p + '-' + count[p]; }
-    model.valves.forEach(function (v) { t.valves.push(tg(SYM[v.k] ? v.k : 'gate')); });
-    model.flanges.forEach(function (f) { t.flanges.push(tg('fl-' + (f.t || 'wn'))); });
-    model.items.forEach(function (it) { t.items.push(tg(it.t)); });
-    model.equip.forEach(function (e) { t.equip.push(tg(e.k)); });
-    model.supports.forEach(function (q) { t.supports.push(tg('sup-' + q.t)); });
+    model.valves.forEach(function (v) { var a = tg(SYM[v.k] ? v.k : 'gate'); t.valves.push(v.tag || a); });          // a tag typed by the drafter wins, the others keep their numbers
+    model.flanges.forEach(function (f) { var a = tg('fl-' + (f.t || 'wn')); t.flanges.push(f.tag || a); });
+    model.items.forEach(function (it) { var a = tg(it.t); t.items.push(it.tag || a); });
+    model.equip.forEach(function (e) { var a = tg(e.k); t.equip.push(e.tag || a); });
+    model.supports.forEach(function (q) { var a = tg('sup-' + q.t); t.supports.push(q.tag || a); });
     return t;
   }
   function bubble(x, y, it) {                                       // ISA instrument bubble: function letters over the loop number
@@ -3059,7 +3074,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }

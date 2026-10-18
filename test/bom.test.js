@@ -636,6 +636,26 @@ check('a full device does not break the app', PD.model.pipes.length >= 1);
 PD.load({ pipes: [], valves: [] }); PD.backup(true);
 check('an empty project is never backed up over a real one', PD.backups()[0].n > 0);
 
+// Editable tags and handwheel direction.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [6, 0, 0], n: 4 }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [3, 0, 0], d: [1, 0, 0], n: 4, k: 'gate', tag: 'XV-1001' }] });
+check('a typed tag replaces the automatic one and the others keep their numbers', PD.tags().valves.join() === 'GV-1,GV-2,XV-1001', PD.tags().valves.join());
+check('the typed tag appears on the iso material list', PD.iso('', 0).includes('XV-1001'));
+PD.model.valves[1].tag = 'XV-1001'; PD.rebuild();
+check('the same tag on two parts is warned about', PD.warns().some(w => w.includes('XV-1001') && w.includes('more than one')), PD.warns().join());
+els['t-sel'].onclick(); tapOn([1, 0, 0]);
+els['i-tag'].value = ' HV-7 '; els['i-tag'].onchange();
+check('the inspector sets and trims a tag', PD.model.valves[0].tag === 'HV-7');
+els['i-tag'].value = ''; els['i-tag'].onchange();
+check('and an empty tag goes back to automatic', PD.model.valves[0].tag === undefined && PD.tags().valves[0] === 'GV-1');
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+const upSvg = PD.iso('', 0); PD.model.valves[0].hw = 180; const downSvg = PD.iso('', 0);
+check('a handwheel pointing down flips the valve symbol on the iso', upSvg !== downSvg);
+els['t-sel'].onclick(); tapOn([2, 0, 0]);
+els['i-hw'].value = '90'; els['i-hw'].onchange();
+check('the inspector sets the handwheel angle', PD.model.valves[0].hw === 90);
+els['i-hw'].value = '0'; els['i-hw'].onchange();
+check('and 0 is the default again', PD.model.valves[0].hw === undefined);
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
