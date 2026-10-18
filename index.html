@@ -264,7 +264,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <button id="iso-tidy" aria-pressed="true">Auto layout</button>
           <button id="iso-info" aria-pressed="false">Title block</button>
         </span>
-        <button id="iso-print">Print / PDF</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+        <button id="iso-pdf">Save PDF</button><button id="iso-print">Print</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
       <div id="isoInfo" hidden></div>
       <div id="isoSheet"></div>
     </section>
@@ -2959,6 +2959,42 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('flowBtn').onclick = function () { showFlow = !showFlow; rebuild(); updateUi(); };
   $('dims').onclick = function () { showDims = !showDims; rebuild(); updateUi(); };
   var isoCur = null, isoName = 'pipedraft-iso.svg';
+  // A sheet as a PDF without a library: the SVG is drawn to a canvas, saved as a JPEG and wrapped in a one page A3 PDF.
+  function svgToJpeg(svg, done) {
+    var m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), vw = m ? +m[1] : 1200, vh = m ? +m[2] : 800, W = 2400, Hh = Math.round(W * vh / vw);
+    var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })), img = new Image();
+    img.onload = function () {
+      try {
+        var c = document.createElement('canvas'); c.width = W; c.height = Hh;
+        var g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, Hh); g.drawImage(img, 0, 0, W, Hh);
+        c.toBlob(function (b) {
+          URL.revokeObjectURL(url);
+          if (!b) { done(null); return; }
+          var rd = new FileReader(); rd.onload = function () { done(new Uint8Array(rd.result), W, Hh); }; rd.onerror = function () { done(null); }; rd.readAsArrayBuffer(b);
+        }, 'image/jpeg', 0.92);
+      } catch (e) { URL.revokeObjectURL(url); done(null); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(null); };
+    img.src = url;
+  }
+  function buildPdf(jpg, iw, ih) {
+    var PW = 1190.55, PH = 841.89, s = Math.min((PW - 40) / iw, (PH - 40) / ih), w = iw * s, hh = ih * s, x = (PW - w) / 2, y = (PH - hh) / 2;
+    var chunks = [], len = 0, offs = [];
+    function put(v) { var b = v; if (typeof v === 'string') { b = new Uint8Array(v.length); for (var i = 0; i < v.length; i++) b[i] = v.charCodeAt(i) & 255; } chunks.push(b); len += b.length; }
+    function obj(n, body) { offs[n] = len; put(n + ' 0 obj\n' + body + '\nendobj\n'); }
+    put('%PDF-1.4\n');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+    obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+    offs[4] = len; put('4 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + iw + ' /Height ' + ih + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n'); put(jpg); put('\nendstream\nendobj\n');
+    var cs = 'q ' + w.toFixed(2) + ' 0 0 ' + hh.toFixed(2) + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' cm /Im0 Do Q';
+    obj(5, '<< /Length ' + cs.length + ' >>\nstream\n' + cs + '\nendstream');
+    var xr = len, t = 'xref\n0 6\n0000000000 65535 f \n';
+    for (var n = 1; n <= 5; n++) t += ('0000000000' + offs[n]).slice(-10) + ' 00000 n \n';
+    put(t + 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF\n');
+    var out = new Uint8Array(len), at = 0; chunks.forEach(function (c) { out.set(c, at); at += c.length; });
+    return out;
+  }
   function isoInfoHtml() {
     var T0 = model.title || {}, ln = isoOpts.ln, LD = ln ? (model.lines[ln] || {}) : null;
     function f(id, label, v, ph) { return '<label class="field">' + label + '<input type="text" data-t="' + id + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
@@ -2987,6 +3023,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-view').onchange = function () { isoOpts.view = this.value; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
+  $('iso-pdf').onclick = function () {
+    if (!isoCur) { toast('Nothing to save'); return; }
+    svgToJpeg(isoCur, function (bytes, w, h2) {
+      if (!bytes) { toast('This browser could not draw the sheet. Use Print and Save as PDF.'); return; }
+      saveBlob(isoName.replace(/\.svg$/, '') + '.pdf', new Blob([buildPdf(bytes, w, h2)], { type: 'application/pdf' }));
+    });
+  };
   $('iso-print').onclick = function () { try { window.print(); } catch (e) { toast('Use the browser Share or Print menu'); } };
   $('isoInfo').addEventListener('change', function (e) {
     var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
@@ -3074,7 +3117,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }

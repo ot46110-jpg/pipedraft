@@ -656,6 +656,16 @@ check('the inspector sets the handwheel angle', PD.model.valves[0].hw === 90);
 els['i-hw'].value = '0'; els['i-hw'].onchange();
 check('and 0 is the default again', PD.model.valves[0].hw === undefined);
 
+// PDF export.
+const fakeJpg = new Uint8Array(300).map((_, i) => i === 0 ? 0xFF : i === 1 ? 0xD8 : (i * 7) % 256);
+const pdfBytes = PD.pdf(fakeJpg, 2400, 1900), pdfStr = Buffer.from(pdfBytes).toString('latin1');
+check('the PDF has a header, one page and an end marker', pdfStr.startsWith('%PDF-1.4') && pdfStr.trim().endsWith('%%EOF') && pdfStr.includes('/Count 1') && pdfStr.includes('/Filter /DCTDecode') && pdfStr.includes('/Width 2400 /Height 1900'));
+const sx = +/startxref\n(\d+)/.exec(pdfStr)[1];
+check('startxref points at the xref table', pdfStr.slice(sx, sx + 4) === 'xref');
+check('every xref entry points at its object', [1, 2, 3, 4, 5].every(n => { const e = pdfStr.slice(sx).split('\n')[2 + n]; const o = +e.slice(0, 10); return pdfStr.slice(o, o + (n + ' 0 obj').length) === n + ' 0 obj'; }));
+check('the JPEG bytes are embedded untouched', Buffer.from(pdfBytes).includes(Buffer.from(fakeJpg)) && /\/Length 300 >>/.test(pdfStr));
+check('the image is scaled to fit an A3 page', (() => { const m = /q ([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/.exec(pdfStr); return m && +m[1] <= 1190.55 - 39 && +m[2] <= 841.89 - 39 && Math.abs(+m[1] / +m[2] - 2400 / 1900) < 0.01; })());
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
