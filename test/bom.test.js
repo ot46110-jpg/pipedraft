@@ -9,7 +9,7 @@ const memStore = {}; let memFull = false;                               // an in
 const L = {};                                                           // listeners per element, so the tests can tap the canvas
 const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector() { return null; }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
-const doc = { createElement: () => ({ style: {}, width: 0, height: 0, getContext: () => ({ strokeText() {}, fillText() {}, fillRect() {}, drawImage() {} }) }), getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
+const doc = { createElement: () => ({ style: {}, width: 0, height: 0, getContext: () => ({ strokeText() {}, fillText() {}, fillRect() {}, clearRect() {}, drawImage() {} }) }), getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
 const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
   localStorage: { getItem(k) { return k in memStore ? memStore[k] : null; }, setItem(k, v) { if (memFull) throw new Error('quota'); memStore[k] = String(v); } }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
 vm.createContext(ctx);
@@ -804,9 +804,8 @@ PD.load({ pipes: [{ a: [0, 1, 0], b: [6, 1, 0], n: 4 }, { a: [6, 1, 0], b: [6, 3
 ['lv-in', 'lv-name'].forEach(id => doc.getElementById(id));
 PD.setLevel(2.25);
 check('with no run going, a typed level sets the working height', PD.elevNow() === 2.25 && els['elv'].textContent === 'EL +2.250 m', els['elv'].textContent);
-check('and the faint grid appears at that height', PD.viz().grid === true && PD.viz().gridY === 2.25);
+check('there is no extra grid to draw at that height', PD.viz().grid === undefined);
 PD.setLevel(0);
-check('the floor hides the grid', PD.viz().grid === false);
 els['lv-in'].value = '4100'; els['lv-go'].onclick();
 check('typing millimetres in the panel works', PD.elevNow() === 4.1);
 PD.setLevel(-3);
@@ -836,6 +835,8 @@ check('tapping the panel button twice turns the eyedropper off again', PD.elevNo
 PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }], valves: [], levels: [{ name: 'Rack', z: 4.5 }, { name: 'bad', z: 'x' }, null] });
 check('levels are loaded from a project and bad ones are skipped', PD.model.levels.length === 1 && PD.model.levels[0].name === 'Rack');
 check('and saved in the project file', JSON.stringify({ model: PD.model }).includes('"levels":[{"name":"Rack","z":4.5}]'));
+fresh(run4()); els['t-pipe'].onclick(); tapOn([6, 1, 0]);
+check('a drop line to the floor with its height follows the run being drawn', !PD.cursor() || (PD.viz().drop === true && PD.viz().label === 'EL +' + PD.cursor()[1].toFixed(3)), JSON.stringify(PD.viz()));
 fresh(run4());
 
 // Weight, exports.

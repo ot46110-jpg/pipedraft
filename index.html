@@ -583,19 +583,23 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var curMark = new T.Mesh(new T.SphereGeometry(0.09, 16, 12), new T.MeshBasicMaterial({ color: 0xffffff }));
   curMark.visible = false; scene.add(curMark);
   var measLine = makeLine(0xffffff);
-  var elevGrid = new T.GridHelper(24, 48, 0xffb21f, 0xffb21f); elevGrid.material.transparent = true; elevGrid.material.opacity = 0.14; elevGrid.visible = false; scene.add(elevGrid);
-  var dropLine = makeLine(0x8fd6ff), dropLab = null, dropTxt = '';
-  function setDrop(pt) {                                            // a line from a point down to the floor, with its height
-    if (!pt || pt[1] < 0.02) { dropLine.visible = false; if (dropLab) dropLab.visible = false; return; }
+  // A line from a point down to the floor. The label is one sprite whose canvas is redrawn only when the cursor's height changes,
+  // never while the Pencil moves, so aiming stays cheap.
+  var dropLine = makeLine(0x8fd6ff), dropTxt = '', dropCv = document.createElement('canvas'), dropCtx, dropTex, dropLab;
+  dropCv.width = 256; dropCv.height = 64; dropCtx = dropCv.getContext('2d'); dropTex = new T.CanvasTexture(dropCv);
+  dropLab = new T.Sprite(new T.SpriteMaterial({ map: dropTex, depthTest: false, transparent: true })); dropLab.scale.set(0.64, 0.16, 1); dropLab.renderOrder = 5; dropLab.visible = false; scene.add(dropLab);
+  function setDrop(pt, withLabel) {
+    if (!pt || pt[1] < 0.02) { dropLine.visible = false; dropLab.visible = false; return; }
     setLine(dropLine, [pt[0], 0, pt[2]], pt); dropLine.visible = true;
+    if (!withLabel) return;
     var txt = 'EL +' + pt[1].toFixed(3);
-    if (txt !== dropTxt) { if (dropLab) { scene.remove(dropLab); if (dropLab.material.map) dropLab.material.map.dispose(); } dropLab = label(txt); scene.add(dropLab); dropTxt = txt; }
+    if (txt !== dropTxt) {
+      dropTxt = txt; dropCtx.clearRect(0, 0, 256, 64); dropCtx.font = '600 34px ui-monospace, Menlo, monospace'; dropCtx.textAlign = 'center'; dropCtx.textBaseline = 'middle';
+      dropCtx.lineWidth = 8; dropCtx.strokeStyle = '#0d1418'; dropCtx.strokeText(txt, 128, 34); dropCtx.fillStyle = '#8fd6ff'; dropCtx.fillText(txt, 128, 34); dropTex.needsUpdate = true;
+    }
     dropLab.visible = true; dropLab.position.set(pt[0], pt[1] / 2, pt[2]);
   }
-  function syncLevelViz() {
-    elevGrid.visible = (tool === 'pipe' || tool === 'equip') && elev > 0.001; elevGrid.position.y = elev;
-    if (tool === 'pipe') setDrop(cursor); else setDrop(null);
-  }
+  function syncLevelViz() { if (tool === 'pipe') setDrop(cursor, true); else setDrop(null); }
 
   // ---------- camera ----------
   var target = new T.Vector3(1, 0.8, 1.5), theta = 0.8, phi = 1.0, dist = 9;
@@ -1886,10 +1890,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     else t = startPoint(e);
     if (t) {
       marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!ss && t === ss.pt);
-      if (tool === 'pipe') setDrop(t);
+      if (tool === 'pipe') setDrop(t, false);
       setPos('X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
       if (cursor && tool === 'pipe') { ghostLine.visible = true; setLine(ghostLine, cursor, t); } else ghostLine.visible = false;
-    } else { marker.visible = false; ghostLine.visible = false; if (tool === 'pipe') setDrop(cursor); }
+    } else { marker.visible = false; ghostLine.visible = false; if (tool === 'pipe') setDrop(cursor, false); }
   }
 
   // ---------- exact input and editing: typed lengths, typed coordinates, stretch, move, copy, mirror, rotate ----------
@@ -3435,7 +3439,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { grid: elevGrid.visible, gridY: elevGrid.position.y, drop: dropLine.visible }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
