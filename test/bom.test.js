@@ -558,13 +558,47 @@ check('small bore welds are socket welds by default', fb.welds.length === 2 && f
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }], valves: [] });
 check('the iso sheet numbers the welds', PD.iso().includes('>W1<') && PD.iso().includes('>W2<'));
 
+// Isometric sheet: auto layout, one sheet per line, auto view, title block.
+const dots = svg => [...svg.matchAll(/<circle cx="([\d.\-]+)" cy="([\d.\-]+)" r="9.5"/g)].map(m => [+m[1], +m[2]]);
+const overlaps = c => { let n = 0; for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) if (Math.hypot(c[i][0] - c[j][0], c[i][1] - c[j][1]) < 19) n++; return n; };
+const crowd = { pipes: [{ a: [0, 0, 0], b: [12, 0, 0], n: 4 }, { a: [12, 0, 0], b: [12, 0, 3], n: 4 }], valves: [1, 1.5, 2, 2.5, 3, 3.5, 4].map(x => ({ p: [x, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' })).concat([{ p: [12, 0, 1.5], d: [0, 0, 1], n: 4, k: 'ball' }]), flanges: [{ p: [6, 0, 0], d: [1, 0, 0], n: 4, t: 'wn' }, { p: [8, 0, 0], d: [1, 0, 0], n: 4, t: 'so' }], supports: [{ p: [9, 0, 0], d: [1, 0, 0], n: 4, t: 'shoe' }, { p: [10, 0, 0], d: [1, 0, 0], n: 4, t: 'guide' }] };
+PD.load(crowd);
+const tidySvg = PD.iso('', 0, true), rawSvg = PD.iso('', 0, false);
+check('auto layout keeps item balloons apart', dots(tidySvg).length >= 8 && overlaps(dots(tidySvg)) === 0, dots(tidySvg).length + ' balloons, ' + overlaps(dots(tidySvg)) + ' overlaps');
+check('and does better than the plain layout', overlaps(dots(tidySvg)) <= overlaps(dots(rawSvg)), overlaps(dots(rawSvg)) + ' overlaps without');
+check('with auto layout the balloons stay inside the drawing area', dots(tidySvg).every(c => c[0] > 20 && c[0] < 850 && c[1] > 20));
+const rotCross = (r) => {
+  const pr = p => { let x = p[0], z = p[2]; for (let i = 0; i < r; i++) { const t = x; x = -z; z = t; } return [(x - z) * Math.cos(Math.PI / 6), -(p[1] + (x + z) * 0.5)]; };
+  const seg = PD.model.pipes.map(q => [pr(q.a), pr(q.b)]); let n = 0;
+  const sd = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]), same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6;
+  for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) { const A = seg[i], B = seg[j]; if (same(A[0], B[0]) || same(A[0], B[1]) || same(A[1], B[0]) || same(A[1], B[1])) continue; if (sd(A[0], A[1], B[0]) * sd(A[0], A[1], B[1]) < 0 && sd(B[0], B[1], A[0]) * sd(B[0], B[1], A[1]) < 0) n++; }
+  return n;
+};
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 3, 0], n: 4 }, { a: [4, 3, 0], b: [4, 3, 3], n: 4 }, { a: [4, 3, 3], b: [0, 3, 3], n: 4 }, { a: [0, 3, 3], b: [0, 0, 3], n: 4 }, { a: [2, 0, -2], b: [2, 0, 2], n: 4 }], valves: [] });
+PD.iso('', 'auto');
+const cr = [0, 1, 2, 3].map(rotCross);
+check('the auto view is a quarter turn with the fewest crossing pipes', cr[PD.isoCtx.rot] === Math.min(...cr), JSON.stringify(cr) + ' chose ' + PD.isoCtx.rot);
+check('every view renders', [0, 1, 2, 3].every(v => /^<svg/.test(PD.iso('', v))));
+// one sheet per line
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'L-001' }, { a: [4, 0, 0], b: [4, 0, 3], n: 4, ln: 'L-001' }, { a: [0, 0, 5], b: [6, 0, 5], n: 2, ln: 'L-002' }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [3, 0, 5], d: [1, 0, 0], n: 2, k: 'globe' }], lines: { 'L-002': { q: 5, svc: 'Cooling water', pdes: '10 bar g', tdes: '60 C', insul: 'none' } } });
+const rowsBefore = JSON.stringify(PD.rows()), pipesBefore = PD.model.pipes.length;
+const sL2 = PD.iso('L-002'), sL1 = PD.iso('L-001');
+check('a sheet for one line lists only that line', sL2.includes('Globe valve') && !sL2.includes('Gate valve') && sL1.includes('Gate valve') && !sL1.includes('Globe valve'), '');
+check('the line sheet carries the line data in its title block', sL2.includes('Cooling water') && sL2.includes('10 bar g') && sL2.includes('60 C') && sL2.includes('ISO-L-002'));
+check('making a line sheet leaves the project as it was', JSON.stringify(PD.rows()) === rowsBefore && PD.model.pipes.length === pipesBefore);
+check('the line sheet cut list holds only its pieces', (sL1.match(/ mm<\/text>/g) || []).length === 3 && (sL2.match(/ mm<\/text>/g) || []).length === 2, (sL1.match(/ mm<\/text>/g) || []).length + ' / ' + (sL2.match(/ mm<\/text>/g) || []).length);
+PD.model.title = { project: 'Plant A', rev: 'C', by: 'KS', checked: 'TM', client: 'Acme' };
+const sL3 = PD.iso('');
+check('the title block shows the project fields', ['Plant A', '>C<', 'KS', 'TM', 'Acme'].every(t => sL3.includes(t)), '');
+check('and the sheet for all lines names every line', sL3.includes('L-001') && sL3.includes('L-002'));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
 check('pipe weight about 16 kg/m', wt && Math.abs(parseFloat(wt[1]) - 160.7) < 2, JSON.stringify(wt));
 check('csv has header, rows and the standard column', PD.csv().startsWith('Item,Quantity,Standard / material\n') && PD.csv().includes('Pipe, NPS 4') && PD.csv().includes('ASTM A106 Gr.B'));
 check('dxf has a LINE', PD.dxf().includes('\nLINE\n') && PD.dxf().trim().endsWith('EOF'));
-check('iso sheet renders', /^<svg/.test(PD.iso()) && PD.iso().includes('PIPEDRAFT 3D'));
+check('iso sheet renders', /^<svg/.test(PD.iso()) && PD.iso().includes('DRAWING No.') && PD.iso().includes('CUT LIST'));
 PD.load({ pipes: [], valves: [] });
 check('iso sheet empty returns null', PD.iso() === null);
 

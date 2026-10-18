@@ -103,6 +103,13 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #iso { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
 #iso header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #iso header h2 { margin: 0 auto 0 0; }
+#iso .tools { display: contents; }
+#iso .tools[hidden] { display: none; }
+#iso select { min-height: 44px; width: auto; max-width: 200px; }
+#isoInfo { background: var(--panel2, var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#isoInfo[hidden] { display: none; }
+#isoInfo h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+@media print { body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: fixed; inset: 0; background: #fff; overflow: visible; } #isoSheet svg { width: 100%; height: 100%; } }
 #isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; }
 #isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
 #status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font: 400 12px var(--font-data); color: var(--dim); }
@@ -248,7 +255,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     </div>
     <input type="file" id="openf" accept=".json,application/json" hidden>
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
-      <header><h2 id="isoTitle">Isometric sheet</h2><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+      <header><h2 id="isoTitle">Isometric sheet</h2>
+        <span id="isoTools" class="tools">
+          <select id="iso-line" aria-label="Line number"></select>
+          <select id="iso-view" aria-label="View direction"><option value="auto">View: auto</option><option value="0">View 1</option><option value="1">View 2</option><option value="2">View 3</option><option value="3">View 4</option></select>
+          <button id="iso-tidy" aria-pressed="true">Auto layout</button>
+          <button id="iso-info" aria-pressed="false">Title block</button>
+        </span>
+        <button id="iso-print">Print / PDF</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+      <div id="isoInfo" hidden></div>
       <div id="isoSheet"></div>
     </section>
     <section id="hyd" class="sheet" hidden aria-label="Hydraulics">
@@ -420,7 +435,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null;
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
   function normalize(m) {
     var o = blank();
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -432,7 +447,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.instr = (m.instr || []).filter(function (q) { return INSTR[q.k]; });
     o.supports = (m.supports || []).filter(function (q) { return SUPPORT_NAME[q.t]; });
     o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
-    o.fit = m.fit || {}; o.field = m.field || {};
+    o.fit = m.fit || {}; o.field = m.field || {}; o.title = m.title || {};
     o.spec = Object.assign(o.spec, m.spec || {});
     return o;
   }
@@ -1964,7 +1979,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // The isometric sheet follows isometric drawing practice, not P&ID practice: pipe is a single line, every symbol is
   // skewed into the plane of its pipe, components carry item balloons that point at the material list on the sheet,
   // dimensions run along the pipe, and elevations are written at the free ends.
-  function isoSvg() {
+  function isoCore(rot0) {
     if (!model.pipes.length) return null;
     var allRows = bomRows(), isNote = function (r) { return /^Pipe (stock|weight)/.test(r[0]); };
     var rows = allRows.filter(function (r) { return !isNote(r); }), notes = allRows.filter(isNote), numOf = {};   // stock and weight are notes, not items
@@ -1994,11 +2009,41 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return { lines: wrap(r[0]), std: r[2] || '', tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
     });
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
-    var H = Math.max(760, listH + notes.length * 12 + 170), Wd = W - MAT;
+    var TB = 110, cutRows = fabrication().pieces, cutH = cutRows.length ? cutRows.length * 11 + 34 : 0;
+    var H = Math.max(780, listH + cutH + notes.length * 12 + TB + 100), Wd = W - MAT;
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
     var c30 = Math.cos(Math.PI / 6);
-    function pr(p) { return [(p[0] - p[2]) * c30, -(p[1] + (p[0] + p[2]) * 0.5)]; }
+    var rot = rot0 === 'auto' ? 0 : rot0 || 0;
+    function pr(p) {                                                // turn about the vertical axis by 90° steps, then project
+      var x = p[0], z = p[2];
+      for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; }
+      return [(x - z) * c30, -(p[1] + (x + z) * 0.5)];
+    }
+    function crossings() {                                          // pipes that cross on paper make a drawing hard to read
+      var sg = model.pipes.map(function (q) { return [pr(q.a), pr(q.b)]; }), n = 0;
+      function side(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
+      function same(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6; }
+      for (var i = 0; i < sg.length; i++) for (var j = i + 1; j < sg.length; j++) {
+        var A0 = sg[i], B0 = sg[j];
+        if (same(A0[0], B0[0]) || same(A0[0], B0[1]) || same(A0[1], B0[0]) || same(A0[1], B0[1])) continue;
+        if (side(A0[0], A0[1], B0[0]) * side(A0[0], A0[1], B0[1]) < 0 && side(B0[0], B0[1], A0[0]) * side(B0[0], B0[1], A0[1]) < 0) n++;
+      }
+      return n;
+    }
+    if (rot0 === 'auto') {                                          // the quarter turn with the fewest crossings, then the biggest drawing
+      var bestR = null;
+      for (var r0 = 0; r0 < 4; r0++) {
+        rot = r0;
+        var xs = [], ys = [];
+        model.pipes.forEach(function (q) { [q.a, q.b].forEach(function (e) { var s = pr(e); xs.push(s[0]); ys.push(s[1]); }); });
+        var fit0 = Math.min((Wd - 2 * M) / Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), 0.5), (H - TB - 2 * M) / Math.max(Math.max.apply(null, ys) - Math.min.apply(null, ys), 0.5));
+        var sc0 = { r: r0, c: crossings(), f: fit0 };
+        if (!bestR || sc0.c < bestR.c || (sc0.c === bestR.c && sc0.f > bestR.f * 1.02)) bestR = sc0;
+      }
+      rot = bestR.r;
+    }
+    isoCtx.rot = rot;
     function A(v) { return [v.x, v.y, v.z]; }
     function eqGeom(e) {                                            // equipment as a wire outline
       var rot = (e.r || 0) * Math.PI / 2, base = V(e.p);
@@ -2016,9 +2061,51 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     geo.forEach(function (g) { g.pts.forEach(function (q) { pts.push(pr(q)); }); });
     var x0 = Math.min.apply(null, pts.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, pts.map(function (q) { return q[0]; }));
     var y0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, pts.map(function (q) { return q[1]; }));
-    var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - 70 - 2 * M) / Math.max(y1 - y0, 0.5), 160);
-    var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - 70 - (y1 - y0) * sc) / 2 - y0 * sc;
+    var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - TB - 2 * M) / Math.max(y1 - y0, 0.5), 160);
+    var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - TB - (y1 - y0) * sc) / 2 - y0 * sc;
     function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
+    // Auto layout: labels go where they touch neither pipes, symbols nor each other, nearest to their anchor first.
+    var occ = [], segs = [], labels = [], TIDY = isoCtx.tidy !== false;
+    function segHitRect(b, s) {
+      var x0 = s[0][0], y0 = s[0][1], dx = s[1][0] - x0, dy = s[1][1] - y0, t0 = 0, t1 = 1, pp = [-dx, dx, -dy, dy], qq = [x0 - b[0], b[2] - x0, y0 - b[1], b[3] - y0];
+      for (var i = 0; i < 4; i++) {
+        if (pp[i] === 0) { if (qq[i] < 0) return false; }
+        else { var r = qq[i] / pp[i]; if (pp[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } }
+      }
+      return true;
+    }
+    function boxCost(b) {
+      var c = 0;
+      if (b[0] < 20 || b[2] > Wd - 10 || b[1] < 20 || b[3] > H - TB - 6) c += 50;
+      occ.forEach(function (o2) { if (b[0] < o2[2] && b[2] > o2[0] && b[1] < o2[3] && b[3] > o2[1]) c += 20; });
+      segs.forEach(function (s) { if (segHitRect(b, s)) c += 12; });
+      return c;
+    }
+    function ring(dists, angs) { var o3 = []; dists.forEach(function (d) { angs.forEach(function (a) { var r = a * Math.PI / 180; o3.push([Math.cos(r) * d, -Math.sin(r) * d]); }); }); return o3; }
+    function sides(w, h2) {                                         // beside the anchor, then above, below, then further out
+      var x = w / 2 + 6, c = [[x, -h2 / 2 - 2], [x, h2 / 2 + 8], [-x, -h2 / 2 - 2], [-x, h2 / 2 + 8], [0, -h2 - 8], [0, h2 + 12]];
+      return c.concat(ring([x + 14, x + 30], [20, -20, 160, -160, 90, -90]));
+    }
+    function want(prio, ax, ay, w, h2, cands, mk) { labels.push({ prio: prio, n: labels.length, ax: ax, ay: ay, w: w, h: h2, cands: cands, mk: mk }); }
+    function leader(ax, ay, cx, cy, back) {
+      var dx = cx - ax, dy = cy - ay, L = Math.hypot(dx, dy); if (L < 1) return '';
+      return '<line x1="' + f1(ax) + '" y1="' + f1(ay) + '" x2="' + f1(cx - dx / L * back) + '" y2="' + f1(cy - dy / L * back) + '" stroke="' + INK + '" stroke-width="0.7"/>';
+    }
+    function layoutLabels() {
+      var out = '';
+      labels.sort(function (a, b) { return a.prio - b.prio || a.n - b.n; }).forEach(function (L) {
+        var best = null;
+        for (var i = 0; i < L.cands.length; i++) {
+          var cx = L.ax + L.cands[i][0], cy = L.ay + L.cands[i][1], bx = [cx - L.w / 2 - 1, cy - L.h / 2 - 1, cx + L.w / 2 + 1, cy + L.h / 2 + 1];
+          var raw = TIDY ? boxCost(bx) : 0, c = raw + Math.hypot(L.cands[i][0], L.cands[i][1]) * 0.02 + i * 0.05;
+          if (!best || c < best.c) best = { c: c, cx: cx, cy: cy, b: bx, d: Math.hypot(L.cands[i][0], L.cands[i][1]) };
+          if (raw === 0 || !TIDY) break;
+        }
+        occ.push(best.b); out += L.mk(best.cx, best.cy, best.d);
+      });
+      return out;
+    }
+    function tagText(text, size) { return text.length * size * 0.6 + 4; }
     function f1(v) { return v.toFixed(1); }
     function f3(v) { return v.toFixed(3); }
     var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><style>.sy *{vector-effect:non-scaling-stroke}</style>';
@@ -2028,6 +2115,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
     function isoSym(key, p3, d3, Lpx, flip) {
       var s0 = SYM[key]; if (!s0) return '';
+      var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
       var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = pr(A(d)), ey = pr(wv), k = Lpx / 20, q = sp(p3);
       var m = [ex[0] * k, ex[1] * k, -ey[0] * k, -ey[1] * k, q[0], q[1]].map(f3).join(' ');
@@ -2050,7 +2138,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         });
       }
       var cq = sp(g.c);
-      body += svgText(cq[0], cq[1] + (g.kind === 'vessel' ? 0 : 6), tg.equip[i], 11, 'middle', 600);
+      body += svgText(cq[0], cq[1] + (g.kind === 'vessel' ? 0 : 6), tg.equip[i], 11, 'middle', 600); occ.push([cq[0] - 24, cq[1] - 12 + (g.kind === 'vessel' ? 0 : 6), cq[0] + 24, cq[1] + 6 + (g.kind === 'vessel' ? 0 : 6)]);
     });
     nozList.forEach(function (z) {
       if (z.e == null || z.e < 0) return;
@@ -2060,14 +2148,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // Pipe: one line per run, heavier for larger sizes.
     model.pipes.forEach(function (p) {
-      var a = sp(p.a), b = sp(p.b);
+      var a = sp(p.a), b = sp(p.b); segs.push([a, b]);
       body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.1 + Math.sqrt(p.n) * 0.45).toFixed(2) + '" stroke-linecap="round"/>';
     });
     // Butt welds at fittings.
     fabrication().welds.forEach(function (w) {
-      var q = sp(w.pos);
-      body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>'
-        + svgText(q[0] + 5, q[1] + 11, 'W' + w.no, 7.5, 'start');
+      var q = sp(w.pos), tx = 'W' + w.no, tw = tagText(tx, 7.5);
+      body += '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
+      want(1, q[0], q[1], tw, 9, [[tw / 2 + 3, 9]].concat([[-tw / 2 - 3, 9], [tw / 2 + 3, -9], [-tw / 2 - 3, -9]], ring([14, 20, 28], [-45, 45, -135, 135, -90, 90, 0, 180])),
+        function (cx, cy, d) { return (d > 14 ? leader(q[0], q[1], cx, cy, 4) : '') + svgText(cx, cy + 2.6, tx, 7.5, 'middle'); });
     });
 
     // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
@@ -2075,13 +2164,33 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 34) return '';
       var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
       if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
-      var off = 20, a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
-      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
       var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
-      var mx = (a2[0] + b2[0]) / 2 - nx * 4, my = (a2[1] + b2[1]) / 2 - ny * 4;
+      var tw = label.length * 6 + 6, best = null, offs = [20, -20, 34, -34, 48, -48, 62, -62];
+      for (var oi = 0; oi < offs.length; oi++) {                    // the side and distance where the dimension line crosses the least
+        var off = offs[oi], a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
+        var mx0 = (a2[0] + b2[0]) / 2, my0 = (a2[1] + b2[1]) / 2, hw = (Math.abs(Math.cos(ang * Math.PI / 180)) * tw + Math.abs(Math.sin(ang * Math.PI / 180)) * 11) / 2, hh = (Math.abs(Math.sin(ang * Math.PI / 180)) * tw + Math.abs(Math.cos(ang * Math.PI / 180)) * 11) / 2;
+        var bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
+        if (TIDY) {
+          cost = boxCost(bx);
+          segs.forEach(function (s) { if (s[0] === a && s[1] === b) return; if (segDist2(a2, b2, s[0], s[1]) < 7) cost += 12; });
+          cost += oi * 0.3;
+        }
+        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: a2, b2: b2, bx: bx };
+        if (!TIDY || cost < 1) break;
+      }
+      var a2 = best.a2, b2 = best.b2, sg = best.off < 0 ? -1 : 1; nx *= sg; ny *= sg;
+      segs.push([a2, b2]); occ.push(best.bx);
+      var off2 = Math.abs(best.off), mx = (a2[0] + b2[0]) / 2 - nx * 4, my = (a2[1] + b2[1]) / 2 - ny * 4;
+      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
       return '<g class="dim" stroke="' + INK + '" stroke-width="0.8" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '"/></g>'
         + arrow(a2, 1) + arrow(b2, -1)
         + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>';
+    }
+    function segDist2(p1, p2, q1, q2) {                             // distance between two screen segments
+      function ccw(a, b, c) { return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0]); }
+      if (ccw(p1, q1, q2) !== ccw(p2, q1, q2) && ccw(p1, p2, q1) !== ccw(p1, p2, q2)) return 0;
+      function pd(p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
+      return Math.min(pd(p1, q1, q2), pd(p2, q1, q2), pd(q1, p1, p2), pd(q2, p1, p2));
     }
     model.pipes.forEach(function (p) { body += dimLine(sp(p.a), sp(p.b), String(Math.round(V(p.a).distanceTo(V(p.b)) * 1000))); });
 
@@ -2094,14 +2203,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
 
     // Item balloons point at the material list.
-    var bi = 0, balloons = '';
+    var bi = 0;
     function balloon(desc, p3, lift) {
       var n = numOf[desc]; if (!n) return;
-      var q = sp(p3), side = bi % 2 ? 1 : -1, off = 30 + (bi % 3) * 9 + (lift || 0);
-      bi++;
-      var bx = q[0] + side * 20, by = q[1] - off;
-      balloons += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(bx - side * 5) + '" y2="' + f1(by + 7) + '" stroke="' + INK + '" stroke-width="0.8"/><circle cx="' + f1(bx) + '" cy="' + f1(by) + '" r="9.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
-        + '<text x="' + f1(bx) + '" y="' + f1(by + 3.6) + '" font-size="10" font-weight="600" text-anchor="middle" fill="' + INK + '">' + n + '</text>';
+      var q = sp(p3), par = bi % 2; bi++;
+      var angs = par ? [60, 120, 30, 150, 90, 0, 180, -60, -120, -90] : [120, 60, 150, 30, 90, 180, 0, -120, -60, -90];
+      var base = 26 + (lift || 0) * 0.5;
+      want(4, q[0], q[1], 20, 20, ring([base, base + 14, base + 28, base + 44], angs), function (cx, cy) {
+        return leader(q[0], q[1], cx, cy, 9.5) + '<circle cx="' + f1(cx) + '" cy="' + f1(cy) + '" r="9.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
+          + '<text x="' + f1(cx) + '" y="' + f1(cy + 3.6) + '" font-size="10" font-weight="600" text-anchor="middle" fill="' + INK + '">' + n + '</text>';
+      });
     }
 
     // Valves, flanges, inline fittings and supports.
@@ -2123,11 +2234,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var def = INSTR[it.k], d3 = it.d || [1, 0, 0], q = sp(it.p);
       if (def.psv) {
         body += isoSym('psv', it.p, d3, 26);
-        body += svgText(q[0] + 14, q[1] - 22, instrTag(it), 9.5, 'start'); balloon(compDesc.instr[j], it.p, 14); return;
+        want(3, q[0], q[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy) { return svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 14); return;
       }
       var top3 = [it.p[0], it.p[1] + 26 / sc, it.p[2]], t = sp(top3); itop[j] = top3;
       body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'instr-dcs' : 'instr', top3, d3, 18);
-      body += svgText(t[0] + 12, t[1] + 3, instrTag(it), 9.5, 'start'); balloon(compDesc.instr[j], it.p, 6);
+      occ.push([t[0] - 10, t[1] - 10, t[0] + 10, t[1] + 10]);
+      want(3, t[0], t[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy) { return svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 6);
     });
     model.instr.forEach(function (it, j) {
       if (it.link == null || !itop[j] || !model.valves[it.link]) return;
@@ -2151,23 +2263,24 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var p = model.pipes[longest[d].i]; balloon(d, [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2], -2);
     });
     model.equip.forEach(function (e, i) { balloon(compDesc.equip[i], geo[i].c, geo[i].kind === 'vessel' ? 30 : 10); });
-    body += balloons;
 
     // Elevation at each free end.
     Object.keys(jointInfo).forEach(function (k) {
       var j = jointInfo[k]; if (j.legs.length !== 1) return;
       var q = sp(j.pos), el = j.pos[1];
-      body += svgText(q[0] + 8, q[1] - 7, 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), 9, 'start');
+      var et = 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), ew = tagText(et, 9);
+      want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(q[0], q[1], cx, cy, 6) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
+    body += layoutLabels();
     o += body;
 
     // Axes, material list and title block.
-    var ax = 64, ay = H - 118;
+    var ax = 64, ay = H - TB - 52;
     [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y'], [[0, 1, 0], 'Z']].forEach(function (a3) {
       var v = pr(a3[0]), ex = ax + v[0] * 38, ey = ay + v[1] * 38;
       o += '<line x1="' + ax + '" y1="' + ay + '" x2="' + f1(ex) + '" y2="' + f1(ey) + '" stroke="' + INK + '" stroke-width="1.2"/>' + svgText(ex + v[0] * 8, ey + v[1] * 8 + 3, a3[1], 10, 'middle', 600);
     });
-    o += '<line x1="' + Wd + '" y1="12" x2="' + Wd + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1"/>';
+    o += '<line x1="' + Wd + '" y1="12" x2="' + Wd + '" y2="' + (H - TB) + '" stroke="' + INK + '" stroke-width="1"/>';
     o += '<text x="' + (Wd + 14) + '" y="40" font-size="11" font-weight="600" fill="' + INK + '">MATERIAL LIST</text>';
     o += '<text x="' + (Wd + 14) + '" y="60" font-size="9" fill="' + INK + '">NO</text><text x="' + (Wd + 44) + '" y="60" font-size="9" fill="' + INK + '">QTY</text><text x="' + (Wd + 108) + '" y="60" font-size="9" fill="' + INK + '">DESCRIPTION</text>';
     o += '<line x1="' + (Wd + 8) + '" y1="66" x2="' + (W - 20) + '" y2="66" stroke="' + INK + '" stroke-width="0.8"/>';
@@ -2181,12 +2294,64 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ly += 9;
     });
     notes.forEach(function (r) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 8) + '" font-size="8.5" fill="#555">' + esc(r[0]) + ': ' + esc(r[1]) + '</text>'; ly += 12; });
-    var byLn = {}; model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
-    var tl = Object.keys(byLn).map(function (k) { return esc(k) + ' ' + byLn[k].toFixed(2) + ' m'; }).join('   ');
-    o += '<line x1="12" y1="' + (H - 70) + '" x2="' + (W - 12) + '" y2="' + (H - 70) + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    o += '<text x="28" y="' + (H - 44) + '" font-size="15" font-weight="600" fill="' + INK + '">PIPEDRAFT 3D · ISOMETRIC</text>';
-    o += '<text x="28" y="' + (H - 22) + '" font-size="12" fill="' + INK + '">Lines: ' + (tl || 'none') + '   ·   Dimensions in mm along the centreline, elevations in m, not to scale</text>';
+    if (cutRows.length) {                                           // cut list under the material list
+      ly += 14;
+      o += '<text x="' + (Wd + 14) + '" y="' + ly + '" font-size="11" font-weight="600" fill="' + INK + '">CUT LIST</text>'
+        + '<line x1="' + (Wd + 8) + '" y1="' + (ly + 6) + '" x2="' + (W - 20) + '" y2="' + (ly + 6) + '" stroke="' + INK + '" stroke-width="0.8"/>'; ly += 20;
+      cutRows.forEach(function (c) {
+        o += '<text x="' + (Wd + 14) + '" y="' + ly + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (Wd + 80) + '" y="' + ly + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + ' mm</text><text x="' + (Wd + 160) + '" y="' + ly + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
+        ly += 11;
+      });
+    }
+    // Title block: project, drawing and line data, then who drew and checked it.
+    var T0 = model.title || {}, lnSel = isoCtx.ln || '', byLn = {};
+    model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
+    var lnNames = Object.keys(byLn), LD = lnSel ? (model.lines[lnSel] || {}) : {}, sizes = {};
+    model.pipes.forEach(function (p) { sizes[p.n] = 1; });
+    var todayS = new Date().toISOString().slice(0, 10), pb = H - TB, bw = W - 24;
+    var fabF = fabrication();
+    var cells1 = [['PROJECT', T0.project || 'Untitled', 0.30], ['CLIENT', T0.client || '', 0.16], ['LINE No.', lnSel || lnNames.join('  ') || '-', 0.18], ['SERVICE', LD.svc || '', 0.18], ['CLASS / MATERIAL', LD.cls || std().cls, 0.18]];
+    var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.19], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.11], ['CHECKED', T0.checked || '', 0.11],
+      ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.14], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.12], ['INSULATION', LD.insul || '-', 0.16]];
+    o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
+    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.</text>';
+    [[cells1, pb + 17, 41], [cells2, pb + 58, 40]].forEach(function (rw) {
+      var x = 12;
+      o += '<line x1="12" y1="' + (rw[1]) + '" x2="' + (W - 12) + '" y2="' + (rw[1]) + '" stroke="' + INK + '" stroke-width="0.8"/>';
+      rw[0].forEach(function (c) {
+        var w = bw * c[2];
+        o += (x > 12 ? '<line x1="' + f1(x) + '" y1="' + rw[1] + '" x2="' + f1(x) + '" y2="' + (rw[1] + rw[2]) + '" stroke="' + INK + '" stroke-width="0.8"/>' : '')
+          + '<text x="' + f1(x + 6) + '" y="' + (rw[1] + 11) + '" font-size="7.5" fill="#555">' + c[0] + '</text>'
+          + '<text x="' + f1(x + 6) + '" y="' + (rw[1] + 30) + '" font-size="' + (String(c[1]).length * 8 > w ? 9 : 12.5) + '" font-weight="600" fill="' + INK + '">' + esc(String(c[1]).slice(0, Math.floor(w / 6))) + '</text>';
+        x += w;
+      });
+    });
     return o + '</svg>';
+  }
+  // The isometric sheet for everything, or for one line number, and the view that reads best.
+  var isoCtx = { ln: '', rot: 0, tidy: true }, isoOpts = { ln: '', view: 'auto' };
+  function subsetFor(ln) {                                          // a copy of the model with one line's pipes and what sits on them
+    var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {};
+    m.pipes = []; model.pipes.forEach(function (p, i) { if (p.ln === ln) { keepP[i] = 1; m.pipes.push(JSON.parse(JSON.stringify(p))); ends[key(p.a)] = 1; ends[key(p.b)] = 1; } });
+    function onLine(pt) { var h2 = hostOf(pt); return h2 >= 0 && keepP[h2]; }
+    m.valves = []; model.valves.forEach(function (v, i) { if (onLine(v.p)) { vmap[i] = m.valves.length; m.valves.push(JSON.parse(JSON.stringify(v))); } });
+    ['flanges', 'items', 'supports'].forEach(function (g) { m[g] = model[g].filter(function (it) { return onLine(it.p); }).map(function (it) { return JSON.parse(JSON.stringify(it)); }); });
+    m.instr = []; model.instr.forEach(function (it) { if (it.eq != null || !onLine(it.p)) return; var c = JSON.parse(JSON.stringify(it)); if (c.link != null) { if (vmap[c.link] != null) c.link = vmap[c.link]; else delete c.link; } m.instr.push(c); });
+    m.caps = model.caps.filter(function (c) { return ends[key(c)]; }).map(function (c) { return c.slice(); });
+    var nz = {}; nozList.forEach(function (z) { if (z.e >= 0 && ends[key(mm3(z.p))]) nz[z.e] = 1; });
+    m.equip = model.equip.filter(function (e, i) { return nz[i]; }).map(function (e) { return JSON.parse(JSON.stringify(e)); });
+    return m;
+  }
+  function isoSvg(ln, view, tidy) {
+    ln = ln == null ? isoOpts.ln : ln; view = view == null ? isoOpts.view : view;
+    if (!model.pipes.length) return null;
+    if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
+    var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy;
+    if (!ln) return isoCore(rot);
+    model = subsetFor(ln); rebuild();
+    try { svg = isoCore(rot); } finally { model = orig; rebuild(); }
+    return svg;
   }
   function legendSvg() {                                            // every symbol, for reference
     var W = 1000, H = 700, s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
@@ -2695,12 +2860,42 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('flowBtn').onclick = function () { showFlow = !showFlow; rebuild(); updateUi(); };
   $('dims').onclick = function () { showDims = !showDims; rebuild(); updateUi(); };
   var isoCur = null, isoName = 'pipedraft-iso.svg';
-  function showSheet(title, svg, file) {
+  function isoInfoHtml() {
+    var T0 = model.title || {}, ln = isoOpts.ln, LD = ln ? (model.lines[ln] || {}) : null;
+    function f(id, label, v, ph) { return '<label class="field">' + label + '<input type="text" data-t="' + id + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
+    var o = '<h3>Title block</h3>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked);
+    if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none');
+    else o += '<p class="empty" style="grid-column:1/-1;margin:0">Pick a line number above to set its service, class, pressure, temperature and insulation. A sheet for one line also lists only that line\'s parts, cuts and welds.</p>';
+    return o;
+  }
+  function refreshIso() {
+    var lns = {}; model.pipes.forEach(function (p) { lns[p.ln] = 1; });
+    if (isoOpts.ln && !lns[isoOpts.ln]) isoOpts.ln = '';
+    $('iso-line').innerHTML = '<option value="">All lines</option>' + Object.keys(lns).sort().map(function (k) { return '<option value="' + esc(k) + '"' + (k === isoOpts.ln ? ' selected' : '') + '>Line ' + esc(k) + '</option>'; }).join('');
+    $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
+    $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
+    $('isoInfo').innerHTML = isoInfoHtml();
+    showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
+  }
+  function showSheet(title, svg, file, isIso) {
+    $('isoTools').hidden = !isIso; $('iso-print').hidden = false; if (!isIso) $('isoInfo').hidden = true;
     isoCur = svg; isoName = file; $('isoTitle').textContent = title;
     $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
     $('iso').hidden = false;
   }
-  $('isoBtn').onclick = function () { showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso.svg'); };
+  $('isoBtn').onclick = function () { $('more').hidden = true; refreshIso(); };
+  $('iso-line').onchange = function () { isoOpts.ln = this.value; refreshIso(); };
+  $('iso-view').onchange = function () { isoOpts.view = this.value; refreshIso(); };
+  $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
+  $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
+  $('iso-print').onclick = function () { try { window.print(); } catch (e) { toast('Use the browser Share or Print menu'); } };
+  $('isoInfo').addEventListener('change', function (e) {
+    var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
+    var v = String(t.value).trim();
+    if (['svc', 'cls', 'pdes', 'tdes', 'insul'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
+    else model.title[k] = v;
+    save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open;
+  });
   $('hydBtn').onclick = showHyd;
   $('hyd-close').onclick = function () { $('hyd').hidden = true; };
   $('fabBtn').onclick = function () { $('more').hidden = true; showFab(); };
@@ -2715,7 +2910,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('hydBody').addEventListener('change', function (e) {
     var t = e.target; if (!t) return;
     if (t.id === 'h-fl') model.fluid = t.value;
-    else if (t.dataset && t.dataset.ln != null) { var q = parseFloat(String(t.value).replace(',', '.')); model.lines[t.dataset.ln] = { q: q > 0 ? q : 0 }; }
+    else if (t.dataset && t.dataset.ln != null) { var q = parseFloat(String(t.value).replace(',', '.')); model.lines[t.dataset.ln] = Object.assign(model.lines[t.dataset.ln] || {}, { q: q > 0 ? q : 0 }); }
     else return;
     save(); rebuild(); $('hydBody').innerHTML = renderHyd();
   });
@@ -2773,7 +2968,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
