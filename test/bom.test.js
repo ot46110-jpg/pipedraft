@@ -322,6 +322,70 @@ check('nippolet branch', has('Nippolet BW, NPS 6×2 SCH 40 | 1'), rows());
 br({ fit: { '2000,0,0': { br: 'stubpad' } } }, 4);
 check('stub-in with reinforcing pad', has('Stub-in branch with reinforcing pad, PE, NPS 6×4 SCH 40 | 1'), rows());
 
+// Branch, reducer and return bend tools, driven by taps.
+const chipTap = (cat, val) => L.parts.click({ target: { closest: () => ({ dataset: { cat, chip: val } }) } });
+const setSize = n => { els['fsz'].value = String(n); els['fsz'].onchange(); };
+const fresh = (pipes, extra) => { PD.load(Object.assign({ pipes, valves: [] }, extra)); els['finish'].onclick(); };
+const run4 = () => [{ a: [0, 1, 0], b: [6, 1, 0], n: 4 }];
+els['bd-up'].onclick();
+fresh(run4()); chipTap('branch', 'tee'); tapOn([3, 1, 0]);
+check('tee tool splits the pipe and starts a same-size branch', PD.model.pipes.length === 3 && near(lastPipe().b, [3, 1.3, 0]) && has('Tee equal BW, NPS 4 SCH 40 | 1') && PD.cursor() !== null, rows() + JSON.stringify(PD.model.pipes));
+fresh(run4()); setSize(2); chipTap('branch', 'rtee'); tapOn([3, 1, 0]);
+check('reducing tee tool uses the size you set', has('Tee reducing BW, NPS 4×2 SCH 40 | 1') && lastPipe().n === 2, rows());
+fresh(run4()); setSize(1); chipTap('branch', 'sockolet'); tapOn([3, 1, 0]);
+check('sockolet tool', has('Sockolet SW, NPS 4×1 SCH 40 | 1'), rows());
+fresh(run4()); setSize(2); chipTap('branch', 'weldolet'); tapOn([3, 1, 0]);
+check('weldolet tool on a branch half the size', has('Weldolet BW, NPS 4×2 SCH 40 | 1'), rows());
+fresh(run4()); setSize(3); chipTap('branch', 'weldolet'); tapOn([3, 1, 0]);
+check('olet tool takes any branch smaller than the pipe, even over half size', has('Weldolet BW, NPS 4×3 SCH 40 | 1'), rows());
+fresh(run4()); setSize(4); chipTap('branch', 'weldolet'); const nBefore = PD.model.pipes.length; tapOn([3, 1, 0]);
+check('olet tool refuses a branch the size of the pipe', PD.model.pipes.length === nBefore);
+fresh(run4()); setSize(3); chipTap('branch', 'stubpad'); tapOn([3, 1, 0]);
+check('stub-in with pad tool', has('Stub-in branch with reinforcing pad, PE, NPS 4×3 SCH 40 | 1'), rows());
+fresh(run4()); setSize(4); chipTap('branch', 'lat'); tapOn([3, 1, 0]);
+check('lateral tool leaves at 45°', has('Lateral 45° BW, NPS 4 SCH 40 | 1') && !PD.warns().some(w => w.includes('angle')), rows() + PD.warns().join());
+fresh(run4()); setSize(4); chipTap('branch', 'cross'); tapOn([3, 1, 0]);
+check('cross tool makes two opposite branches', has('Cross BW, NPS 4 SCH 40 | 1') && PD.model.pipes.length === 4, rows());
+fresh(run4()); setSize(6); chipTap('branch', 'rtee'); const nB2 = PD.model.pipes.length; tapOn([3, 1, 0]);
+check('a branch larger than the pipe is refused', PD.model.pipes.length === nB2);
+fresh(run4()); setSize(2); chipTap('branch', 'tee'); tapOn([0.01, 1, 0]);
+check('tapping at the very end of a pipe does not branch', PD.model.pipes.length === 1, JSON.stringify(PD.model.pipes));
+
+fresh(run4()); setSize(3); chipTap('reduce', 'conc'); tapOn([1, 1, 0]);
+check('reducer tool changes the size toward the nearer end', PD.model.pipes.map(p => p.n).join() === '3,4' && has('Reducer concentric BW, NPS 4×3 SCH 40 | 1'), rows() + PD.model.pipes.map(p => p.n).join());
+fresh(run4()); setSize(3); chipTap('reduce', 'conc'); tapOn([5, 1, 0]);
+check('and toward the other end when you tap there', PD.model.pipes.map(p => p.n).join() === '4,3', PD.model.pipes.map(p => p.n).join());
+fresh(run4()); setSize(3); chipTap('reduce', 'ecc'); tapOn([1, 1, 0]);
+check('eccentric reducer tool', has('Reducer eccentric (flat on bottom) BW, NPS 4×3'), rows());
+fresh([{ a: [0, 1, 0], b: [2, 1, 0], n: 2 }]); setSize(1); chipTap('reduce', 'swage'); tapOn([1.8, 1, 0]);
+check('swage nipple tool', has('Swage nipple concentric, PBE, NPS 2×1'), rows());
+fresh([{ a: [0, 1, 0], b: [2, 1, 0], n: 2 }]); setSize(1); chipTap('reduce', 'bushing'); tapOn([1.8, 1, 0]);
+check('reducing bushing tool', has('Reducing bushing, THD 3000#, NPS 2×1'), rows());
+fresh([{ a: [0, 1, 0], b: [2, 1, 0], n: 2 }]); setSize(1); chipTap('reduce', 'rcoupling'); tapOn([1.8, 1, 0]);
+check('reducing coupling tool', has('Reducing coupling SW 3000#, NPS 2×1'), rows());
+fresh([{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [3, 0, 3], n: 4 }], { valves: [{ p: [3, 0, 1.5], d: [0, 0, 1], n: 4, k: 'gate' }] });
+setSize(3); chipTap('reduce', 'conc'); tapOn([2.4, 0, 0]);
+check('the new size runs on through elbows to the next node, and valves follow', PD.model.pipes.map(p => p.n).join() === '4,3,3' && PD.model.valves[0].n === 3 && !PD.warns().some(w => w.includes('Size change at an elbow')), PD.model.pipes.map(p => p.n).join() + PD.warns().join());
+fresh(run4()); setSize(4); chipTap('reduce', 'conc'); const nB3 = PD.model.pipes.length; tapOn([3, 1, 0]);
+check('reducer to the same size is refused', PD.model.pipes.length === nB3);
+
+fresh(run4()); chipTap('cap', 'ret'); els['bd-near'].onclick(); tapOn([5.95, 1, 0]);
+check('return bend tool builds a U and reports one fitting', PD.model.pipes.length === 3 && has('Return bend 180° LR BW, NPS 4 SCH 40 | 1') && !has('Elbow 90°') && !PD.warns().some(w => w.includes('shorter than the fittings')), rows() + PD.warns().join());
+els['bd-up'].onclick();
+fresh(run4()); chipTap('cap', 'ret'); els['bd-up'].onclick(); tapOn([5.95, 1, 0]);
+check('return bend can go up', near(PD.model.pipes[1].b, [6, 1 + 2 * 1.5 * 4 * 0.0254, 0]) && has('Return bend 180°'), JSON.stringify(PD.model.pipes[1]));
+
+// Three-way valve with a real side port.
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'threeway' }] });
+const port = PD.nozzles().find(z => z.e === -1);
+check('three-way valve has a side port you can connect to', port && near(arr(port), [2, 0, -0.1955]) && Math.abs(port.d.z + 1) < 1e-6 && port.n === 4, JSON.stringify(PD.nozzles().map(arr)));
+PD.model.valves[0].rot = 1; PD.rebuild();
+check('turning the port moves it around the pipe', Math.abs(PD.nozzles().find(z => z.e === -1).d.y - 1) < 1e-6);
+PD.startAtNozzle(PD.nozzles().find(z => z.e === -1)); PD.rebuild();
+check('a pipe starts on the port along its axis, with P&ID still working', PD.model.pipes.length === 2 && near(PD.model.pipes[1].a, arr(PD.nozzles().find(z => z.e === -1))) && /^<svg/.test(PD.pid()) && PD.warns().length === 0, PD.warns().join());
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], items: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'nipple' }] });
+check('pipe nipple', has('Pipe nipple, 150 mm, PBE, NPS 4 | 1'), rows());
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));

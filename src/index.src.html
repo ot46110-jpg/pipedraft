@@ -77,6 +77,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #ctx:not(:has([data-for]:not([hidden]))) { display: none; }
 #ctx [data-for] { display: flex; gap: 6px; }
 #psum { font-family: var(--font-data); font-size: 13px; }
+#ctx select { width: auto; min-width: 104px; }
 #pset { bottom: 78px; left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - 32px)); z-index: 5; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* elevation */
@@ -168,6 +169,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="finish">Finish run</button>
       </div>
       <div data-for="equip"><button id="rot">Rotate 90°</button></div>
+      <div data-for="branch cap reduce" id="fgroup">
+        <select id="fsz" aria-label="Size of the fitting"></select>
+        <div class="seg" id="bdir" role="group" aria-label="Direction from the pipe">
+          <button id="bd-up" aria-pressed="true">Up</button><button id="bd-near" aria-pressed="false">Near</button><button id="bd-far" aria-pressed="false">Far</button><button id="bd-down" aria-pressed="false">Down</button>
+        </div>
+      </div>
     </div>
     <div id="pset" class="sheet" hidden>
       <h2>Pipe settings</h2>
@@ -186,7 +193,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div id="spec" class="sheet" hidden>
         <h2>Project spec</h2>
         <div class="row"><label class="field">Elbow radius<select id="sp-el"><option value="LR">Long radius 1.5D</option><option value="SR">Short radius 1.0D</option><option value="3D">3D bend</option></select></label></div>
-        <div class="row"><label class="field">Reducer<select id="sp-red"><option value="conc">Concentric</option><option value="ecc">Eccentric, flat on bottom</option><option value="swage">Swage nipple, concentric</option></select></label></div>
+        <div class="row"><label class="field">Reducer<select id="sp-red"><option value="conc">Concentric</option><option value="ecc">Eccentric, flat on bottom</option><option value="swage">Swage nipple, concentric</option><option value="bushing">Reducing bushing, THD</option><option value="rcoupling">Reducing coupling</option></select></label></div>
         <div class="row"><label class="field">Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
         <div class="row"><label class="field">Olet type<select id="sp-olet"><option value="weldolet">Weldolet BW</option><option value="sockolet">Sockolet SW</option><option value="threadolet">Threadolet THD</option><option value="sweepolet">Sweepolet BW</option><option value="halfcoupling">Half coupling SW</option><option value="nippolet">Nippolet BW</option></select></label></div>
         <div class="row"><label class="field">Small bore ends, NPS 1-1/2 and below<select id="sp-small"><option value="SW">Socket weld, 3000#</option><option value="THD">Threaded, 3000#</option><option value="BW">Butt weld</option></select></label></div>
@@ -295,12 +302,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     spectacle: byNps([0.02, 0.02, 0.02, 0.025, 0.03, 0.03, 0.03, 0.03, 0.04, 0.045, 0.05, 0.055]),
     orifice: byNps([0.04, 0.04, 0.04, 0.045, 0.05, 0.05, 0.05, 0.05, 0.06, 0.065, 0.07, 0.075])
   };
-  var ITEM_FORM = { sight: [0.12, 1], flowmeter: [0.15, 3], basket: [0.1, 2.5], trap: [0.1, 1.5], rupture: [0.05, 0.5], flame: [0.2, 2], hose: [0.3, 1] };   // a + b x outside diameter
+  var ITEM_FORM = { nipple: [0.15, 0], sight: [0.12, 1], flowmeter: [0.15, 3], basket: [0.1, 2.5], trap: [0.1, 1.5], rupture: [0.05, 0.5], flame: [0.2, 2], hose: [0.3, 1] };   // a + b x outside diameter
   function itemLen(t, n) { if (ITEM_TAB[t]) return ITEM_TAB[t][n]; var f = ITEM_FORM[t] || [0.1, 0]; return f[0] + f[1] * OD[n] / 1000; }
   var ITEM_NAME = {
     coupling: 'Coupling, full, SW 3000#', union: 'Union, SW 3000#', strainer: 'Y-strainer, flanged 150#', expansion: 'Expansion joint, bellows, flanged 150#',
     spectacle: 'Spectacle blind 150#', orifice: 'Orifice plate assembly 150#', sight: 'Sight glass, flanged 150#', flowmeter: 'Flow meter, magnetic, flanged 150#',
-    basket: 'Basket strainer, flanged 150#', trap: 'Steam trap, thermodynamic, SW', rupture: 'Rupture disc assembly 150#', flame: 'Flame arrestor, flanged 150#', hose: 'Flexible hose, camlock'
+    nipple: 'Pipe nipple, 150 mm, PBE', basket: 'Basket strainer, flanged 150#', trap: 'Steam trap, thermodynamic, SW', rupture: 'Rupture disc assembly 150#', flame: 'Flame arrestor, flanged 150#', hose: 'Flexible hose, camlock'
   };
   var ELBOW_F = { LR: 1.5, SR: 1.0, '3D': 3.0 };                    // centreline radius in pipe diameters
   var INSTR = {                                                     // ISA function letters; dcs = shown on a shared display
@@ -321,7 +328,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var FT = byNps([0.027, 0.025, 0.023, 0.021, 0.019, 0.018, 0.018, 0.017, 0.015, 0.014, 0.013, 0.013]);   // fully turbulent friction factor by size
   var ELBOW_K = { LR: 14, SR: 20, '3D': 12 };                         // 90° elbow, in multiples of FT
   var VALVE_K = { gate: 8, globe: 340, check: 100, ball: 3, butterfly: 45, plug: 18, angle: 55, needle: 340, diaphragm: 100, knife: 8, threeway: 30, footv: 75 };   // in multiples of FT
-  var ITEM_K = { coupling: 0, union: 0, strainer: 2, expansion: 0.3, spectacle: 0, orifice: 3, sight: 0.5, flowmeter: 0, basket: 3, trap: 2, rupture: 1.5, flame: 5, hose: 1 };   // plain K, assumed
+  var ITEM_K = { nipple: 0, coupling: 0, union: 0, strainer: 2, expansion: 0.3, spectacle: 0, orifice: 3, sight: 0.5, flowmeter: 0, basket: 3, trap: 2, rupture: 1.5, flame: 5, hose: 1 };   // plain K, assumed
   var CV = byNps([4, 8, 14, 30, 60, 90, 130, 230, 500, 800, 1300, 1900]);   // control valve Cv fully open, assumed
   var ROUGH = 0.000045;                                               // commercial steel, m
   var OLET_NAME = { weldolet: 'Weldolet BW', sockolet: 'Sockolet SW', threadolet: 'Threadolet THD', sweepolet: 'Sweepolet BW', halfcoupling: 'Half coupling SW 3000#', nippolet: 'Nippolet BW' };
@@ -350,7 +357,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- state ----------
   var model = blank(), hist = [];
-  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto';
+  var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up';
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
   function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW' } }; }
@@ -609,7 +616,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       } else if (cnt === 2) {
         var dot = L[0].d.dot(L[1].d);
         if (dot < -0.999) {
-          if (L[0].n !== L[1].n) { j.type = 'reducer'; var rt = ov.red || spec.reducer; j.ecc = rt === 'ecc'; j.swage = rt === 'swage'; j.rl = redLen(Math.max(L[0].n, L[1].n)); setTrim(L, j.rl / 2); }
+          if (L[0].n !== L[1].n) { j.type = 'reducer'; var rt = ov.red || spec.reducer; j.ecc = rt === 'ecc'; j.swage = rt === 'swage'; j.bush = rt === 'bushing'; j.rc = rt === 'rcoupling'; j.rl = redLen(Math.max(L[0].n, L[1].n)); setTrim(L, j.rl / 2); }
         } else if (dot > 0.999) {
           warns.push('Two pipes leave the same point in the same direction, so they overlap.');
         } else {
@@ -710,6 +717,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     if (clashN > 5) warns.push((clashN - 5) + ' more clashes not listed.');
 
+    // Two 90° elbows with no straight pipe between them, bending the same way, are one return bend.
+    model.pipes.forEach(function (p, i) {
+      if (!(pipeLen[i] < 0.002)) return;
+      var ja = joints[key(p.a)], jb = joints[key(p.b)];
+      if (!ja || !jb || ja.type !== 'elbow' || jb.type !== 'elbow') return;
+      if (Math.abs(ja.defl - Math.PI / 2) > 0.05 || Math.abs(jb.defl - Math.PI / 2) > 0.05) return;
+      var oa = ja.legs.filter(function (l) { return l.i !== i; })[0], ob = jb.legs.filter(function (l) { return l.i !== i; })[0];
+      if (!oa || !ob || oa.d.dot(ob.d) < 0.999) return;
+      ja.ret = jb.ret = true; ja.retMain = true;
+    });
+
     // 6. Fittings.
     Object.keys(joints).forEach(function (k) {
       var j = joints[k];
@@ -724,12 +742,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mesh = new T.Mesh(new T.TorusGeometry(j.R, r, 16, 28, j.defl), mat(0xc9d6dc, 0.35));
         mesh.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(x1, y1, z1));
         mesh.position.copy(C);
-        add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind + ' ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc');
+        if (j.ret) { if (j.retMain) add('elbow', 'Return bend 180° ' + j.kind + ' ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc'); }
+        else add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind + ' ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc');
       } else if (j.type === 'reducer') {
         var big = L[0].n >= L[1].n ? L[0] : L[1], sm = big === L[0] ? L[1] : L[0];
-        mesh = new T.Mesh(new T.CylinderGeometry(OD[big.n] / 2000, OD[sm.n] / 2000, j.rl, 24), mat(j.ecc ? 0xe6d9ae : j.swage ? 0xcfe0b0 : 0xc9d6dc, 0.35));
+        mesh = new T.Mesh(new T.CylinderGeometry(OD[big.n] / 2000, OD[sm.n] / 2000, j.rl, 24), mat(j.ecc ? 0xe6d9ae : j.swage ? 0xcfe0b0 : j.bush ? 0xe0c9a0 : j.rc ? 0xd0d8e0 : 0xc9d6dc, 0.35));
         mesh.position.copy(P); mesh.quaternion.setFromUnitVectors(UP, big.d);
-        add('reducer', (j.swage ? 'Swage nipple concentric, PBE' : 'Reducer ' + (j.ecc ? 'eccentric (flat on bottom)' : 'concentric') + ' ' + endConn(big.n)) + ', ' + sizeText(big.n, sm.n) + ' SCH ' + j.s, 1, 'pc');
+        add('reducer', (j.swage ? 'Swage nipple concentric, PBE' : j.bush ? 'Reducing bushing, THD 3000#' : j.rc ? 'Reducing coupling ' + endConn(1) : 'Reducer ' + (j.ecc ? 'eccentric (flat on bottom)' : 'concentric') + ' ' + endConn(big.n)) + ', ' + sizeText(big.n, sm.n) + ' SCH ' + j.s, 1, 'pc');
       } else if (j.type === 'tee' || j.type === 'rtee') {
         var hd = j.hdr[0].d, rh = OD[j.nh] / 2000, cb = TEE_C[j.br.n], rb = OD[j.br.n] / 2000;
         mesh = new T.Group();
@@ -793,7 +812,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var c1 = new T.Mesh(new T.CylinderGeometry(R, 0, L / 2, 20), bm); c1.position.y = -L / 4; g.add(c1);
         var c2 = new T.Mesh(new T.CylinderGeometry(0, R, L / 2, 20), bm); c2.position.y = L / 4; g.add(c2);
       }
-      if (kind === 'threeway') { var tw = new T.Mesh(new T.CylinderGeometry(r * 1.1, r * 1.1, R * 1.8, 20), bm); tw.rotation.x = Math.PI / 2; tw.position.z = R * 0.9; g.add(tw); }
+      var port = null;
+      if (kind === 'threeway') {                                     // the side port is a connection point, like an equipment nozzle
+        var vd = V(v.d).normalize(), qv = new T.Quaternion().setFromUnitVectors(UP, vd);
+        var side0 = Math.abs(vd.y) > 0.9 ? new T.Vector3(1, 0, 0) : new T.Vector3(0, 1, 0).cross(vd).normalize();
+        var sideW = side0.applyAxisAngle(vd, (v.rot || 0) * Math.PI / 2), lv = sideW.clone().applyQuaternion(qv.clone().invert());
+        var tw = new T.Mesh(new T.CylinderGeometry(r * 1.1, r * 1.1, R * 1.8, 20), bm); tw.quaternion.setFromUnitVectors(UP, lv); tw.position.copy(lv).multiplyScalar(R * 0.9); g.add(tw);
+        port = { p: V(v.p).addScaledVector(sideW, R * 1.8), d: sideW, n: v.n, e: -1, v: i };
+      }
       if (kind === 'diaphragm') { var dm = new T.Mesh(new T.SphereGeometry(R * 0.8, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xb9a5e8, 0.5)); dm.rotation.z = -Math.PI / 2; dm.position.x = R * 0.9; g.add(dm); }
       if (kind === 'footv') { var fs = new T.Mesh(new T.CylinderGeometry(R * 1.1, R * 1.1, R * 0.5, 16), mat(0xc9d6dc, 0.6)); fs.position.y = -L / 2 - R * 0.2; g.add(fs); }
       if (kind === 'control') {
@@ -813,6 +839,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.quaternion.setFromUnitVectors(UP, V(v.d).normalize());
       g.traverse(function (m) { m.userData = { kind: 'valve', i: i }; });
       world.add(g);
+      if (port) nozList.push(port);
       add('valve', VALVE_NAME[kind] + ' ' + valveEnd(kind, v.n) + ', NPS ' + nl(v.n), 1, 'pc');
       add('pipe', 'Pipe, NPS ' + nl(v.n) + ' SCH ' + (v.s || 40) + ', ' + pipeEnd(v.n), -L, 'm');
       total -= L; weight -= L * lineWeight(v.n, v.s || 40);
@@ -843,6 +870,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else if (it.t === 'basket') { cyl(r * 1.4, L * 0.6); var bk = new T.Mesh(new T.CylinderGeometry(r * 1.7, r * 1.7, r * 3, 20), im); bk.rotation.z = Math.PI / 2; bk.position.x = r * 2.2; g.add(bk); }
       else if (it.t === 'trap') { cyl(r * 1.1, L); var tb = new T.Mesh(new T.BoxGeometry(r * 2.2, L * 0.9, r * 2.2), ac); tb.position.x = r * 1.7; g.add(tb); }
       else if (it.t === 'rupture') { cyl(r * 1.0, L * 0.6); cyl(r * 1.9, L * 0.2, -L * 0.4); cyl(r * 1.9, L * 0.2, L * 0.4); }
+      else if (it.t === 'nipple') { cyl(r * 1.0, L); }
       else if (it.t === 'flame') { cyl(r * 1.8, L); for (var fq = -2; fq <= 2; fq++) cyl(r * 1.88, 0.01, fq * L * 0.2, ac); }
       else if (it.t === 'hose') { cyl(r * 1.1, L); cyl(r * 1.35, 0.015, -L * 0.45, ac); cyl(r * 1.35, 0.015, L * 0.45, ac); }
       else { cyl(r * 1.45, L); var tab = new T.Mesh(new T.BoxGeometry(r * 0.3, L, r * 1.6), ac); tab.position.x = r * 1.9; g.add(tab); }
@@ -971,6 +999,29 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function pushHist() { hist.push(JSON.stringify(model)); if (hist.length > 100) hist.shift(); }
   function changed() { sample = false; $('mode').textContent = 'My layout'; save(); rebuild(); updateUi(); }
 
+  function resizeRun(idx, n, entryEnd) {                            // give one pipe and the run beyond it a new size
+    var seen = {};
+    (function go(i, entry) {
+      if (seen[i]) return; seen[i] = 1;
+      var p = model.pipes[i]; p.n = n;
+      var far = entry === 'a' ? 'b' : 'a', k = key(p[far]), J = jointInfo[k];
+      if (!J || J.legs.length !== 2 || nozList.some(function (z) { return key(mm3(z.p)) === k; })) return;
+      var other = J.legs.filter(function (l) { return l.i !== i; })[0];
+      if (other) go(other.i, other.end);
+    })(idx, entryEnd);
+    return seen;
+  }
+  function camHoriz() { var v = camera.position.clone().sub(target); v.y = 0; if (v.lengthSq() < 1e-6) v.set(0, 0, 1); return v.normalize(); }
+  function perpDir(d, mode) {                                       // up, down, toward the viewer or away, off a pipe running along d
+    var U = new T.Vector3(0, 1, 0), vertical = Math.abs(d.y) > 0.9, ch = camHoriz();
+    if (!vertical && mode === 'up') return U;
+    if (!vertical && mode === 'down') return U.clone().negate();
+    var hz = U.clone().cross(d).normalize();
+    var cands = vertical ? [new T.Vector3(1, 0, 0), new T.Vector3(-1, 0, 0), new T.Vector3(0, 0, 1), new T.Vector3(0, 0, -1)] : [hz, hz.clone().negate()];
+    var best = cands[0], bd = -2;
+    cands.forEach(function (c) { var s = c.dot(ch); if (s > bd) { bd = s; best = c; } });
+    return mode === 'far' ? best.clone().negate() : best.clone();
+  }
   function setRunFlow(i, dir) {                                     // carry one flow direction along a run, through elbows and reducers
     var seen = {};
     function go(idx, d) {
@@ -1175,6 +1226,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var atNoz = nozList.some(function (z) { return z.p.distanceTo(V(end)) < 0.01; });
       var closed = model.caps.some(function (c2) { return key(c2) === key(end); }) || model.flanges.some(function (f2) { return f2.t === 'bl' && key(f2.p) === key(end); });
       if (used !== 1 || atNoz || closed) { toast(closed ? 'That end is already closed' : 'That end is connected'); return; }
+      if (tool === 'cap' && ck === 'ret') {                         // return bend: a U of two elbows, continue drawing from its far end
+        var rbN = cp.n, Rr = ELBOW_F[model.spec.elbow] * Math.max(rbN, 1) * 0.0254;
+        var outw = (atA ? ea.clone().sub(eb) : eb.clone().sub(ea)).normalize(), sd = perpDir(outw, bdir);
+        var qa = mm3(V(end).addScaledVector(sd, 2 * Rr)), qb = mm3(V(qa).addScaledVector(outw, -0.3));
+        if (qa[1] < -1e-9 || qb[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; }
+        var intoEnd = cp.fl ? ((atA ? cp.fl < 0 : cp.fl > 0) ? 1 : -1) : 0;
+        pushHist();
+        addPipe(end, qa, rbN, cp.s || 40, cp.ln, intoEnd); addPipe(qa, qb, rbN, cp.s || 40, cp.ln, intoEnd);
+        cursor = qb; elev = qb[1]; curN = rbN; $('nps').value = String(rbN);
+        changed(); return;
+      }
       pushHist();
       if (tool === 'cap') model.caps.push([end[0], end[1], end[2], ck]);
       else {
@@ -1187,6 +1249,52 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var so = onPipe(hit); if (!so) return;
       if (Math.abs(so.dir.y) > 0.9 ? (sup !== 'guide' && sup !== 'anchor') : false) { toast('Vertical pipe takes a guide or an anchor'); return; }
       pushHist(); model.supports.push({ p: so.pt, d: [so.dir.x, so.dir.y, so.dir.z], n: so.pipe.n, t: sup }); changed();
+    } else if (tool === 'branch') {
+      hit = pickMeshes(e, 'pipe')[0]; if (!hit) { toast('Tap the pipe where the branch starts'); return; }
+      var bo = onPipe(hit); if (!bo) return;
+      var hn = bo.pipe.n, minEnd = TEE_C[hn] + 0.02;
+      if (bo.s < minEnd || bo.L - bo.s < minEnd) { toast('Tap farther from the end of the pipe, the fitting needs room'); return; }
+      var OLETS = ['weldolet', 'sockolet', 'threadolet', 'sweepolet', 'halfcoupling', 'nippolet'];
+      var bn = bk === 'tee' ? hn : bk === 'lat' ? Math.min(fsz, hn) : fsz;
+      if (fsz > hn && bk !== 'tee' && bk !== 'lat' && bk !== 'cross') { toast('The branch is larger than the pipe'); return; }
+      if (OLETS.indexOf(bk) >= 0 && fsz >= hn) { toast('An olet needs a branch smaller than the pipe'); return; }
+      if (bk === 'cross') bn = Math.min(fsz, hn);
+      var bdv = perpDir(bo.dir, bdir), q2 = null;
+      if (bk === 'lat') bdv = bo.dir.clone().add(bdv).normalize();
+      var q1 = mm3(V(bo.pt).addScaledVector(bdv, 0.3));
+      if (bk === 'cross') { q2 = mm3(V(bo.pt).addScaledVector(bdv, -0.3)); if (q2[1] < -1e-9 || q1[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; } }
+      if (q1[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; }
+      pushHist();
+      var bkey = key(bo.pt), ovr = null;
+      if (bk === 'tee' || bk === 'rtee' || bk === 'cross') ovr = { br: 'tee' };
+      else if (bk === 'stub' || bk === 'stubpad') ovr = { br: bk };
+      else if (bk !== 'lat') ovr = { br: 'olet', olet: bk };
+      var bflow = bo.pipe.fl ? 1 : 0;
+      splitAt(bo.pt);
+      if (ovr) model.fit[bkey] = ovr; else delete model.fit[bkey];
+      addPipe(bo.pt, q1, bn, bo.pipe.s, bo.pipe.ln, bflow);
+      if (q2) addPipe(bo.pt, q2, bn, bo.pipe.s, bo.pipe.ln, bflow);
+      cursor = q1; elev = q1[1]; curN = bn; $('nps').value = String(bn);
+      changed();
+    } else if (tool === 'reduce') {
+      hit = pickMeshes(e, 'pipe')[0]; if (!hit) { toast('Tap the pipe where the size changes'); return; }
+      var ro = onPipe(hit); if (!ro) return;
+      var rmin = redLen(ro.pipe.n) / 2 + 0.02;
+      if (ro.s < rmin || ro.L - ro.s < rmin) { toast('Tap farther from the end of the pipe, the reducer needs room'); return; }
+      if (fsz === ro.pipe.n) { toast('Pick a size different from the pipe'); return; }
+      pushHist();
+      var rkey = key(ro.pt), nearA = ro.s < ro.L / 2;
+      splitAt(ro.pt); rebuild();
+      var pa = -1, pb = -1;
+      model.pipes.forEach(function (pp2, i2) { if (key(pp2.b) === rkey) pa = i2; if (key(pp2.a) === rkey) pb = i2; });
+      var rstart = nearA ? pa : pb;
+      if (rstart < 0) return;
+      var rsz = resizeRun(rstart, fsz, nearA ? 'b' : 'a');
+      [model.valves, model.items, model.flanges, model.supports, model.instr].forEach(function (list) {   // things on the resized pipe follow its size
+        list.forEach(function (it2) { if (it2.eq == null && rsz[hostOf(it2.p)]) it2.n = fsz; });
+      });
+      model.fit[rkey] = { red: rk };
+      changed();
     } else if (tool === 'instr') {
       hit = pickMeshes(e)[0];
       var hk = hit && hit.object.userData.kind;
@@ -1279,6 +1387,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else if (sel.kind === 'valve') {
       h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts(Object.keys(VALVE_NAME).map(function (k) { return [k, VALVE_NAME[k].replace(' valve', '')]; }), it.k) + '</select></label></div>'
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
+        + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '')
         + '<p>NPS ' + nl(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
     } else if (sel.kind === 'item') {
       h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }), it.t) + '</select></label></div>'
@@ -1300,7 +1409,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var nm = { elbow: 'Elbow', reducer: 'Reducer', tee: 'Tee', rtee: 'Reducing tee', lat: 'Lateral 45°', olet: 'Olet', stub: 'Stub-in branch', cap: 'End closure', cross: 'Cross' }[ty] || ty;
       h = '<h2>' + nm + '</h2>';
       if (ty === 'elbow') h += '<div class="row"><label>Radius<select id="i-el">' + opts([['', 'Project default'], ['LR', 'Long radius 1.5D'], ['SR', 'Short radius 1.0D'], ['3D', '3D bend']], ov.el || '') + '</select></label></div>';
-      if (ty === 'reducer') h += '<div class="row"><label>Type<select id="i-red">' + opts([['', 'Project default'], ['conc', 'Concentric'], ['ecc', 'Eccentric, flat on bottom'], ['swage', 'Swage nipple']], ov.red || '') + '</select></label></div>';
+      if (ty === 'reducer') h += '<div class="row"><label>Type<select id="i-red">' + opts([['', 'Project default'], ['conc', 'Concentric'], ['ecc', 'Eccentric, flat on bottom'], ['swage', 'Swage nipple'], ['bushing', 'Reducing bushing'], ['rcoupling', 'Reducing coupling']], ov.red || '') + '</select></label></div>';
       if (ty === 'tee' || ty === 'rtee' || ty === 'olet' || ty === 'stub') {
         h += '<div class="row"><label>Branch connection<select id="i-br">' + opts([['', 'Project default'], ['tee', 'Tee'], ['olet', 'Olet'], ['stub', 'Stub-in'], ['stubpad', 'Stub-in with pad']], ov.br || '') + '</select></label></div>';
         if (ty === 'olet') h += '<div class="row"><label>Olet type<select id="i-ol">' + opts([['', 'Project default'], ['weldolet', 'Weldolet'], ['sockolet', 'Sockolet'], ['threadolet', 'Threadolet'], ['sweepolet', 'Sweepolet'], ['halfcoupling', 'Half coupling'], ['nippolet', 'Nippolet']], ov.olet || '') + '</select></label></div>';
@@ -1319,6 +1428,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ($('i-k')) $('i-k').onchange = edit(function (v) { it.k = v; });
     if ($('i-fl')) $('i-fl').onchange = edit(function (v) { it.fl = +v; });
     if ($('i-run')) $('i-run').onclick = function () { setRunFlow(sel.i, it.fl || 1); };
+    if ($('i-rotv')) $('i-rotv').onclick = function () { pushHist(); it.rot = ((it.rot || 0) + 1) % 4; changed(); };
     if ($('i-flip')) $('i-flip').onclick = function () { pushHist(); it.rev = !it.rev; changed(); };
     if ($('i-st')) $('i-st').onchange = edit(function (v) { it.t = v; });
     if ($('i-in')) $('i-in').onchange = edit(function (v) { it.k = v; if (!INSTR[v].dcs) delete it.link; });
@@ -1418,6 +1528,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     trap: { name: 'Steam trap', tag: 'TR', svg: '<circle r="7"/><polygon points="-4,-3 4,-3 0,4" fill="' + INK + '"/>' },
     rupture: { name: 'Rupture disc', tag: 'RU', svg: '<path d="M-3,-8 Q3,0 -3,8" fill="none" stroke-width="2.2"/><line x1="3" y1="-8" x2="3" y2="8" stroke-width="2.2"/>' },
     flame: { name: 'Flame arrestor', tag: 'FA', svg: '<rect x="-8" y="-6" width="16" height="12"/><line x1="-4" y1="-6" x2="-4" y2="6"/><line x1="0" y1="-6" x2="0" y2="6"/><line x1="4" y1="-6" x2="4" y2="6"/>' },
+    nipple: { name: 'Pipe nipple', tag: 'NP', svg: '<rect x="-8" y="-3" width="16" height="6"/>' },
     hose: { name: 'Flexible hose', tag: 'HS', svg: '<path d="M-10,0 q3,-7 6,0 t6,0 t6,0 t4,0" fill="none"/>' },
     psv: { name: 'Pressure safety valve', tag: 'PSV', svg: '<polygon points="-7,8 7,8 0,-4"/><polyline points="0,-4 -4,-8 4,-12 -4,-16 4,-20 0,-24" fill="none"/>' },
     instr: { name: 'Field instrument', tag: '', svg: '<circle r="9"/>' },
@@ -1554,7 +1665,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function pidSvg() {
     if (!model.pipes.length && !model.equip.length) return null;
     var tags = assignTags(), nozByKey = {}, nodeLegs = {}, usedSym = {};
-    nozList.forEach(function (z) { nozByKey[key(mm3(z.p))] = z; });
+    nozList.forEach(function (z) { if (z.e >= 0) nozByKey[key(mm3(z.p))] = z; });
     function nid(k) { return nozByKey[k] ? 'E' + nozByKey[k].e : k; }
     function isEq(id) { return /^E\d+$/.test(id); }
     function isNode(k) { var J = jointInfo[k]; return !J || J.legs.length !== 2 || !!nozByKey[k]; }
@@ -1871,21 +1982,23 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- UI ----------
   var RAIL = ['nav', 'sel', 'pipe', 'measure', 'del'];
   var PARTS = {
+    branch: { label: 'Branches', items: [['tee', 'Tee'], ['rtee', 'Reducing tee'], ['lat', 'Lateral 45°'], ['cross', 'Cross'], ['weldolet', 'Weldolet'], ['sockolet', 'Sockolet'], ['threadolet', 'Threadolet'], ['sweepolet', 'Sweepolet'], ['halfcoupling', 'Half coupling'], ['nippolet', 'Nippolet'], ['stub', 'Stub-in'], ['stubpad', 'Stub-in with pad']] },
+    reduce: { label: 'Reducers', items: [['conc', 'Reducer, concentric'], ['ecc', 'Reducer, eccentric'], ['swage', 'Swage nipple'], ['bushing', 'Reducing bushing'], ['rcoupling', 'Reducing coupling']] },
     valve: { label: 'Valves', items: [['gate', 'Gate'], ['globe', 'Globe'], ['check', 'Check'], ['ball', 'Ball'], ['butterfly', 'Butterfly'], ['plug', 'Plug'], ['control', 'Control'], ['angle', 'Angle'], ['needle', 'Needle'], ['diaphragm', 'Diaphragm'], ['knife', 'Knife gate'], ['threeway', 'Three-way'], ['footv', 'Foot valve']] },
     flange: { label: 'Flanges', items: [['wn', 'Weld-neck pair'], ['so', 'Slip-on pair'], ['lj', 'Lap-joint pair'], ['th', 'Threaded pair'], ['sw', 'Socket-weld pair'], ['ro', 'Orifice flange pair'], ['bl', 'Blind, pipe end']] },
-    item: { label: 'Inline', items: [['coupling', 'Coupling'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
-    cap: { label: 'Ends', items: [['cap', 'Cap BW'], ['plug', 'Plug THD']] },
+    item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
+    cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°']] },
     equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) }
   };
-  var PART_KEYS = Object.keys(PARTS), lastPart = 'valve';
-  function partVal(c) { return { valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup }[c]; }
+  var PART_KEYS = Object.keys(PARTS), lastPart = 'branch';
+  function partVal(c) { return { valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
   function setPart(c, v) {
-    if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else eqk = v;
+    if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
     updateUi();
   }
-  var partOpen = { valve: true };
+  var partOpen = { branch: true };
   function buildParts() {
     $('parts').innerHTML = '<div id="plist">' + PART_KEYS.map(function (c) {
       return '<div class="psec" data-sec="' + c + '"><button class="phead" data-head="' + c + '" aria-expanded="true">' + PARTS[c].label + '</button><div class="prows">'
@@ -1928,6 +2041,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('axis').hidden = !cursor; $('finish').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
+    $('fgroup').hidden = $('fgroup').hidden || (tool === 'cap' && ck !== 'ret');   // direction only matters for a return bend among the end fittings
+    $('fsz').hidden = tool === 'cap'; $('bdir').hidden = tool === 'reduce'; $('fsz').value = String(fsz);
+    ['up', 'near', 'far', 'down'].forEach(function (d) { $('bd-' + d).setAttribute('aria-pressed', String(bdir === d)); });
     $('elv').textContent = 'EL ' + (elev >= 0 ? '+' : '') + elev.toFixed(3) + ' m';
     $('undo').disabled = !hist.length;
     $('ang').value = ang45 ? '1' : '0';
@@ -1949,7 +2065,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       item: 'Tap a pipe to place the fitting inline.',
       instr: 'Tap a pipe, or a vessel for a level instrument.',
       support: 'Tap a pipe to place a support. Hangers and shoes go on horizontal pipe.',
-      cap: 'Tap an open pipe end to close it.',
+      cap: ck === 'ret' ? 'Tap an open pipe end. A return bend turns it back on itself. Pick the direction below.' : 'Tap an open pipe end to close it.',
+      branch: bk === 'tee' ? 'Tap a pipe where the branch starts. The branch is the same size. Pick its direction below.' : 'Tap a pipe where the branch starts. Set the branch size and direction below.',
+      reduce: 'Tap a pipe where the size changes. The part toward the nearer end takes the size below.',
       equip: 'Tap the grid to place the ' + EQUIP[eqk].name.toLowerCase() + '. Its nozzles are start points for pipes.',
       measure: 'Tap two points to measure. Pipe ends and nozzles snap.',
       del: 'Tap a pipe, valve, flange or equipment to remove it.'
@@ -1977,6 +2095,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('sp-olet').onchange = function () { setSpec('olet', this.value); };
   $('sp-small').onchange = function () { setSpec('small', this.value); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
+  $('fsz').onchange = function () { fsz = +$('fsz').value; updateUi(); };
+  ['up', 'near', 'far', 'down'].forEach(function (d) { $('bd-' + d).onclick = function () { bdir = d; updateUi(); }; });
   $('rot').onclick = function () { curRot = (curRot + 1) % 4; toast('Rotation ' + curRot * 90 + '°'); };
   ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).onclick = function () { axisMode = a; updateUi(); }; });
   $('finish').onclick = function () { cursor = null; guideLine.visible = false; updateUi(); };
@@ -2060,7 +2180,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA') return;
     var k = e.key.toLowerCase();
     if (e.metaKey || e.ctrlKey) { if (k === 'z') { e.preventDefault(); $('undo').click(); } return; }
-    var map = { n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
+    var map = { b: 'branch', r: 'reduce', n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
     if (k === 'escape' || k === 'enter') { cursor = null; sel = null; mA = null; rebuild(); updateUi(); }
     else if (map[k]) setTool(map[k]);
     else if (k === 'x' || k === 'y' || k === 'z' || k === 'a') { axisMode = k === 'a' ? 'auto' : k; updateUi(); }
@@ -2083,6 +2203,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
   $('nps').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '"' + (n === 4 ? ' selected' : '') + '>NPS ' + nl(n) + ' · ' + SIZES[n].od + ' mm</option>'; }).join('');
+  $('fsz').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '"' + (n === 3 ? ' selected' : '') + '>NPS ' + nl(n) + '</option>'; }).join('');
   buildParts();
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
