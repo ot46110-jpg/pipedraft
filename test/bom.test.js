@@ -404,11 +404,43 @@ check('the symbol reference sheet says how iso uses the symbols', PD.legend().in
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] });
 check('a bare pipe has a balloon for its pipe row', PD.iso().includes('r="9.5"') && PD.iso().includes('Pipe, NPS 4 SCH 40, BE'));
 
+// Standards and size designation: ASME, JIS and EN, in NPS, DN or JIS A.
+const stdModel = spec => ({ spec, pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 3], n: 4 }, { a: [4, 0, 3], b: [8, 0, 3], n: 6 }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }], flanges: [{ p: [2.5, 0, 0], d: [1, 0, 0], n: 4, t: 'wn' }] });
+const rowStd = (desc) => (PD.rows().find(r => r[0].startsWith(desc)) || [])[2];
+PD.load(stdModel({}));
+check('ASME is the default and rows carry their standard', rowStd('Pipe, NPS 4') === 'ASTM A106 Gr.B, ASME B36.10M' && rowStd('Weld-neck flange 150#') === 'ASTM A105, ASME B16.5' && rowStd('Gasket 150#') === 'ASME B16.20' && rowStd('Elbow') === 'ASTM A234 WPB, ASME B16.9' && rowStd('Gate valve') === 'ASTM A216 WCB, ASME B16.34', JSON.stringify(PD.rows()));
+check('the iso material list prints the standard under the description', PD.iso().includes('ASTM A106 Gr.B, ASME B36.10M'));
+PD.load(stdModel({ sizeMode: 'DN' }));
+check('DN designation on the BOM', has('Pipe, DN100 SCH 40, BE') && has('Pipe, DN150 SCH 40, BE') && has('Elbow 90° LR BW, DN100 SCH 40') && has('Reducer concentric BW, DN150×100 SCH 40') === false, rows());
+PD.load(stdModel({ sizeMode: 'A' }));
+check('JIS A designation on the BOM', has('Pipe, 100A SCH 40, BE') && has('Pipe, 150A SCH 40, BE') && has('Gate valve flanged 150#, 100A'), rows());
+PD.load({ spec: { sizeMode: 'DN' }, pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 6 }, { a: [4, 0, 0], b: [8, 0, 0], n: 4 }], valves: [] });
+check('reducer reads DN150×100', has('Reducer concentric BW, DN150×100 SCH 40 | 1'), rows());
+PD.load(stdModel({ std: 'jis', sizeMode: 'A' }));
+check('JIS: rating word, materials and bolts', has('Gate valve flanged JIS 10K, 100A') && has('Weld-neck flange JIS 10K BW, 100A SCH 40') && has('Gasket JIS 10K spiral wound, 100A') && has('Stud bolt set JIS 10K, 8× M16') && rowStd('Pipe, 100A') === 'JIS G3454 STPG370' && rowStd('Weld-neck flange') === 'JIS B2220, SS400' && rowStd('Gasket') === 'JIS B2404', rows());
+check('JIS pipe uses the JIS outside diameter and wall (150A is 165.2 x 7.1)', close(PD.hyd().pipes[2].D, (165.2 - 2 * 7.1) / 1000, 0.0005) && close(PD.hyd().pipes[0].D, (114.3 - 2 * 6.0) / 1000, 0.0005), JSON.stringify(PD.hyd().pipes.map(p => p.D)));
+PD.load({ std: 'jis', spec: { std: 'jis' }, pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 0.5 }], valves: [] });
+check('JIS 15A is 21.7 mm, not the ASME 21.3 mm', close(PD.hyd().pipes[0].D, (21.7 - 2 * 2.8) / 1000, 0.0005), String(PD.hyd().pipes[0].D));
+PD.load(stdModel({ std: 'en', sizeMode: 'DN' }));
+check('EN: PN16, EN materials and flange bolts', has('Weld-neck flange PN16 BW, DN100 SCH 40') && has('Stud bolt set PN16, 8× M16') && rowStd('Pipe, DN100') === 'EN 10216-2 P235GH, ISO 4200' && rowStd('Weld-neck flange') === 'EN 1092-1, P250GH', rows());
+PD.load({ spec: { std: 'en' }, pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 2.5 }], valves: [] });
+check('EN uses the ISO 4200 diameter (DN65 is 76.1 mm)', close(PD.hyd().pipes[0].D, (76.1 - 2 * 5.16) / 1000, 0.0005), String(PD.hyd().pipes[0].D));
+PD.load(stdModel({}));
+check('switching back to ASME restores the ASME diameters', close(PD.hyd().pipes[0].D, (114.3 - 2 * 6.02) / 1000, 0.0005) && has('Weld-neck flange 150# BW, NPS 4 SCH 40'));
+// the spec controls
+PD.load(stdModel({}));
+els['sp-std'].value = 'jis'; els['sp-std'].onchange.call(els['sp-std']);
+check('choosing JIS in the spec switches the size designation to JIS A and refills the size lists', PD.model.spec.std === 'jis' && PD.model.spec.sizeMode === 'A' && els['nps'].innerHTML.includes('100A · 114.3 mm') && els['fsz'].innerHTML.includes('>80A<'), els['nps'].innerHTML.slice(0, 120));
+els['sp-size'].value = 'DN'; els['sp-size'].onchange.call(els['sp-size']);
+check('the size designation can be changed on its own', PD.model.spec.sizeMode === 'DN' && els['nps'].innerHTML.includes('DN100'));
+els['sp-std'].value = 'asme'; els['sp-std'].onchange.call(els['sp-std']);
+check('and back to NPS with ASME', PD.model.spec.sizeMode === 'NPS' && els['nps'].innerHTML.includes('NPS 4 · 114.3 mm'));
+
 // Weight, exports.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [10, 0, 0], n: 4 }], valves: [] });
 const wt = PD.rows().find(r => r[0].startsWith('Pipe weight'));
 check('pipe weight about 16 kg/m', wt && Math.abs(parseFloat(wt[1]) - 160.7) < 2, JSON.stringify(wt));
-check('csv has header and rows', PD.csv().startsWith('Item,Quantity\n') && PD.csv().includes('Pipe, NPS 4'));
+check('csv has header, rows and the standard column', PD.csv().startsWith('Item,Quantity,Standard / material\n') && PD.csv().includes('Pipe, NPS 4') && PD.csv().includes('ASTM A106 Gr.B'));
 check('dxf has a LINE', PD.dxf().includes('\nLINE\n') && PD.dxf().trim().endsWith('EOF'));
 check('iso sheet renders', /^<svg/.test(PD.iso()) && PD.iso().includes('PIPEDRAFT 3D'));
 PD.load({ pipes: [], valves: [] });

@@ -87,6 +87,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #insp p { margin: 0 0 10px; font: 400 12.5px var(--font-data); color: var(--fg); }
 #bom table { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
 #bom td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.std { font: 400 10.5px var(--font-data); color: var(--dim); margin-top: 2px; }
 #bom td:last-child { text-align: right; color: var(--accent); padding-left: 10px; white-space: nowrap; }
 /* more menu */
 #more { top: 12px; right: var(--gutter-r); width: min(280px, calc(100% - 32px)); z-index: 7; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
@@ -189,6 +190,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div id="insp" class="sheet" hidden></div>
       <div id="spec" class="sheet" hidden>
         <h2>Project spec</h2>
+      <div class="row"><label class="field">Standard<select id="sp-std"><option value="asme">ASME / ASTM, class 150</option><option value="jis">JIS, 10K</option><option value="en">EN / DIN, PN16</option></select></label></div>
+      <div class="row"><label class="field">Size designation<select id="sp-size"><option value="NPS">NPS, inch</option><option value="DN">DN, mm</option><option value="A">JIS A, mm</option></select></label></div>
         <div class="row"><label class="field">Elbow radius<select id="sp-el"><option value="LR">Long radius 1.5D</option><option value="SR">Short radius 1.0D</option><option value="3D">3D bend</option></select></label></div>
         <div class="row"><label class="field">Reducer<select id="sp-red"><option value="conc">Concentric</option><option value="ecc">Eccentric, flat on bottom</option><option value="swage">Swage nipple, concentric</option><option value="bushing">Reducing bushing, THD</option><option value="rcoupling">Reducing coupling</option></select></label></div>
         <div class="row"><label class="field">Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
@@ -267,11 +270,41 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var CAP_E = byNps([0.025, 0.025, 0.038, 0.038, 0.038, 0.038, 0.051, 0.064, 0.089, 0.102, 0.127, 0.152]);   // cap length, m
   var RED_H = byNps([0.038, 0.038, 0.051, 0.064, 0.076, 0.089, 0.089, 0.102, 0.140, 0.152, 0.178, 0.203]);   // reducer length by large end, m
   function redLen(n) { return RED_H[n] || 0.12; }
-  var FL = {                                                        // class 150 flange outside diameter and thickness, m
+  var FL_ASME = {                                                        // class 150 flange outside diameter and thickness, m
     0.5: [0.0889, 0.0112], 0.75: [0.0986, 0.0127], 1: [0.1079, 0.0143], 1.5: [0.127, 0.0175], 2: [0.1524, 0.0191], 2.5: [0.1778, 0.0223],
     3: [0.1905, 0.0239], 4: [0.2286, 0.0239], 6: [0.2794, 0.0254], 8: [0.3429, 0.0284], 10: [0.4064, 0.0302], 12: [0.4826, 0.0318]
   };
-  var BOLTS = byNps(['4× 1/2"', '4× 1/2"', '4× 1/2"', '4× 1/2"', '4× 5/8"', '4× 5/8"', '4× 5/8"', '8× 5/8"', '8× 3/4"', '8× 3/4"', '12× 7/8"', '12× 7/8"']);
+  var BOLTS_ASME = byNps(['4× 1/2"', '4× 1/2"', '4× 1/2"', '4× 1/2"', '4× 5/8"', '4× 5/8"', '4× 5/8"', '8× 5/8"', '8× 3/4"', '8× 3/4"', '12× 7/8"', '12× 7/8"']);
+  // Standard sets. Asia mixes JIS (Japan, Thailand, Korea), EN with PN ratings, and ASME with class ratings. The figures are typical
+  // values written from memory, so check them against the project piping class before anything is ordered.
+  var DN = { 0.5: 15, 0.75: 20, 1: 25, 1.5: 40, 2: 50, 2.5: 65, 3: 80, 4: 100, 6: 150, 8: 200, 10: 250, 12: 300 };
+  function sz(n) { var m = (model.spec || {}).sizeMode || 'NPS'; return m === 'DN' ? 'DN' + DN[n] : m === 'A' ? DN[n] + 'A' : 'NPS ' + nl(n); }
+  function szs(n) { var m = (model.spec || {}).sizeMode || 'NPS'; return m === 'DN' ? String(DN[n]) : m === 'A' ? DN[n] + 'A' : nl(n); }
+  var SIZES_ASME = JSON.parse(JSON.stringify(SIZES));
+  var SIZES_JIS = {                                                 // JIS G3454 outside diameter and wall, mm (differs from ASME at several sizes)
+    0.5: { od: 21.7, wt: { 40: 2.8, 80: 3.7 } }, 0.75: { od: 27.2, wt: { 40: 2.9, 80: 3.9 } }, 1: { od: 34.0, wt: { 40: 3.4, 80: 4.5 } },
+    1.5: { od: 48.6, wt: { 40: 3.7, 80: 5.1 } }, 2: { od: 60.5, wt: { 40: 3.9, 80: 5.5 } }, 2.5: { od: 76.3, wt: { 40: 5.2, 80: 7.0 } },
+    3: { od: 89.1, wt: { 40: 5.5, 80: 7.6 } }, 4: { od: 114.3, wt: { 40: 6.0, 80: 8.6 } }, 6: { od: 165.2, wt: { 40: 7.1, 80: 11.0 } },
+    8: { od: 216.3, wt: { 40: 8.2, 80: 12.7 } }, 10: { od: 267.4, wt: { 40: 9.3, 80: 15.1 } }, 12: { od: 318.5, wt: { 40: 10.3, 80: 17.4 } }
+  };
+  var SIZES_EN = JSON.parse(JSON.stringify(SIZES));                 // ISO 4200 outside diameters, walls by schedule as an approximation
+  SIZES_EN[0.75].od = 26.9; SIZES_EN[1].od = 33.7; SIZES_EN[2.5].od = 76.1; SIZES_EN[10].od = 273.0;
+  var FL_JIS = byNps([[0.095, 0.012], [0.100, 0.014], [0.125, 0.014], [0.140, 0.016], [0.155, 0.016], [0.175, 0.018], [0.185, 0.018], [0.210, 0.018], [0.280, 0.022], [0.330, 0.022], [0.400, 0.024], [0.445, 0.024]]);
+  var BOLTS_JIS = byNps(['4× M12', '4× M12', '4× M16', '4× M16', '4× M16', '4× M16', '8× M16', '8× M16', '8× M20', '12× M20', '12× M22', '16× M22']);
+  var FL_EN = byNps([[0.095, 0.014], [0.105, 0.016], [0.115, 0.016], [0.150, 0.018], [0.165, 0.018], [0.185, 0.018], [0.200, 0.020], [0.220, 0.020], [0.285, 0.022], [0.340, 0.024], [0.405, 0.026], [0.460, 0.028]]);
+  var BOLTS_EN = byNps(['4× M12', '4× M12', '4× M12', '4× M16', '4× M16', '4× M16', '8× M16', '8× M16', '8× M20', '12× M20', '12× M24', '12× M24']);
+  var FL = FL_ASME, BOLTS = BOLTS_ASME;
+  var STD = {
+    asme: { name: 'ASME / ASTM, class 150', cls: '150#', sizes: SIZES_ASME, fl: FL_ASME, bolts: BOLTS_ASME, pipe: 'ASTM A106 Gr.B, ASME B36.10M', fit: 'ASTM A234 WPB, ASME B16.9', flg: 'ASTM A105, ASME B16.5', gasket: 'ASME B16.20', bolt: 'ASTM A193 B7 / A194 2H', valve: 'ASTM A216 WCB, ASME B16.34' },
+    jis: { name: 'JIS, 10K', cls: 'JIS 10K', sizes: SIZES_JIS, fl: FL_JIS, bolts: BOLTS_JIS, pipe: 'JIS G3454 STPG370', fit: 'JIS B2311, STPG370', flg: 'JIS B2220, SS400', gasket: 'JIS B2404', bolt: 'JIS B1180, SS400', valve: 'JIS B2071, SCPH2' },
+    en: { name: 'EN / DIN, PN16', cls: 'PN16', sizes: SIZES_EN, fl: FL_EN, bolts: BOLTS_EN, pipe: 'EN 10216-2 P235GH, ISO 4200', fit: 'EN 10253-2 P235GH', flg: 'EN 1092-1, P250GH', gasket: 'EN 1514-2', bolt: 'EN ISO 898-1, 5.6', valve: 'EN 1503-1 GP240GH' }
+  };
+  function std() { return STD[(model.spec || {}).std] || STD.asme; }
+  function applyStd() {                                             // swap the live size and flange tables for the chosen standard
+    var s = std();
+    Object.keys(SIZES).forEach(function (n) { SIZES[n].od = s.sizes[n].od; SIZES[n].wt = s.sizes[n].wt; OD[n] = s.sizes[n].od; });
+    FL = s.fl; BOLTS = s.bolts;
+  }
   // End connections. Pipe up to NPS 1-1/2 is usually socket-weld or threaded, the project spec says which.
   function endConn(n) { var s = (model.spec || {}).small || 'SW'; return n <= 1.5 ? (s === 'THD' ? 'THD 3000#' : s === 'BW' ? 'BW' : 'SW 3000#') : 'BW'; }
   function pipeEnd(n) { var s = (model.spec || {}).small || 'SW'; return n <= 1.5 ? (s === 'THD' ? 'TE' : s === 'BW' ? 'BE' : 'PE') : 'BE'; }
@@ -363,7 +396,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up';
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS' } }; }
   function normalize(m) {
     var o = blank();
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -542,12 +575,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {};
   var compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }, curRef = null;
   function add(cat, desc, qty, unit) {
+    desc = desc.split('150#').join(std().cls);                      // the rating word follows the chosen standard
     var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit });
     l.qty += qty;
     if (curRef && qty > 0 && !compDesc[curRef[0]][curRef[1]]) compDesc[curRef[0]][curRef[1]] = desc;   // first row a component adds is its own
     return desc;
   }
-  function sizeText(a, b) { return a === b ? 'NPS ' + nl(a) : 'NPS ' + nl(a) + '×' + nl(b); }
+  function sizeText(a, b) { return a === b ? sz(a) : sz(a) + '×' + szs(b); }
   function equipNozzles(e) {
     var rot = (e.r || 0) * Math.PI / 2;
     return EQUIP[e.k].noz.map(function (z) {
@@ -563,6 +597,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
       });
     }
+    applyStd();
     lines = {}; warns = []; nozList = []; pipeLen = {};
     compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }; curRef = null;
     var weight = 0;
@@ -583,7 +618,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       def.noz.forEach(function (z, k) {
         var legs = atKey[key(mm3(zs[k].p))], ok = !!legs;
         if (legs && legs.length === 1) {
-          if (legs[0].n !== z.n) warns.push(def.short + ' nozzle N' + (k + 1) + ' is NPS ' + nl(z.n) + ' but the pipe is NPS ' + nl(legs[0].n) + '.');
+          if (legs[0].n !== z.n) warns.push(def.short + ' nozzle N' + (k + 1) + ' is ' + sz(z.n) + ' but the pipe is ' + sz(legs[0].n) + '.');
           else if (legs[0].d.dot(zs[k].d) < 0.999) warns.push('Pipe on ' + def.short.toLowerCase() + ' nozzle N' + (k + 1) + ' does not leave along the nozzle axis.');
         }
         var s = new T.Mesh(new T.CylinderGeometry(OD[z.n] / 2000 * 1.4, OD[z.n] / 2000 * 1.4, 0.12, 20), mat(ok ? 0x6bd18f : 0xc9d6dc, 0.4));
@@ -629,7 +664,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           warns.push('Two pipes leave the same point in the same direction, so they overlap.');
         } else {
           j.type = 'elbow'; j.kind = ov.el || spec.elbow;
-          if (L[0].n !== L[1].n) warns.push('Size change at an elbow, NPS ' + nl(L[0].n) + ' to ' + nl(L[1].n) + '. Put a reducer on a straight run.');
+          if (L[0].n !== L[1].n) warns.push('Size change at an elbow, ' + sz(L[0].n) + ' to ' + nl(L[1].n) + '. Put a reducer on a straight run.');
           j.defl = Math.PI - Math.acos(clamp(dot, -1, 1));
           j.R = ELBOW_F[j.kind] * Math.max(nmax, 1) * 0.0254;
           j.t = j.R * Math.tan(j.defl / 2);
@@ -642,7 +677,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         });
         if (!hdr) { warns.push('Three pipes meet without a straight run through. Only tees, laterals and branches are supported.'); return; }
         var nh = Math.max(hdr[0].n, hdr[1].n), dB = Math.abs(br.d.dot(hdr[0].d));
-        if (hdr[0].n !== hdr[1].n) warns.push('Header changes size at a branch, NPS ' + nl(hdr[0].n) + ' to ' + nl(hdr[1].n) + '. Add a reducer.');
+        if (hdr[0].n !== hdr[1].n) warns.push('Header changes size at a branch, ' + sz(hdr[0].n) + ' to ' + nl(hdr[1].n) + '. Add a reducer.');
         j.hdr = hdr; j.br = br; j.nh = nh;
         if (dB > 0.02) {
           if (Math.abs(dB - 0.7071) < 0.03) {
@@ -685,7 +720,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         ar.quaternion.setFromUnitVectors(UP, dir.clone().multiplyScalar(p.fl > 0 ? 1 : -1));
         ar.userData = { kind: 'pipe', i: i }; world.add(ar);
       }
-      add('pipe', 'Pipe, NPS ' + nl(p.n) + ' SCH ' + s + ', ' + pipeEnd(p.n), len, 'm');
+      add('pipe', 'Pipe, ' + sz(p.n) + ' SCH ' + s + ', ' + pipeEnd(p.n), len, 'm');
       total += len; weight += len * lineWeight(p.n, s);
       if (showDims) {
         var sp = label(String(Math.round(Lp * 1000)));
@@ -706,7 +741,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       model.supports.forEach(function (q) { if (hostOf(q.p) === i) pts.push(V(q.p).distanceTo(V(p.a))); });
       pts.sort(function (x, y) { return x - y; });
       var gap = 0; for (var g2 = 1; g2 < pts.length; g2++) gap = Math.max(gap, pts[g2] - pts[g2 - 1]);
-      if (gap > SPAN[p.n] + 0.001) warns.push('Pipe ' + (i + 1) + ' spans ' + gap.toFixed(1) + ' m without a support. Keep it under about ' + SPAN[p.n] + ' m for NPS ' + nl(p.n) + '.');
+      if (gap > SPAN[p.n] + 0.001) warns.push('Pipe ' + (i + 1) + ' spans ' + gap.toFixed(1) + ' m without a support. Keep it under about ' + SPAN[p.n] + ' m for ' + sz(p.n) + '.');
     });
 
     // 5. Clash check between pipes that do not share a joint.
@@ -752,8 +787,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mesh = new T.Mesh(new T.TorusGeometry(j.R, r, 16, 28, j.defl), mat(0xc9d6dc, 0.35));
         mesh.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(x1, y1, z1));
         mesh.position.copy(C);
-        if (j.ret) { if (j.retMain) add('elbow', 'Return bend 180° ' + j.kind + ' ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc'); }
-        else add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind + ' ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc');
+        if (j.ret) { if (j.retMain) add('elbow', 'Return bend 180° ' + j.kind + ' ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc'); }
+        else add('elbow', 'Elbow ' + Math.round(j.defl * 180 / Math.PI) + '° ' + j.kind + ' ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
       } else if (j.type === 'reducer') {
         var big = L[0].n >= L[1].n ? L[0] : L[1], sm = big === L[0] ? L[1] : L[0];
         mesh = new T.Mesh(new T.CylinderGeometry(OD[big.n] / 2000, OD[sm.n] / 2000, j.rl, 24), mat(j.ecc ? 0xe6d9ae : j.swage ? 0xcfe0b0 : j.bush ? 0xe0c9a0 : j.rc ? 0xd0d8e0 : 0xc9d6dc, 0.35));
@@ -793,10 +828,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var dome = new T.Mesh(new T.SphereGeometry(r * 1.02, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), cm);
         dome.scale.y = E * 0.5 / r; dome.position.y = E * 0.5; mesh.add(dome);
         mesh.position.copy(P).addScaledVector(L[0].d, E); mesh.quaternion.setFromUnitVectors(UP, out);
-        add('cap', (j.plug ? 'Plug, round head, THD' : 'Cap ' + endConn(n)) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc');
+        add('cap', (j.plug ? 'Plug, round head, THD' : 'Cap ' + endConn(n)) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
       } else {
         mesh = new T.Mesh(new T.SphereGeometry(r * 1.5, 20, 14), mat(fm, 0.35)); mesh.position.copy(P);
-        add('cross', 'Cross ' + endConn(n) + ', NPS ' + nl(n) + ' SCH ' + j.s, 1, 'pc');
+        add('cross', 'Cross ' + endConn(n) + ', ' + sz(n) + ' SCH ' + j.s, 1, 'pc');
       }
       mesh.traverse(function (x) { x.userData = { kind: 'fit', i: k }; });
       world.add(mesh);
@@ -851,8 +886,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.traverse(function (m) { m.userData = { kind: 'valve', i: i }; });
       world.add(g);
       if (port) nozList.push(port);
-      add('valve', VALVE_NAME[kind] + ' ' + valveEnd(kind, v.n) + ', NPS ' + nl(v.n), 1, 'pc');
-      add('pipe', 'Pipe, NPS ' + nl(v.n) + ' SCH ' + (v.s || 40) + ', ' + pipeEnd(v.n), -L, 'm');
+      add('valve', VALVE_NAME[kind] + ' ' + valveEnd(kind, v.n) + ', ' + sz(v.n), 1, 'pc');
+      add('pipe', 'Pipe, ' + sz(v.n) + ' SCH ' + (v.s || 40) + ', ' + pipeEnd(v.n), -L, 'm');
       total -= L; weight -= L * lineWeight(v.n, v.s || 40);
       var hv = hostOf(v.p); if (hv >= 0) pipeLen[hv] = Math.max(0, (pipeLen[hv] || 0) - L);
       var hp = kind === 'check' ? hostOf(v.p) : -1;
@@ -890,8 +925,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.quaternion.setFromUnitVectors(UP, V(it.d).normalize());
       g.traverse(function (m) { m.userData = { kind: 'item', i: i }; });
       world.add(g);
-      add('item', (ITEM_NAME[it.t] || it.t) + ', NPS ' + nl(it.n), 1, 'pc');
-      add('pipe', 'Pipe, NPS ' + nl(it.n) + ' SCH ' + (it.s || 40) + ', ' + pipeEnd(it.n), -L, 'm');
+      add('item', (ITEM_NAME[it.t] || it.t) + ', ' + sz(it.n), 1, 'pc');
+      add('pipe', 'Pipe, ' + sz(it.n) + ' SCH ' + (it.s || 40) + ', ' + pipeEnd(it.n), -L, 'm');
       total -= L; weight -= L * lineWeight(it.n, it.s || 40);
       var hi = hostOf(it.p); if (hi >= 0) pipeLen[hi] = Math.max(0, (pipeLen[hi] || 0) - L);
     });
@@ -922,7 +957,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.position.copy(base); if (!vertical) g.rotation.y = Math.atan2(-d.z, d.x);
       g.traverse(function (m) { m.userData = { kind: 'support', i: i }; });
       world.add(g);
-      add('support', SUPPORT_NAME[sp0.t] + ', NPS ' + nl(sp0.n), 1, 'pc');
+      add('support', SUPPORT_NAME[sp0.t] + ', ' + sz(sp0.n), 1, 'pc');
     });
 
     // Instruments: a short stem and a ball at the tapping point. Controllers link to a control valve with a line.
@@ -961,14 +996,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.traverse(function (m) { m.userData = { kind: 'flange', i: i }; });
       world.add(g);
       var sch = f.s || 40;
-      if (t === 'so') add('flange', 'Slip-on flange 150# SO, NPS ' + nl(f.n), 2, 'pc');
-      else if (t === 'lj') { add('flange', 'Lap-joint flange 150#, NPS ' + nl(f.n), 2, 'pc'); add('flange', 'Stub end BW, NPS ' + nl(f.n) + ' SCH ' + sch, 2, 'pc'); }
-      else if (t === 'bl') add('flange', 'Blind flange 150#, NPS ' + nl(f.n), 1, 'pc');
-      else if (t === 'th') add('flange', 'Threaded flange 150# THD, NPS ' + nl(f.n), 2, 'pc');
-      else if (t === 'sw') add('flange', 'Socket-weld flange 150# SW, NPS ' + nl(f.n) + ' SCH ' + sch, 2, 'pc');
-      else if (t === 'ro') { add('flange', 'Orifice flange 150# WN with taps, NPS ' + nl(f.n) + ' SCH ' + sch, 2, 'pc'); add('flange', 'Orifice plate, NPS ' + nl(f.n), 1, 'pc'); }
-      else add('flange', 'Weld-neck flange 150# BW, NPS ' + nl(f.n) + ' SCH ' + sch, 2, 'pc');
-      add('flange', 'Gasket 150# spiral wound, NPS ' + nl(f.n), 1, 'pc');
+      if (t === 'so') add('flange', 'Slip-on flange 150# SO, ' + sz(f.n), 2, 'pc');
+      else if (t === 'lj') { add('flange', 'Lap-joint flange 150#, ' + sz(f.n), 2, 'pc'); add('flange', 'Stub end BW, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc'); }
+      else if (t === 'bl') add('flange', 'Blind flange 150#, ' + sz(f.n), 1, 'pc');
+      else if (t === 'th') add('flange', 'Threaded flange 150# THD, ' + sz(f.n), 2, 'pc');
+      else if (t === 'sw') add('flange', 'Socket-weld flange 150# SW, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc');
+      else if (t === 'ro') { add('flange', 'Orifice flange 150# WN with taps, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc'); add('flange', 'Orifice plate, ' + sz(f.n), 1, 'pc'); }
+      else add('flange', 'Weld-neck flange 150# BW, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc');
+      add('flange', 'Gasket 150# spiral wound, ' + sz(f.n), 1, 'pc');
       add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
     });
 
@@ -986,22 +1021,30 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- BOM ----------
+  function stdOf(l) {                                               // the standard and material a BOM row is made to
+    var s = std(), c = l.cat;
+    if (c === CAT.pipe) return l.desc.indexOf('Pipe,') === 0 ? s.pipe : '';
+    if ([CAT.elbow, CAT.reducer, CAT.tee, CAT.olet, CAT.cross, CAT.cap].indexOf(c) >= 0) return s.fit;
+    if (c === CAT.flange) return /^Gasket/.test(l.desc) ? s.gasket : /^Stud bolt/.test(l.desc) ? s.bolt : s.flg;
+    if (c === CAT.valve) return s.valve;
+    return '';
+  }
   function bomRows() {
     return Object.keys(lines).map(function (k) { return lines[k]; })
       .filter(function (l) { return Math.abs(l.qty) > 0.0005; })
       .sort(function (a, b) { return a.cat - b.cat || (a.desc < b.desc ? -1 : 1); })
-      .map(function (l) { return [l.desc, l.unit === 'm' ? l.qty.toFixed(2) + ' m' : l.unit === 'kg' ? l.qty.toFixed(1) + ' kg' : String(l.qty)]; });
+      .map(function (l) { return [l.desc, l.unit === 'm' ? l.qty.toFixed(2) + ' m' : l.unit === 'kg' ? l.qty.toFixed(1) + ' kg' : String(l.qty), stdOf(l)]; });
   }
   function renderBom() {
-    var rows = bomRows(), h = '<h2>Bill of materials</h2><p class="empty" style="margin:0 0 8px;font-size:12px">ASME B36.10 pipe · B16.9 butt-weld fittings · carbon steel. Fitting dimensions are unverified, so check them against the standards before ordering.</p>';
+    var rows = bomRows(), h = '<h2>Bill of materials</h2><p class="empty" style="margin:0 0 8px;font-size:12px">' + esc(std().name) + '. Standards and materials are typical for this set, so confirm them against your piping class. Dimensions are unverified: check them against the standards before ordering.</p>';
     if (!rows.length) h += '<p class="empty">Nothing drawn yet. Pick Pipe and tap the grid to start a run.</p>';
-    else h += '<table>' + rows.map(function (r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
+    else h += '<table>' + rows.map(function (r) { return '<tr><td>' + esc(r[0]) + (r[2] ? '<div class="std">' + esc(r[2]) + '</div>' : '') + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
     if (warns.length) h += '<h2 style="margin-top:14px;color:var(--danger)">Check</h2><ul style="margin:0;padding-left:18px;font-size:12.5px">' + warns.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
     h += '<div class="actions"><button id="copy"' + (rows.length ? '' : ' disabled') + '>Copy as text</button></div>';
     $('bom').innerHTML = h;
     var cp = $('copy');
     if (cp) cp.onclick = function () {
-      var txt = bomRows().map(function (r) { return r[0] + '\t' + r[1]; }).join('\n');
+      var txt = bomRows().map(function (r) { return r[0] + '\t' + r[1] + (r[2] ? '\t' + r[2] : ''); }).join('\n');
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
         function () { toast('BOM copied'); }, function () { toast('Copy is blocked here'); });
     };
@@ -1386,7 +1429,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- inspector ----------
   function opts(list, cur) { return list.map(function (v) { return '<option value="' + v[0] + '"' + (String(v[0]) === String(cur) ? ' selected' : '') + '>' + v[1] + '</option>'; }).join(''); }
-  var NPS_OPTS = NPS_LIST.map(function (n) { return [n, 'NPS ' + nl(n)]; }), SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
+  var SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
   function showInsp() {
     var el = $('insp');
     if (!sel || tool !== 'sel') { el.hidden = true; return; }
@@ -1395,7 +1438,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var h = '';
     if (sel.kind === 'pipe') {
       var L = V(it.a).distanceTo(V(it.b));
-      h = '<h2>Pipe ' + (sel.i + 1) + '</h2><div class="row"><label>Size<select id="i-n">' + opts(NPS_OPTS, it.n) + '</select></label><label>Schedule<select id="i-s">' + opts(SCH_OPTS, it.s) + '</select></label></div>'
+      h = '<h2>Pipe ' + (sel.i + 1) + '</h2><div class="row"><label>Size<select id="i-n">' + opts(NPS_LIST.map(function (n) { return [n, sz(n)]; }), it.n) + '</select></label><label>Schedule<select id="i-s">' + opts(SCH_OPTS, it.s) + '</select></label></div>'
         + '<div class="row"><label>Line number<input type="text" id="i-ln" value="' + esc(it.ln) + '" maxlength="12" style="width:100%"></label></div>'
         + '<div class="row"><label class="field">Flow<select id="i-fl">' + opts([[0, 'Not set'], [1, 'Along drawing direction'], [-1, 'Against drawing direction']], it.fl || 0) + '</select></label></div>'
         + '<div class="row"><button id="i-run">Apply flow to the whole run</button></div>'
@@ -1404,22 +1447,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts(Object.keys(VALVE_NAME).map(function (k) { return [k, VALVE_NAME[k].replace(' valve', '')]; }), it.k) + '</select></label></div>'
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
         + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '')
-        + '<p>NPS ' + nl(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
+        + '<p>' + sz(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
     } else if (sel.kind === 'item') {
       h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }), it.t) + '</select></label></div>'
-        + '<p>NPS ' + nl(it.n) + ', length ' + Math.round(itemLen(it.t, it.n) * 1000) + ' mm</p>';
+        + '<p>' + sz(it.n) + ', length ' + Math.round(itemLen(it.t, it.n) * 1000) + ' mm</p>';
     } else if (sel.kind === 'flange') {
       h = '<h2>' + (it.t === 'bl' ? 'Blind flange' : 'Flange pair') + ' ' + (sel.i + 1) + '</h2>'
         + (it.t === 'bl' ? '' : '<div class="row"><label>Type<select id="i-ft">' + opts([['wn', 'Weld-neck'], ['so', 'Slip-on'], ['lj', 'Lap-joint'], ['th', 'Threaded'], ['sw', 'Socket-weld'], ['ro', 'Orifice pair']], it.t) + '</select></label></div>')
-        + '<p>NPS ' + nl(it.n) + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
+        + '<p>' + sz(it.n) + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
     } else if (sel.kind === 'support') {
-      h = '<h2>Support ' + (sel.i + 1) + '</h2><div class="row"><label class="field">Type<select id="i-st">' + opts(Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }), it.t) + '</select></label></div><p>NPS ' + nl(it.n) + '</p>';
+      h = '<h2>Support ' + (sel.i + 1) + '</h2><div class="row"><label class="field">Type<select id="i-st">' + opts(Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }), it.t) + '</select></label></div><p>' + sz(it.n) + '</p>';
     } else if (sel.kind === 'instr') {
       var dv = INSTR[it.k], tg0 = assignTags();
       h = '<h2>Instrument ' + esc(instrTag(it)) + '</h2><div class="row"><label class="field">Type<select id="i-in">' + opts(Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }), it.k) + '</select></label>'
         + '<label class="field">Loop number<input type="text" id="i-num" value="' + (it.num || 101) + '" maxlength="5" inputmode="numeric"></label></div>';
       if (dv.dcs) h += '<div class="row"><label class="field">Controls valve<select id="i-link">' + opts([['', 'None']].concat(model.valves.map(function (v, k) { return v.k === 'control' ? [k, tg0.valves[k]] : null; }).filter(Boolean)), it.link == null ? '' : it.link) + '</select></label></div>';
-      h += '<p>' + (it.eq != null ? 'On ' + EQUIP[model.equip[it.eq].k].name.toLowerCase() : 'On pipe, NPS ' + nl(it.n)) + '</p>';
+      h += '<p>' + (it.eq != null ? 'On ' + EQUIP[model.equip[it.eq].k].name.toLowerCase() : 'On pipe, ' + sz(it.n)) + '</p>';
     } else if (sel.kind === 'fit') {
       var ov = model.fit[sel.i] || {}, ty = it.type;
       var nm = { elbow: 'Elbow', reducer: 'Reducer', tee: 'Tee', rtee: 'Reducing tee', lat: 'Lateral 45°', olet: 'Olet', stub: 'Stub-in branch', cap: 'End closure', cross: 'Cross' }[ty] || ty;
@@ -1431,9 +1474,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (ty === 'olet') h += '<div class="row"><label>Olet type<select id="i-ol">' + opts([['', 'Project default'], ['weldolet', 'Weldolet'], ['sockolet', 'Sockolet'], ['threadolet', 'Threadolet'], ['sweepolet', 'Sweepolet'], ['halfcoupling', 'Half coupling'], ['nippolet', 'Nippolet']], ov.olet || '') + '</select></label></div>';
       }
       if (ty === 'cap') h += '<div class="row"><label>Type<select id="i-ct">' + opts([['cap', 'Cap BW'], ['plug', 'Plug THD']], it.plug ? 'plug' : 'cap') + '</select></label></div>';
-      h += '<p>NPS ' + nl(it.nmax) + ' SCH ' + it.s + '</p>';
+      h += '<p>' + sz(it.nmax) + ' SCH ' + it.s + '</p>';
     } else {
-      h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' NPS ' + nl(z.n); }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
+      h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
     }
     h += '<div class="row">' + (sel.kind === 'fit' ? '' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
     el.innerHTML = h; el.hidden = false;
@@ -1480,7 +1523,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
   function csv() {
-    return 'Item,Quantity\n' + bomRows().map(function (r) { return '"' + r[0].replace(/"/g, '""') + '","' + r[1] + '"'; }).join('\n') + '\n';
+    return 'Item,Quantity,Standard / material\n' + bomRows().map(function (r) { return '"' + r[0].replace(/"/g, '""') + '","' + r[1] + '","' + (r[2] || '').replace(/"/g, '""') + '"'; }).join('\n') + '\n';
   }
   function dxf() {                                                  // centrelines in mm, Z up
     var o = ['0', 'SECTION', '2', 'ENTITIES'], mm = function (v) { return (v * 1000).toFixed(1); };
@@ -1593,9 +1636,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     var list = rows.map(function (r) {
       var t = (tagsOf[r[0]] || []).join('  ');
-      return { lines: wrap(r[0]), tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
+      return { lines: wrap(r[0]), std: r[2] || '', tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
     });
-    var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.tag ? 11 : 0) + 9; }, 0);
+    var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
     var H = Math.max(760, listH + notes.length * 12 + 170), Wd = W - MAT;
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
@@ -1777,6 +1820,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       o += '<text x="' + (Wd + 14) + '" y="' + ly + '" font-size="9.5" font-weight="600" fill="' + INK + '">' + (i + 1) + '</text><text x="' + (Wd + 44) + '" y="' + ly + '" font-size="9.5" fill="' + INK + '">' + esc(r.qty) + '</text>';
       r.lines.forEach(function (ln, li) { o += '<text x="' + (Wd + 108) + '" y="' + (ly + li * 12) + '" font-size="9" fill="' + INK + '">' + esc(ln) + '</text>'; });
       ly += r.lines.length * 12;
+      if (r.std) { o += '<text x="' + (Wd + 108) + '" y="' + (ly - 1) + '" font-size="8" fill="#555">' + esc(r.std) + '</text>'; ly += 11; }
       if (r.tag) { o += '<text x="' + (Wd + 108) + '" y="' + (ly - 1) + '" font-size="8" fill="#555">' + esc(r.tag) + '</text>'; ly += 11; }
       ly += 9;
     });
@@ -1906,14 +1950,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var toId = r.a === fromId && r.b !== fromId ? r.b : (r.b === fromId ? r.a : r.b);
       var ri = runItems(r, fromId), items = ri.items, len = Math.max(170, 86 * (items.length + 1)), xe = xs + len;
       s += '<line x1="' + xs + '" y1="' + yy + '" x2="' + xe + '" y2="' + yy + '" stroke="' + INK + '" stroke-width="1.8"/>';
-      s += '<text x="' + (xs + 8) + '" y="' + (yy - 8) + '" font-size="10" fill="' + INK + '">' + esc(ri.ln) + ' · NPS ' + nl(ri.n) + '</text>';
+      s += '<text x="' + (xs + 8) + '" y="' + (yy - 8) + '" font-size="10" fill="' + INK + '">' + esc(ri.ln) + ' · ' + sz(ri.n) + '</text>';
       if (ri.flow) s += sym(mark('flow'), xs + 36, yy, ri.flow > 0 ? 0 : 180);
       items.forEach(function (o, i) {
         var x = xs + (i + 1) * len / (items.length + 1), kk, it;
         if (o.kind === 'valve') { it = model.valves[o.idx]; kk = mark(SYM[it.k] ? it.k : 'gate'); s += sym(kk, x, yy, it.k === 'check' && (o.rev ? -1 : 1) * (it.rev ? -1 : 1) * (ri.back ? -1 : 1) < 0 ? 180 : 0) + svgText(x, yy + 26, tags.valves[o.idx], 9.5); if (it.k === 'control') valvePos[o.idx] = { x: x, y: yy }; }
         else if (o.kind === 'flange') { it = model.flanges[o.idx]; kk = mark('fl-' + (it.t || 'wn')); s += sym(kk, x, yy, 0) + svgText(x, yy + 26, tags.flanges[o.idx], 9.5); }
         else if (o.kind === 'item') { it = model.items[o.idx]; kk = mark(it.t); s += sym(kk, x, yy, 0) + svgText(x, yy + 26, tags.items[o.idx], 9.5); }
-        else if (o.kind === 'reducer') { s += sym(mark('reducer'), x, yy, o.n1 > o.n2 ? 180 : 0) + svgText(x, yy + 24, 'NPS ' + nl(o.n1) + '×' + nl(o.n2), 9); }
+        else if (o.kind === 'reducer') { s += sym(mark('reducer'), x, yy, o.n1 > o.n2 ? 180 : 0) + svgText(x, yy + 24, sz(o.n1) + '×' + szs(o.n2), 9); }
         else {
           it = model.instr[o.idx];
           if (INSTR[it.k].psv) { s += '<line x1="' + x + '" y1="' + yy + '" x2="' + x + '" y2="' + (yy - 10) + '" stroke="' + INK + '" stroke-width="1.2"/>' + sym(mark('psv'), x, yy - 14, 0) + svgText(x, yy - 46, instrTag(it), 9.5); }
@@ -2012,7 +2056,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var Q = qOf(ln); line(ln);
       if (Q <= 0 || !(K > 0)) return;
       var D = idOf(n, s), v = Q / (Math.PI * D * D / 4), dp = K * rho * v * v / 2;
-      res.lines[ln].dpK += dp; res.fits.push({ ln: ln, label: label + ', NPS ' + nl(n), K: K, dp: dp });
+      res.lines[ln].dpK += dp; res.fits.push({ ln: ln, label: label + ', ' + sz(n), K: K, dp: dp });
     }
     function lnOf(leg) { return model.pipes[leg.i].ln; }
     function into(l) { var f = model.pipes[l.i].fl || 0; return !f ? 0 : ((l.end === 'b') === (f > 0) ? 1 : -1); }
@@ -2076,8 +2120,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     h += '</tbody></table></div>';
     if (r.fits.length) h += '<details><summary>Fittings and valves (' + r.fits.length + ')</summary><div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Item</th><th>K</th><th>Drop kPa</th></tr></thead><tbody>'
       + r.fits.map(function (f) { return '<tr><td>' + esc(f.ln) + '</td><td>' + esc(f.label) + '</td><td>' + f.K.toFixed(2) + '</td><td>' + (f.dp / 1000).toFixed(2) + '</td></tr>'; }).join('') + '</tbody></table></div></details>';
-    h += '<details><summary>Pipes (' + r.pipes.length + ')</summary><div class="scroll"><table class="tbl"><thead><tr><th>Pipe</th><th>Line</th><th>NPS</th><th>ID mm</th><th>Length m</th><th>v m/s</th><th>Re</th><th>f</th><th>Drop kPa</th></tr></thead><tbody>'
-      + r.pipes.map(function (p) { return '<tr><td>' + (p.i + 1) + '</td><td>' + esc(p.ln) + '</td><td>' + p.n + '</td><td>' + (p.D * 1000).toFixed(1) + '</td><td>' + p.len.toFixed(2) + '</td><td>' + fmt(p.v, 2) + '</td><td>' + (p.Re ? Math.round(p.Re) : '–') + '</td><td>' + (p.f ? p.f.toFixed(4) : '–') + '</td><td>' + (p.dp ? (p.dp / 1000).toFixed(2) : '–') + '</td></tr>'; }).join('') + '</tbody></table></div></details>';
+    h += '<details><summary>Pipes (' + r.pipes.length + ')</summary><div class="scroll"><table class="tbl"><thead><tr><th>Pipe</th><th>Line</th><th>Size</th><th>ID mm</th><th>Length m</th><th>v m/s</th><th>Re</th><th>f</th><th>Drop kPa</th></tr></thead><tbody>'
+      + r.pipes.map(function (p) { return '<tr><td>' + (p.i + 1) + '</td><td>' + esc(p.ln) + '</td><td>' + szs(p.n) + '</td><td>' + (p.D * 1000).toFixed(1) + '</td><td>' + p.len.toFixed(2) + '</td><td>' + fmt(p.v, 2) + '</td><td>' + (p.Re ? Math.round(p.Re) : '–') + '</td><td>' + (p.f ? p.f.toFixed(4) : '–') + '</td><td>' + (p.dp ? (p.dp / 1000).toFixed(2) : '–') + '</td></tr>'; }).join('') + '</tbody></table></div></details>';
     h += '<p class="empty">Head loss is the pressure drop as metres of the fluid. A pump must cover it plus any pressure the process needs. Equipment nozzles, entrance and exit losses, and flow splits at tees are not included.</p>';
     return h;
   }
@@ -2194,7 +2238,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     RAIL.forEach(function (t) { $('t-' + t).setAttribute('aria-pressed', String(tool === t)); });
     $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
     $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) syncParts();
-    $('psum').textContent = 'NPS ' + nl(curN) + ' · SCH ' + curS + ' · ' + curL + (ang45 ? ' · 45°' : '');
+    $('psum').textContent = '' + sz(curN) + ' · SCH ' + curS + ' · ' + curL + (ang45 ? ' · 45°' : '');
     $('axis').hidden = !cursor; $('finish').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
@@ -2210,7 +2254,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('flowBtn').setAttribute('aria-pressed', String(showFlow));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
     $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden));
-    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small;
+    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
     curMark.visible = !!cursor && tool === 'pipe';
     if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
     var hints = {
@@ -2245,12 +2289,20 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('flow').onchange = function () { curFlow = +$('flow').value; };
   $('snap').onchange = function () { snap = +$('snap').value; };
   $('ang').onchange = function () { ang45 = $('ang').value === '1'; updateUi(); };
+  function fillSizes() {                                            // size lists follow the standard and the size designation
+    var keep = { nps: String(curN), fsz: String(fsz) };
+    $('nps').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '">' + sz(n) + ' · ' + SIZES[n].od + ' mm</option>'; }).join('');
+    $('fsz').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '">' + sz(n) + '</option>'; }).join('');
+    $('nps').value = keep.nps; $('fsz').value = keep.fsz;
+  }
   function setSpec(k, v) { pushHist(); model.spec[k] = v; changed(); }
   $('sp-el').onchange = function () { setSpec('elbow', this.value); };
   $('sp-red').onchange = function () { setSpec('reducer', this.value); };
   $('sp-br').onchange = function () { setSpec('branch', this.value); };
   $('sp-olet').onchange = function () { setSpec('olet', this.value); };
   $('sp-small').onchange = function () { setSpec('small', this.value); };
+  $('sp-std').onchange = function () { pushHist(); model.spec.std = this.value; model.spec.sizeMode = { asme: 'NPS', jis: 'A', en: 'DN' }[this.value]; changed(); fillSizes(); };
+  $('sp-size').onchange = function () { setSpec('sizeMode', this.value); fillSizes(); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
   $('fsz').onchange = function () { fsz = +$('fsz').value; updateUi(); };
   ['up', 'near', 'far', 'down'].forEach(function (d) { $('bd-' + d).onclick = function () { bdir = d; updateUi(); }; });
@@ -2359,8 +2411,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- boot ----------
   if (!load()) model = exampleLayout();
   $('mode').textContent = sample ? 'Example layout' : 'My layout';
-  $('nps').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '"' + (n === 4 ? ' selected' : '') + '>NPS ' + nl(n) + ' · ' + SIZES[n].od + ' mm</option>'; }).join('');
-  $('fsz').innerHTML = NPS_LIST.map(function (n) { return '<option value="' + n + '"' + (n === 3 ? ' selected' : '') + '>NPS ' + nl(n) + '</option>'; }).join('');
+  applyStd(); fillSizes();
   buildParts();
   rebuild(); updateUi(); resize();
   (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
