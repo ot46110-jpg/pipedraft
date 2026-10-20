@@ -728,10 +728,11 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
   PD.load(old);
   const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
-  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '"'), csvRow);
+  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","",""'), csvRow);
 }
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
-check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 12);
+check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 16);
+check('from and to reach the csv and the foot note of that line sheet', (PD.model.lines['L-001'].from = 'Tank T-101', PD.model.lines['L-001'].to = 'Pump <P-101>', PD.lineCsv()).includes('"Tank T-101","Pump <P-101>"') && (s => s.includes('FROM Tank T-101  TO Pump &lt;P-101&gt;') && !s.includes('<P-101>'))(PD.iso('L-001', 'auto', true)) && !PD.iso('L-002', 'auto', true).includes('FROM '));
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: ' 16 bar g ' } });
 check('editing a field in the line list stores it trimmed', PD.model.lines['L-002'].pdes === '16 bar g' && PD.lineList()[1].pdes === '16 bar g');
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: '' } });

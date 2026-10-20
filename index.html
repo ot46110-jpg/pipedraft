@@ -1374,7 +1374,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- line list ----------
-  var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['code', 'Fluid code', 'e.g. CW'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none']];
+  var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['code', 'Fluid code', 'e.g. CW'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none'], ['from', 'From', 'e.g. Tank T-101'], ['to', 'To', 'e.g. Pump P-101']];
   function lineDesignation(ln, nSel) {                              // size"-fluid code-line number-class, e.g. 2"-P-1001-A1A (empty parts are left out)
     var n = nSel, d = model.lines[ln] || {};
     if (n == null) model.pipes.forEach(function (p) { if (p.ln === ln && (n == null || p.n > n)) n = p.n; });
@@ -1392,7 +1392,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     f.pieces.forEach(function (pc) { if (L[pc.ln]) L[pc.ln].pieces++; });
     return Object.keys(L).sort().map(function (k) {
       var d = model.lines[k] || {}, r = L[k];
-      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
+      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
     });
   }
   function lineListHtml() {
@@ -1406,8 +1406,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function lineCsv() {
     var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
-    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation\n'
-      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig)].join(','); }).join('\n') + '\n';
+    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation,From,To\n'
+      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to)].join(','); }).join('\n') + '\n';
   }
 
   // ---------- BOM ----------
@@ -2883,7 +2883,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.19], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.11], ['CHECKED', T0.checked || '', 0.11],
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.14], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.12], ['INSULATION', LD.insul || '-', 0.16]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.</text>';
+    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
     [[cells1, pb + 17, 41], [cells2, pb + 58, 40]].forEach(function (rw) {
       var x = 12;
       o += '<line x1="12" y1="' + (rw[1]) + '" x2="' + (W - 12) + '" y2="' + (rw[1]) + '" stroke="' + INK + '" stroke-width="0.8"/>';
@@ -3529,7 +3529,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var T0 = model.title || {}, ln = isoOpts.ln, LD = ln ? (model.lines[ln] || {}) : null;
     function f(id, label, v, ph) { return '<label class="field">' + label + '<input type="text" data-t="' + id + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
     var o = '<h3>Title block</h3>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked);
-    if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none');
+    if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('from', 'From', LD.from, 'e.g. Tank T-101') + f('to', 'To', LD.to, 'e.g. Pump P-101') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none');
     else o += '<p class="empty" style="grid-column:1/-1;margin:0">Pick a line number above to set its service, class, pressure, temperature and insulation. A sheet for one line also lists only that line\'s parts, cuts and welds.</p>';
     return o;
   }
@@ -3566,7 +3566,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('isoInfo').addEventListener('change', function (e) {
     var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
     var v = String(t.value).trim();
-    if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
+    if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'from', 'to'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
     else model.title[k] = v;
     save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open;
   });
