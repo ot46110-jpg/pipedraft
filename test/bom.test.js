@@ -939,5 +939,7 @@ PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'A' }, { a: [-0.35, 0.
 PD.load({ pipes: [], valves: [] });
 check('BOM by line: an empty project gives just the header', PD.bomByLine() === 'Line,Designation,Description,Quantity,Standard / material' + String.fromCharCode(10));
 
+PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 0.25 }, { a: [3, 0, 0], b: [3, 0, 2], n: 99 }, { a: [3, 0, 2], b: [5, 0, 2], n: 'x' }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 5, k: 'gate' }] });
+check('a size outside the list is snapped to the nearest listed size and the model still rebuilds', PD.model.pipes.map(p => p.n).join() === '0.5,12,4' && PD.model.valves[0].n === 4 && PD.rows().length > 0);
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

@@ -478,8 +478,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
-    var o = blank();
+    var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
+    function snapSize(x) {                                          // a size outside NPS_LIST (hand-edited file) would crash the tables: use the nearest listed size
+      if (NPS_LIST.indexOf(x.n) >= 0) return x;
+      var v = Number(x.n), best = 4;
+      if (isFinite(v)) NPS_LIST.forEach(function (s) { if (Math.abs(s - v) < Math.abs(best - v)) best = s; });
+      x.n = best; snapped++; return x;
+    }
+    ['pipes', 'valves', 'flanges', 'items'].forEach(function (g) { if (Array.isArray(m[g])) m[g].forEach(function (x) { if (x && typeof x === 'object' && x.n !== undefined) snapSize(x); }); });
+    if (snapped) { try { toast(snapped + ' part' + (snapped > 1 ? 's' : '') + ' had a size that is not in the list and was set to the nearest listed size'); } catch (e) {} }
     o.pipes = m.pipes.map(function (p) { p.s = p.s || 40; p.ln = p.ln || 'L-001'; p.fl = p.fl || 0; return p; });
     o.valves = (m.valves || []).map(function (v) { v.s = v.s || 40; v.k = v.k || 'gate'; return v; });
     o.flanges = (m.flanges || []).map(function (f) { f.s = f.s || 40; f.t = f.t || 'wn'; return f; });
