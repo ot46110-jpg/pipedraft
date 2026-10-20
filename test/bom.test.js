@@ -707,6 +707,17 @@ const lcsv = PD.lineCsv();
 check('line designation reads size-code-line-class', ll[0].desig.startsWith('2"-L-001-') && ll[1].desig.startsWith('4"-L-002-'), ll[0].desig + ' | ' + ll[1].desig);
 check('a typed fluid code goes into the designation and the iso title block', (PD.model.lines['L-001'].code = 'CW', PD.lineDesignation('L-001')) === '2"-CW-L-001-' + ll[0].desig.split('L-001-')[1] && (PD.isoCtx.ln = 'L-001', PD.iso('L-001', 'auto', true)).includes('2&quot;-CW-L-001') || PD.iso('L-001', 'auto', true).includes('2"-CW-L-001'));
 check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', true).includes('WELD LIST') && !PD.iso('L-001', 'auto', true).includes('WELD LIST'));
+{ // title block rows span the full width; weld list on a one-line sheet covers only that line
+  const sv = PD.iso('L-002', 'auto', true);
+  const nW = (sv.match(/>W\d+<\/text><text x="[\d.]+" y="[\d.]+" font-size="9" fill="#[0-9A-Fa-f]+">(Butt|Socket|Fillet) weld/g) || []).length;
+  check('the weld list on a one-line sheet counts only that line', nW > 0 && nW === PD.fab().welds.filter(w => w.ln === 'L-002').length, nW + ' vs ' + PD.fab().welds.filter(w => w.ln === 'L-002').length);
+  const xs = [...sv.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="7.5" fill="#555">(CLASS \/ MATERIAL|INSULATION)</g)].map(m => +m[1]);
+  check('both title block rows fill the width (last cells start at 80% and 84%)', xs.length === 2 && Math.abs(xs[0] - (12 + 1176 * 0.80 + 6)) < 1 && Math.abs(xs[1] - (12 + 1176 * 0.84 + 6)) < 1, xs.join(','));
+  const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
+  PD.load(old);
+  const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
+  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '"'), csvRow);
+}
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
 check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 12);
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: ' 16 bar g ' } });

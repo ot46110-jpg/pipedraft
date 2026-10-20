@@ -2863,7 +2863,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.pipes.forEach(function (p) { sizes[p.n] = 1; });
     var todayS = new Date().toISOString().slice(0, 10), pb = H - TB, bw = W - 24;
     var fabF = fabrication();
-    var cells1 = [['PROJECT', T0.project || 'Untitled', 0.20], ['CLIENT', T0.client || '', 0.12], ['LINE No.', lnSel ? lineDesignation(lnSel) : lnNames.join('  ') || '-', 0.22], ['SERVICE', LD.svc || '', 0.16], ['CLASS / MATERIAL', LD.cls || std().cls, 0.14]];
+    var cells1 = [['PROJECT', T0.project || 'Untitled', 0.22], ['CLIENT', T0.client || '', 0.14], ['LINE No.', lnSel ? lineDesignation(lnSel) : lnNames.join('  ') || '-', 0.26], ['SERVICE', LD.svc || '', 0.18], ['CLASS / MATERIAL', LD.cls || std().cls, 0.20]];
     var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.19], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.11], ['CHECKED', T0.checked || '', 0.11],
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.14], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.12], ['INSULATION', LD.insul || '-', 0.16]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
