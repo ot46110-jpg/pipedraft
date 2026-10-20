@@ -2487,7 +2487,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
     var TB = 110, cutRows = fabrication().pieces, cutH = cutRows.length ? cutRows.length * 11 + 34 : 0, weldRows = fabrication().welds; cutH += weldRows.length ? weldRows.length * 11 + 34 : 0;
-    var H = Math.max(780, listH + cutH + notes.length * 12 + TB + 100), Wd = W - MAT;
+    var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100), Wd = W - MAT;
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
     var c30 = Math.cos(Math.PI / 6);

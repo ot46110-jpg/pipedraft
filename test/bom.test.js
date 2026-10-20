@@ -733,6 +733,7 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
 check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 16);
 check('from and to reach the csv and the foot note of that line sheet', (PD.model.lines['L-001'].from = 'Tank T-101', PD.model.lines['L-001'].to = 'Pump <P-101>', PD.lineCsv()).includes('"Tank T-101","Pump <P-101>"') && (s => s.includes('FROM Tank T-101  TO Pump &lt;P-101&gt;') && !s.includes('<P-101>'))(PD.iso('L-001', 'auto', true)) && !PD.iso('L-002', 'auto', true).includes('FROM '));
+check('a short iso sheet has at least the A3 landscape shape (1200 x 849)', (m => m && +m[1] === 1200 && +m[2] >= 849)(/viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(PD.iso('L-001', 'auto', true))));
 const bomBefore = JSON.stringify(PD.rows()), bomPipes0 = PD.model.pipes.length, bl = PD.bomByLine();
 const blRows = bl.split('\n').filter(Boolean), blOf = ln => blRows.filter(r => r.startsWith('"' + ln + '"'));
 check('BOM by line has the rows of each line under its designation', bl.startsWith('Line,Designation,Description,Quantity') && blOf('L-001').length > 0 && blOf('L-002').length > 0 && blOf('L-001').every(r => r.includes('"2""-L-001-')) && blOf('L-002').every(r => r.includes('"4""-L-002-')), bl);
