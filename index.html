@@ -1363,14 +1363,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var fl = FL[v.n], Rv = Math.max(OD[v.n] / 2000, fl ? 0.75 * fl[0] / 2 : OD[v.n] / 2000 * 1.5);
       for (var j = 0; j < n; j++) {
         if (j === hi) continue;
-        var t = seg[j], R = Rv + t.r, ta = t.a.clone(), tb = t.b.clone();
+        var t = seg[j], R = Rv + t.r;
+        if (Math.min(t.a.x, t.b.x) - R > Math.max(A.x, B.x) || Math.max(t.a.x, t.b.x) + R < Math.min(A.x, B.x)
+          || Math.min(t.a.y, t.b.y) - R > Math.max(A.y, B.y) || Math.max(t.a.y, t.b.y) + R < Math.min(A.y, B.y)
+          || Math.min(t.a.z, t.b.z) - R > Math.max(A.z, B.z) || Math.max(t.a.z, t.b.z) + R < Math.min(A.z, B.z)) continue;
+        var ta = t.a.clone(), tb = t.b.clone();
         function onHost(pt) { var u = clamp(pt.clone().sub(h.a).dot(h.b.clone().sub(h.a)) / h.a.distanceToSquared(h.b), 0, 1); return h.a.clone().lerp(h.b, u).distanceTo(pt) < 0.02; }
         var dj = tb.clone().sub(ta), Lj = dj.length(); if (Lj < 1e-9) continue; dj.normalize();
-        var cut = R + 0.01, s0 = onHost(ta) ? cut : 0, s1 = Lj - (onHost(tb) ? cut : 0);   // a branch or joint at the host: ignore the stretch right next to its own end
+        var cut = R + 0.01 + half, s0 = onHost(ta) ? cut : 0, s1 = Lj - (onHost(tb) ? cut : 0);   // a branch or joint at the host: ignore the stretch right next to its own end
         if (s1 - s0 < 1e-6) continue;
         var qa = ta.clone().addScaledVector(dj, s0), qb = ta.clone().addScaledVector(dj, s1);
         var hit = new T.Vector3(), d = segDist(A, B, qa, qb, hit);
-        if (d < R - 0.004) out.push({ kind: 'valve', i: hi, j: j, at: mm3(hit), r: R, d: d, text: 'Valve ' + tg.valves[vi] + ' (' + kind + ', NPS ' + nl(v.n) + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
+        if (d < R - 0.004) {
+          out = out.filter(function (o) { return !(o.kind === 'pipe' && o.i === Math.min(hi, j) && o.j === Math.max(hi, j)); });   // the valve report replaces the pipe-on-pipe one for the same two pipes
+          out.push({ kind: 'valve', i: hi, j: j, at: mm3(hit), r: R, d: d, text: 'Valve ' + tg.valves[vi] + ' (' + kind + ', NPS ' + nl(v.n) + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
+        }
       }
     });
     model.equip.forEach(function (e, ei) {

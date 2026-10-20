@@ -781,6 +781,13 @@ check('a branch starting on the header beside a valve is not', PD.clashes().filt
 PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'L-001' }, { a: [3, 1, 0], b: [3, 1, 3], n: 4, ln: 'L-001' }], valves: [{ p: [2.9, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'ball' }, { p: [0.1, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'globe' }, { p: [3, 1, 2.9], d: [0, 0, 1], n: 4, s: 40, k: 'check' }] });
 check('valves next to an elbow or at a pipe end do not crash or clash', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
 
+PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'L-001' }, { a: [3, 1, 0], b: [6, 1, 0], n: 4, ln: 'L-001' }], valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }, { p: [1, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a valve at the joint of two straight pipes is not a clash with the next pipe', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+PD.load({ pipes: VH.pipes.concat([{ a: [3, 1, -2], b: [3, 1, 2], n: 4, ln: 'L-002' }]), valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a pipe through a valve is reported once, as the valve', PD.clashes().length === 1 && PD.clashes()[0].kind === 'valve', JSON.stringify(PD.clashes()));
+PD.load({ pipes: [{ a: [0, 1, 0], b: [6, 1, 0], n: 4, ln: 'L-001' }, { a: [0, 1, 0.3], b: [6, 1, 0.3], n: 2, ln: 'L-002' }], valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a parallel NPS 2 pipe at 300 mm beside a valve is not', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+
 // Flanges at pipe ends, valve ends and flanges fitted against valves.
 const ve = id => els['ve-' + id].onclick();
 fresh(run4()); ve('auto'); chipTap('flange', 'wn'); tapOn([5.9, 1, 0]);
