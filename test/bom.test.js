@@ -1133,6 +1133,18 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const isoE = PD.iso('', 0, true, 'sym'), pidE = PD.pid();
   check('the iso sheet draws custom equipment with its tag and nozzle numbers', isoE && isoE.includes('>TK-1<') && isoE.includes('>SK-1<') && isoE.includes('>N1<') && !isoE.includes('NaN'));
   check('the P&ID sheet draws custom equipment with its tag', pidE && pidE.includes('>TK-1<') && pidE.includes('>SK-1<') && !pidE.includes('NaN') && !pidE.includes('undefined'));
+  // Paths the reviewer did not exercise: start a run on a custom nozzle, delete earlier equipment (indices shift), edit nozzles under a snapped pipe.
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }, { k: ckey, p: [6, 0, 0], r: 1 }], custom: cust, instr: [{ k: 'LT', eq: 1, p: [6.6, 1.5, 0], num: 101 }] });
+  const nzB = PD.nozzles().filter(z => z.e === 1).map(arr);
+  PD.startAtNozzle(PD.nozzles().find(z => z.e === 1));
+  check('a run starts on a custom equipment nozzle', PD.model.pipes.length === 1 && PD.model.pipes[0].a.join() === nzB[0].join(), JSON.stringify([PD.model.pipes, nzB]));
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }, { k: ckey, p: [6, 0, 0], r: 1 }], custom: cust, instr: [{ k: 'LT', eq: 1, p: [6.6, 1.5, 0], num: 101 }] });
+  PD.removeItem('equip', 0);
+  check('deleting earlier equipment shifts the instrument index, nozzles and tag with it', PD.model.equip.length === 1 && PD.model.instr[0].eq === 0 && PD.nozzles().filter(z => z.e >= 0).every(z => z.e === 0) && PD.nozzles().filter(z => z.e === 0).map(arr).join('|') === nzB.join('|') && PD.tags().equip[0] === 'TK-1', JSON.stringify([PD.model.instr, PD.tags().equip]));
+  const nzTop = PD.nozzles().find(z => z.e === 0);
+  PD.load({ pipes: [{ a: arr(nzTop), b: [arr(nzTop)[0], arr(nzTop)[1] + 1.5, arr(nzTop)[2]], n: 4 }], equip: [{ k: ckey, p: [6, 0, 0], r: 1 }], custom: cust });
+  const upd = C.update(rc.e.id, { noz: [{ x: 0, y: -600, z: 300, dir: '-Y', n: 3 }] }); PD.rebuild();
+  check('removing the nozzle a pipe sits on keeps the pipe and the rest of the model', !upd.err && PD.model.pipes.length === 1 && PD.nozzles().filter(z => z.e === 0).length === 1, JSON.stringify(upd));
   check('DXF and CSV still work with custom equipment', PD.dxf().includes('EQUIPMENT') && PD.csv().includes('Tank'));
   // group move refused when tied
   PD.load({ pipes: [{ a: [0.6, 0.3, 0], b: [3, 0.3, 0], n: 3 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }], custom: cust });
