@@ -71,6 +71,14 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .psec.closed .phead::after { content: '▸'; }
 .psec.closed .prows { display: none; }
 .prows { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
+.prows small { display: block; font: 400 10.5px var(--font-data); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pnote { margin: 2px 4px 0; font: 400 11.5px/1.35 var(--font-ui); color: var(--dim); }
+.cu-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.cu-card .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cu-card .top b { flex: 1; min-width: 140px; }
+.cu-card .thumb { width: 56px; height: 48px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; flex: none; }
+.cu-card .meta { font: 400 12px var(--font-data); color: var(--dim); }
+.cu-card .warn { color: var(--danger); font: 500 12px var(--font-ui); margin: 6px 0; }
 .prows button { width: 100%; text-align: left; border-color: transparent; min-height: 44px; white-space: normal; line-height: 1.2; }
 /* context bar and pipe settings */
 #ctx { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 160px); overflow-x: auto; }
@@ -132,10 +140,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 html { overscroll-behavior: none; }
 body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
 /* hydraulics sheet */
-#hyd { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
-#hyd header { display: flex; align-items: center; gap: 8px; }
-#hyd header h2 { margin: 0 auto 0 0; }
-#hydBody { flex: 1; min-height: 0; overflow: auto; -webkit-user-select: text; user-select: text; }
+#hyd, #cu { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
+#hyd header, #cu header { display: flex; align-items: center; gap: 8px; }
+#hyd header h2, #cu header h2 { margin: 0 auto 0 0; }
+#hydBody, #cuBody { flex: 1; min-height: 0; overflow: auto; -webkit-user-select: text; user-select: text; }
 .scroll { overflow-x: auto; margin-bottom: 12px; }
 .tbl { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
 .tbl th { text-align: left; font-weight: 500; color: var(--dim); padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -266,12 +274,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="ortho" aria-pressed="false">Orthographic view</button>
         <button id="dims" aria-pressed="false">Show pipe lengths</button>
         <button id="flowBtn" aria-pressed="true">Show flow arrows</button>
+        <button id="cuBtn">Custom parts</button>
       </details>
       <details name="menu">
         <summary>File</summary>
         <button id="f-save">Save project (.json)</button>
         <button id="f-open">Open project</button>
         <button id="f-bk">Backups</button>
+        <button id="f-cuexp">Export custom parts (.json)</button>
+        <button id="f-cuimp">Import custom parts</button>
         <button id="f-csv">Export BOM (.csv)</button>
         <button id="f-bomln">Export BOM by line (.csv)</button>
         <button id="f-fab">Export cut list and welds (.csv)</button>
@@ -282,6 +293,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       </details>
     </div>
     <input type="file" id="openf" accept=".json,application/json" hidden>
+    <input type="file" id="cuimpf" accept=".json,application/json" hidden>
+    <input type="file" id="cuimgf" accept="image/*" hidden>
     <section id="iso" class="sheet" hidden aria-label="Isometric sheet">
       <header><h2 id="isoTitle">Isometric sheet</h2>
         <span id="isoTools" class="tools">
@@ -311,6 +324,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     <section id="ll" class="sheet" hidden aria-label="Line list">
       <header><h2>Line list</h2><button id="ll-csv">Save .csv</button><button id="ll-close">Close</button></header>
       <div id="llBody"></div>
+    </section>
+    <section id="cu" class="sheet" hidden aria-label="Custom parts">
+      <header><h2>Custom parts</h2><button id="cu-add">Add part</button><button id="cu-close">Close</button></header>
+      <div id="cuBody"></div>
     </section>
     <div id="toast" role="status"></div>
   </main>
@@ -417,7 +434,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     orifice: byNps([0.04, 0.04, 0.04, 0.045, 0.05, 0.05, 0.05, 0.05, 0.06, 0.065, 0.07, 0.075])
   };
   var ITEM_FORM = { nipple: [0.15, 0], sight: [0.12, 1], flowmeter: [0.15, 3], basket: [0.1, 2.5], trap: [0.1, 1.5], rupture: [0.05, 0.5], flame: [0.2, 2], hose: [0.3, 1] };   // a + b x outside diameter
-  function itemLen(t, n) { if (ITEM_TAB[t]) return ITEM_TAB[t][n]; var f = ITEM_FORM[t] || [0.1, 0]; return f[0] + f[1] * OD[n] / 1000; }
+  function itemLen(t, n) { if (isCu(t)) return cuLen(t); if (ITEM_TAB[t]) return ITEM_TAB[t][n]; var f = ITEM_FORM[t] || [0.1, 0]; return f[0] + f[1] * OD[n] / 1000; }
   var ITEM_NAME = {
     coupling: 'Coupling, full, SW 3000#', union: 'Union, SW 3000#', strainer: 'Y-strainer, flanged 150#', expansion: 'Expansion joint, bellows, flanged 150#',
     spectacle: 'Spectacle blind 150#', orifice: 'Orifice plate assembly 150#', sight: 'Sight glass, flanged 150#', flowmeter: 'Flow meter, magnetic, flanged 150#',
@@ -443,6 +460,139 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var ELBOW_K = { LR: 14, SR: 20, '3D': 12 };                         // 90° elbow, in multiples of FT
   var VALVE_K = { gate: 8, globe: 340, check: 100, ball: 3, butterfly: 45, plug: 18, angle: 55, needle: 340, diaphragm: 100, knife: 8, threeway: 30, footv: 75 };   // in multiples of FT
   var ITEM_K = { nipple: 0, coupling: 0, union: 0, strainer: 2, expansion: 0.3, spectacle: 0, orifice: 3, sight: 0.5, flowmeter: 0, basket: 3, trap: 2, rupture: 1.5, flame: 5, hose: 1 };   // plain K, assumed
+
+  // Custom parts: the user's own in-line items (a strainer of a certain brand, a meter and so on). The library is model.custom, a placed
+  // part is an ordinary model.items entry with t = 'cu:' + id, so everything that handles items (geometry, BOM, tags, cut list, iso) keeps working.
+  // CUX maps each type in use to its live data: the library entry, or, when the entry was deleted, what the item cached (cn, cb, cm, cl, ck, cp).
+  var CU_IMG_MAX = 40000, CU_IMG_PX = 160, CU_LEN_MIN = 20, CU_LEN_MAX = 3000, CUX = {}, cuSig = '';
+  function isCu(t) { return typeof t === 'string' && t.indexOf('cu:') === 0; }
+  function cuLen(t) { var c = CUX[t]; return c ? c.len : 0.2; }
+  function itemK(t) { return ITEM_K[t] !== undefined ? ITEM_K[t] : isCu(t) && CUX[t] ? CUX[t].k : 0; }
+  function cuDesc(t) {                                              // BOM text without the size: name, brand and model
+    var c = CUX[t] || { name: 'Custom part' };
+    return c.name + (c.brand ? ', ' + c.brand : '') + (c.model ? ' ' + c.model : '');
+  }
+  function cuNote(t) {                                              // goes in the standard / material column of the BOM
+    var c = CUX[t]; if (!c) return '';
+    var a = [c.brand, c.model].filter(Boolean).join(' ');
+    return a + (c.wt > 0 ? (a ? ', ' : '') + c.wt + ' kg each' : '');
+  }
+  function cuNum(v) { var t = String(v).trim().replace(',', '.'); return t === '' ? NaN : Number(t); }
+  function cuValidate(f) {                                          // raw field values -> { e } or { err }
+    var e = { name: String(f.name == null ? '' : f.name).trim().slice(0, 40), brand: String(f.brand || '').trim().slice(0, 40), model: String(f.model || '').trim().slice(0, 40), kind: 'inline' };
+    if (!e.name) return { err: 'Give the part a name' };
+    var len = cuNum(f.len);
+    if (!(len >= CU_LEN_MIN && len <= CU_LEN_MAX)) return { err: 'Length must be between ' + CU_LEN_MIN + ' and ' + CU_LEN_MAX + ' mm' };
+    e.len = Math.round(len * 10) / 10;
+    var wt = String(f.wt == null ? '' : f.wt).trim() === '' ? 0 : cuNum(f.wt);
+    if (!(wt >= 0 && wt <= 100000)) return { err: 'Weight must be a positive number in kg' };
+    e.wt = wt;
+    var k = String(f.k == null ? '' : f.k).trim() === '' ? 0 : cuNum(f.k);
+    if (!(k >= 0 && k <= 1000)) return { err: 'Loss K must be zero or a positive number' };
+    e.k = k;
+    var pre = String(f.prefix || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    e.prefix = pre || 'CU';
+    return { e: e };
+  }
+  function cuImgOk(u) { return typeof u === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(u) && u.length <= CU_IMG_MAX; }
+  function cuImgSize(w, h, max) {                                   // scale to at most max px on the long side, never enlarge
+    max = max || CU_IMG_PX; if (!(w > 0 && h > 0)) return { w: 0, h: 0 };
+    var k = Math.min(1, max / Math.max(w, h));
+    return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+  }
+  function cuImgEncode(canvas) {                                    // JPEG at falling quality until it fits the size limit, '' when it never does
+    var q = [0.8, 0.65, 0.5, 0.35];
+    for (var i = 0; i < q.length; i++) { var u = ''; try { u = canvas.toDataURL('image/jpeg', q[i]); } catch (x) { return ''; } if (cuImgOk(u)) return u; }
+    return '';
+  }
+  function cuImgFromFile(file, cb) {                                // pick from Photos or Files, shrink in a canvas, hand back a data URL ('' on failure)
+    var rd = new FileReader();
+    rd.onerror = function () { cb(''); };
+    rd.onload = function () {
+      var im = new Image();
+      im.onerror = function () { cb(''); };
+      im.onload = function () {
+        try {
+          var d = cuImgSize(im.naturalWidth || im.width, im.naturalHeight || im.height), c = document.createElement('canvas');
+          c.width = d.w; c.height = d.h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, d.w, d.h); g.drawImage(im, 0, 0, d.w, d.h);
+          cb(cuImgEncode(c));
+        } catch (x) { cb(''); }
+      };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  }
+  function cuFresh(extra) { var id; do { id = 'c' + Math.floor(Math.random() * 1e9).toString(36); } while (model.custom.concat(extra || []).some(function (e) { return e.id === id; })); return id; }
+  function cuClean(e) {                                             // an entry from a file or an old save, or null when it is not usable
+    if (!e || typeof e !== 'object') return null;
+    var v = cuValidate({ name: e.name, brand: e.brand, model: e.model, len: e.len, wt: e.wt, k: e.k, prefix: e.prefix });
+    if (!v.e) return null;
+    var o = v.e; o.id = typeof e.id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(e.id) ? e.id : '';
+    if (cuImgOk(e.img)) o.img = e.img;
+    return o;
+  }
+  function cuGet(id) { return model.custom.filter(function (x) { return x.id === id; })[0]; }
+  function cuCount(id) { var n = 0; model.items.forEach(function (it) { if (it.t === 'cu:' + id) n++; }); return n; }
+  function cuAdd(f) {                                               // new library entry from raw fields; returns { e } or { err }
+    var v = cuValidate(f); if (!v.e) return v;
+    v.e.id = cuFresh(); if (cuImgOk(f.img)) v.e.img = f.img;
+    pushHist(); model.custom.push(v.e); cuChanged(); return v;
+  }
+  function cuUpdate(id, f) {
+    var e = cuGet(id); if (!e) return { err: 'That part no longer exists' };
+    var v = cuValidate(Object.assign({}, e, f)); if (!v.e) return v;
+    pushHist(); Object.assign(e, v.e); cuChanged(true); return { e: e };
+  }
+  function cuSetImg(id, u) {
+    var e = cuGet(id); if (!e) return false;
+    if (u && !cuImgOk(u)) return false;
+    pushHist(); if (u) e.img = u; else delete e.img; cuChanged(); return true;
+  }
+  function cuDup(id) {
+    var e = cuGet(id); if (!e) return null;
+    var c = JSON.parse(JSON.stringify(e)); c.id = cuFresh(); c.name = (c.name + ' copy').slice(0, 40);
+    pushHist(); model.custom.splice(model.custom.indexOf(e) + 1, 0, c); cuChanged(); return c;
+  }
+  function cuDelete(id) {                                           // placed items stay and keep their cached name and length; returns how many are placed, -1 when unknown
+    var i = model.custom.map(function (x) { return x.id; }).indexOf(id); if (i < 0) return -1;
+    var n = cuCount(id); pushHist(); model.custom.splice(i, 1); cuChanged(); return n;
+  }
+  function cuChanged(keepForm) { save(); rebuild(); updateUi(); if (!keepForm && !$('cu').hidden) $('cuBody').innerHTML = cuHtml(); }   // keepForm: do not rebuild the list under a finger that is about to tap the next field
+  function cuExport() { return JSON.stringify({ app: 'pipedraft', kind: 'custom-parts', version: 1, custom: model.custom }, null, 1); }
+  function cuImport(text) {                                         // merge by id; an id already used by a different part gets a new one; returns the number added, -1 for a bad file
+    var d; try { d = JSON.parse(text); } catch (x) { return -1; }
+    var list = Array.isArray(d) ? d : d && Array.isArray(d.custom) ? d.custom : null; if (!list) return -1;
+    var add = [];
+    list.forEach(function (raw) {
+      var e = cuClean(raw); if (!e) return;
+      var same = e.id && cuGet(e.id);
+      if (same && JSON.stringify(same) === JSON.stringify(e)) return;   // the same part is already here
+      if (!e.id || same || add.some(function (x) { return x.id === e.id; })) e.id = cuFresh(add);
+      add.push(e);
+    });
+    if (add.length) { pushHist(); add.forEach(function (e) { model.custom.push(e); }); cuChanged(); }
+    return add.length;
+  }
+  function cuGeneric(fill) { return '<rect x="-9" y="-8" width="18" height="16" fill="' + fill + '"/><line x1="-9" y1="-8" x2="9" y2="8" stroke-width="0.8"/><line x1="9" y1="-8" x2="-9" y2="8" stroke-width="0.8"/>'; }
+  function syncCustom() {                                           // refresh CUX, the symbols and the Custom chips from the library and the placed items
+    CUX = {};
+    model.custom.forEach(function (e) { CUX['cu:' + e.id] = { name: e.name, brand: e.brand || '', model: e.model || '', len: e.len / 1000, wt: e.wt || 0, k: e.k || 0, prefix: e.prefix || 'CU', img: e.img || '', lib: true }; });
+    model.items.forEach(function (it) {
+      if (!isCu(it.t)) return;
+      var c = CUX[it.t];
+      if (c) { it.cn = c.name; it.cb = c.brand; it.cm = c.model; it.cl = Math.round(c.len * 1000); it.ck = c.k; it.cp = c.prefix; }
+      else CUX[it.t] = { name: it.cn || 'Custom part', brand: it.cb || '', model: it.cm || '', len: (it.cl > 0 ? it.cl : 200) / 1000, wt: 0, k: it.ck || 0, prefix: it.cp || 'CU', img: '', lib: false };
+    });
+    Object.keys(SYM).forEach(function (k) { if (isCu(k)) { delete SYM[k]; delete ISOS[k]; delete ISOA[k]; } });
+    Object.keys(CUX).forEach(function (k) {
+      var c = CUX[k];
+      SYM[k] = { name: c.name, tag: c.prefix, svg: cuGeneric('none') };
+      ISOS[k] = cuGeneric('#ffffff');
+      ISOA[k] = c.img ? '<rect x="-10" y="-9" width="20" height="18" fill="#ffffff"/><image href="' + c.img + '" x="-9" y="-8" width="18" height="16" preserveAspectRatio="xMidYMid meet"/>' : cuGeneric('#dde3e6');
+    });
+    var sig = model.custom.map(function (e) { return e.id + '|' + e.name + '|' + e.brand + '|' + e.model; }).join('\n');
+    if (sig !== cuSig) { cuSig = sig; refreshCustomParts(); }
+  }
   var CV = byNps([4, 8, 14, 30, 60, 90, 130, 230, 500, 800, 1300, 1900]);   // control valve Cv fully open, assumed
   var ROUGH = 0.000045;                                               // commercial steel, m
   var OLET_NAME = { weldolet: 'Weldolet BW', sockolet: 'Sockolet SW', threadolet: 'Threadolet THD', sweepolet: 'Sweepolet BW', halfcoupling: 'Half coupling SW 3000#', nippolet: 'Nippolet BW' };
@@ -474,7 +624,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], custom: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -496,6 +646,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
     o.fit = m.fit || {}; o.field = m.field || {}; o.title = m.title || {}; o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, m.spec || {});
+    (Array.isArray(m.custom) ? m.custom : []).forEach(function (r) {   // the custom parts library; a bad entry is dropped, a missing or repeated id gets a new one
+      var e = cuClean(r); if (!e) return;
+      if (!e.id || o.custom.some(function (x) { return x.id === e.id; })) e.id = cuFresh(o.custom);
+      o.custom.push(e);
+    });
     return o;
   }
 
@@ -707,9 +862,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, item: 11, instr: 12, support: 13, weight: 14 };
   var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {}, pipeTrim = {};
   var compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }, curRef = null;
-  function add(cat, desc, qty, unit) {
+  function add(cat, desc, qty, unit, note) {
     desc = desc.split('150#').join(std().cls);                      // the rating word follows the chosen standard
-    var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit });
+    var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit, note: note || '' });
     l.qty += qty;
     if (curRef && qty > 0 && !compDesc[curRef[0]][curRef[1]]) compDesc[curRef[0]][curRef[1]] = desc;   // first row a component adds is its own
     return desc;
@@ -730,7 +885,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
       });
     }
-    applyStd();
+    applyStd(); syncCustom();
     lines = {}; warns = []; nozList = []; pipeLen = {}; pipeTrim = {};
     compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }; curRef = null;
     var weight = 0;
@@ -1091,12 +1246,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else if (it.t === 'nipple') { cyl(r * 1.0, L); }
       else if (it.t === 'flame') { cyl(r * 1.8, L); for (var fq = -2; fq <= 2; fq++) cyl(r * 1.88, 0.01, fq * L * 0.2, ac); }
       else if (it.t === 'hose') { cyl(r * 1.1, L); cyl(r * 1.35, 0.015, -L * 0.45, ac); cyl(r * 1.35, 0.015, L * 0.45, ac); }
+      else if (isCu(it.t)) { cyl(r * 1.3, L); var cb = new T.Mesh(new T.BoxGeometry(r * 1.4, L * 0.7, r * 1.4), ac); cb.position.x = r * 1.7; g.add(cb); }   // custom part: a body of the pipe size and its own length
       else { cyl(r * 1.45, L); var tab = new T.Mesh(new T.BoxGeometry(r * 0.3, L, r * 1.6), ac); tab.position.x = r * 1.9; g.add(tab); }
       g.position.copy(V(it.p));
       g.quaternion.setFromUnitVectors(UP, V(it.d).normalize());
       g.traverse(function (m) { m.userData = { kind: 'item', i: i }; });
       world.add(g);
-      add('item', (ITEM_NAME[it.t] || it.t) + ', ' + sz(it.n), 1, 'pc');
+      add('item', (isCu(it.t) ? cuDesc(it.t) : ITEM_NAME[it.t] || it.t) + ', ' + sz(it.n), 1, 'pc', isCu(it.t) ? cuNote(it.t) : '');
       add('pipe', 'Pipe, ' + sz(it.n) + ' SCH ' + (it.s || 40) + ', ' + pipeEnd(it.n), -L, 'm');
       total -= L; weight -= L * lineWeight(it.n, it.s || 40);
       var hi = hostOf(it.p); if (hi >= 0) pipeLen[hi] = Math.max(0, (pipeLen[hi] || 0) - L);
@@ -1459,6 +1615,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- BOM ----------
   function stdOf(l) {                                              // the standard and material a BOM row is made to
     var s = std(), c = l.cat;
+    if (l.note) return l.note;                                      // a custom part carries its own brand, model and weight
     if (c === CAT.pipe) return l.desc.indexOf('Pipe,') === 0 ? s.pipe : '';
     if ([CAT.elbow, CAT.reducer, CAT.tee, CAT.olet, CAT.cross, CAT.cap].indexOf(c) >= 0) return s.fit;
     if (c === CAT.flange) return /^Gasket/.test(l.desc) ? s.gasket : /^Stud bolt/.test(l.desc) ? s.bolt : s.flg;
@@ -1755,6 +1912,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else if (tool === 'valve' || tool === 'item' || (tool === 'flange' && fk !== 'bl')) {
       hit = pickMeshes(e, 'pipe')[0]; if (!hit) return;
       var op = onPipe(hit); if (!op) return;
+      if (tool === 'item' && isCu(ik) && !(CUX[ik] && CUX[ik].lib)) { toast('That custom part is not in the library any more'); return; }
       var len = tool === 'valve' ? VALVE_FF[vk][op.pipe.n] : tool === 'item' ? itemLen(ik, op.pipe.n) : FL[op.pipe.n][1] * 2 + 0.01;
       var vflg = tool === 'valve' && ['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, ve === 'auto' ? undefined : ve)) >= 0, mspan = flangeSpan({ n: op.pipe.n, m: 1 });
       var need = len / 2 + 0.05 + (vflg ? mspan : 0);
@@ -2198,8 +2356,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '<div class="row"><label class="field">Handwheel or actuator, angle around the pipe<select id="i-hw">' + opts([[0, Math.abs(it.d[1]) > 0.9 ? '0° (toward X)' : 'Up'], [45, '45°'], [90, '90°'], [135, '135°'], [180, Math.abs(it.d[1]) > 0.9 ? '180°' : 'Down'], [225, '225°'], [270, '270°'], [315, '315°']], it.hw || 0) + '</select></label></div>')
         + '<p>' + sz(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
     } else if (sel.kind === 'item') {
-      h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }), it.t) + '</select></label></div>'
-        + '<p>' + sz(it.n) + ', length ' + Math.round(itemLen(it.t, it.n) * 1000) + ' mm</p>';
+      h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }).concat(Object.keys(CUX).map(function (k) { return [k, esc(CUX[k].name) + (CUX[k].lib ? '' : ' (deleted)')]; })), it.t) + '</select></label></div>'
+        + '<p>' + sz(it.n) + ', length ' + Math.round(itemLen(it.t, it.n) * 1000) + ' mm</p>'
+        + (isCu(it.t) ? '<p>' + esc(cuNote(it.t) || 'Custom part') + (CUX[it.t] && !CUX[it.t].lib ? '. Deleted from the library: it keeps its name and length.' : '. Change it under Custom parts in the menu.') + '</p>' : '');
     } else if (sel.kind === 'flange') {
       h = '<h2>' + (it.t === 'bl' ? 'Blind flange' : it.m ? 'Valve flange' : it.e ? 'End flange' : 'Flange pair') + ' ' + (sel.i + 1) + '</h2>'
         + (it.t === 'bl' ? '' : '<div class="row"><label>Type<select id="i-ft">' + opts([['wn', 'Weld-neck'], ['so', 'Slip-on'], ['lj', 'Lap-joint'], ['th', 'Threaded'], ['sw', 'Socket-weld']].concat(isOne(it) ? [] : [['ro', 'Orifice pair']]), it.t) + '</select></label></div>')
@@ -3222,7 +3381,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     model.items.forEach(function (it) {
       var h = hostOf(it.p); if (h < 0) return;
-      addK(model.pipes[h].ln, it.n, it.s, ITEM_K[it.t], (ITEM_NAME[it.t] || it.t).split(',')[0]);
+      addK(model.pipes[h].ln, it.n, it.s, itemK(it.t), (isCu(it.t) ? cuDesc(it.t) : ITEM_NAME[it.t] || it.t).split(',')[0]);
     });
     Object.keys(res.lines).forEach(function (k) {
       var L = res.lines[k], useZ = L.zAll && L.q > 0;
@@ -3329,10 +3488,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
     equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
-    instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) }
+    instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
+    custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
   };
   var PART_KEYS = Object.keys(PARTS), lastPart = 'branch';
-  function partVal(c) { return { valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
+  function partVal(c) { return { custom: ik, valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
   function setPart(c, v) {
     if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
     updateUi();
@@ -3341,7 +3501,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function buildParts() {
     $('parts').innerHTML = '<div id="plist">' + PART_KEYS.map(function (c) {
       return '<div class="psec" data-sec="' + c + '"><button class="phead" data-head="' + c + '" aria-expanded="true">' + PARTS[c].label + '</button><div class="prows">'
-        + PARTS[c].items.map(function (it) { return '<button data-cat="' + c + '" data-chip="' + it[0] + '" aria-pressed="false">' + it[1] + '</button>'; }).join('') + '</div></div>';
+        + PARTS[c].items.map(function (it) { return '<button data-cat="' + c + '" data-chip="' + esc(it[0]) + '" aria-pressed="false">' + it[1] + '</button>'; }).join('')
+        + (c === 'custom' && !PARTS[c].items.length ? '<p class="pnote">None yet. Add your own under the ⋯ menu, Project, Custom parts.</p>' : '') + '</div></div>';
     }).join('') + '</div>';
   }
   function syncParts() {                                            // only classes change, so the scroll position stays put
@@ -3353,8 +3514,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     root.querySelectorAll('[data-chip]').forEach(function (b) {
       var c = b.getAttribute('data-cat');
-      b.setAttribute('aria-pressed', String(c === tool && partVal(c) === b.getAttribute('data-chip')));
+      b.setAttribute('aria-pressed', String((c === tool || (c === 'custom' && tool === 'item')) && partVal(c) === b.getAttribute('data-chip')));
     });
+  }
+  function refreshCustomParts() {                                   // the Custom chips follow the library
+    PARTS.custom.items = model.custom.map(function (e) { var sub = [e.brand, e.model].filter(Boolean).join(' '); return ['cu:' + e.id, esc(e.name) + (sub ? '<small>' + esc(sub) + '</small>' : '')]; });
+    buildParts(); if (PARTS[tool]) syncParts();
   }
   function scrollParts(c) {
     var s = $('parts').querySelector('[data-sec="' + c + '"]');
@@ -3363,6 +3528,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('parts').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
     if (b.dataset.head) { var c = b.dataset.head, was = !!partOpen[c]; PART_KEYS.forEach(function (k) { partOpen[k] = false; }); partOpen[c] = !was; syncParts(); }   // one section open at a time
+    else if (b.dataset.chip && b.dataset.cat === 'custom') {        // a custom part is an inline item whose type is cu:id
+      if (tool !== 'item') setTool('item'); setPart('item', b.dataset.chip); lastPart = 'custom'; PART_KEYS.forEach(function (k) { partOpen[k] = k === 'custom'; }); syncParts();
+    }
     else if (b.dataset.chip) { var cat = b.dataset.cat; if (tool !== cat) setTool(cat); setPart(cat, b.dataset.chip); }
   });
   function setTool(t) {
@@ -3714,6 +3882,67 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     takeBackup(true); pushHist(); model = blank(); cursor = null; sel = null; changed();
   };
 
+  // ---------- custom parts panel (⋯ → Project → Custom parts) ----------
+  var cuOpen = null, cuArm = null, cuImgFor = null;
+  function cuHtml() {
+    var h = '<p class="empty" style="margin:0 0 10px;font-size:12px">Your own in-line parts, saved with the project. Place them from Parts, Custom. Editing a part updates every copy in the drawing. Lengths are face to face, in mm.</p>';
+    if (!model.custom.length) return h + '<p class="empty">No custom parts yet. Tap Add part.</p>';
+    return h + model.custom.map(function (e) {
+      var n = cuCount(e.id), open = cuOpen === e.id, id = esc(e.id), sub = [e.brand, e.model].filter(Boolean).join(' ');
+      var s = '<div class="cu-card" data-cu="' + id + '"><div class="top">'
+        + (e.img ? '<img class="thumb" alt="" src="' + e.img + '">' : '')
+        + '<b>' + esc(e.name) + '</b><span class="meta">' + (sub ? esc(sub) + ' · ' : '') + e.len + ' mm · ' + esc(e.prefix) + (n ? ' · ' + n + ' placed' : '') + '</span>'
+        + '<button data-cua="edit" data-id="' + id + '" aria-expanded="' + open + '">' + (open ? 'Done' : 'Edit') + '</button>'
+        + '<button data-cua="dup" data-id="' + id + '">Duplicate</button>'
+        + '<button data-cua="del" data-id="' + id + '">' + (cuArm === e.id ? 'Tap again to delete' : 'Delete') + '</button></div>';
+      if (cuArm === e.id && n) s += '<p class="warn">' + n + ' of these ' + (n === 1 ? 'is' : 'are') + ' placed in the drawing. They stay, with the name and length they have now, but can no longer be edited here.</p>';
+      if (open) {
+        var f = function (k, label, v, extra) { return '<label class="field">' + label + '<input type="text" data-cuf="' + k + '" data-id="' + id + '" value="' + esc(v == null ? '' : v) + '" autocomplete="off"' + (extra || '') + '></label>'; };
+        s += '<div class="row" style="margin-top:10px">' + f('name', 'Name', e.name, ' maxlength="40"') + f('brand', 'Brand', e.brand, ' maxlength="40"') + f('model', 'Model', e.model, ' maxlength="40"') + '</div>'
+          + '<div class="row">' + f('len', 'Length, mm (' + CU_LEN_MIN + ' to ' + CU_LEN_MAX + ')', e.len, ' inputmode="decimal"') + f('wt', 'Weight, kg', e.wt || '', ' inputmode="decimal"') + f('k', 'Loss K (0 = ignore)', e.k || '', ' inputmode="decimal"') + f('prefix', 'Tag prefix', e.prefix, ' maxlength="4"') + '</div>'
+          + '<div class="row">' + (e.img ? '<img class="thumb" alt="Picture" src="' + e.img + '" style="width:96px;height:80px">' : '<span class="meta" style="align-self:center">No picture: the iso sheet draws a plain box.</span>')
+          + '<button data-cua="img" data-id="' + id + '">' + (e.img ? 'Change picture' : 'Choose picture') + '</button>' + (e.img ? '<button data-cua="noimg" data-id="' + id + '">Remove picture</button>' : '') + '</div>';
+      }
+      return s + '</div>';
+    }).join('');
+  }
+  function showCu() { $('more').hidden = true; $('cuBody').innerHTML = cuHtml(); $('cu').hidden = false; }
+  $('cuBtn').onclick = showCu;
+  $('cu-close').onclick = function () { $('cu').hidden = true; cuArm = null; };
+  $('cu-add').onclick = function () {
+    var r = cuAdd({ name: 'New part', len: 200, prefix: 'CU' });
+    if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); }
+  };
+  $('cuBody').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button[data-cua]') : null; if (!b) return;
+    var a = b.getAttribute('data-cua'), id = b.getAttribute('data-id');
+    if (a === 'edit') { cuOpen = cuOpen === id ? null : id; cuArm = null; $('cuBody').innerHTML = cuHtml(); }
+    else if (a === 'dup') { var c = cuDup(id); if (c) { cuOpen = c.id; cuChanged(); toast('Duplicated. Change the brand or model.'); } }
+    else if (a === 'del') {
+      if (cuArm !== id) { cuArm = id; $('cuBody').innerHTML = cuHtml(); setTimeout(function () { if (cuArm === id) { cuArm = null; if (!$('cu').hidden) $('cuBody').innerHTML = cuHtml(); } }, 4000); return; }
+      cuArm = null; var n = cuDelete(id); if (cuOpen === id) cuOpen = null; cuChanged(); toast(n > 0 ? 'Deleted. ' + n + ' placed ' + (n === 1 ? 'copy keeps' : 'copies keep') + ' its name and length.' : 'Deleted');
+    }
+    else if (a === 'img') { cuImgFor = id; $('cuimgf').click(); }
+    else if (a === 'noimg') cuSetImg(id, '');
+  });
+  $('cuBody').addEventListener('change', function (e) {
+    var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-cuf') : null; if (!k) return;
+    var r = cuUpdate(t.getAttribute('data-id'), (function (o) { o[k] = t.value; return o; })({}));
+    if (r.err) { toast(r.err); $('cuBody').innerHTML = cuHtml(); }
+  });
+  $('cuimgf').onchange = function () {
+    var f = this.files && this.files[0], id = cuImgFor; this.value = ''; if (!f || !id) return;
+    cuImgFromFile(f, function (u) { if (!u) toast('That picture could not be used. Try a smaller or simpler image.'); else if (cuSetImg(id, u)) toast('Picture added'); });
+  };
+  $('f-cuexp').onclick = function () { saveBlob('pipedraft-custom-parts.json', new Blob([cuExport()], { type: 'application/json' })); };
+  $('f-cuimp').onclick = function () { $('cuimpf').click(); };
+  $('cuimpf').onchange = function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { var n = cuImport(rd.result); toast(n < 0 ? 'That file is not a PipeDraft custom parts file' : n ? n + ' custom part' + (n === 1 ? '' : 's') + ' added' : 'Nothing new in that file'); };
+    rd.readAsText(f); this.value = '';
+  };
+
   // ---------- iPad niceties ----------
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
   cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -3738,6 +3967,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    custom: { add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

@@ -941,5 +941,94 @@ check('BOM by line: an empty project gives just the header', PD.bomByLine() === 
 
 PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 0.25 }, { a: [3, 0, 0], b: [3, 0, 2], n: 99 }, { a: [3, 0, 2], b: [5, 0, 2], n: 'x' }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 5, k: 'gate' }] });
 check('a size outside the list is snapped to the nearest listed size and the model still rebuilds', PD.model.pipes.map(p => p.n).join() === '0.5,12,4' && PD.model.valves[0].n === 4 && PD.rows().length > 0);
+// Custom parts: the project library model.custom, placed as inline items with t = 'cu:' + id.
+{
+  const C = PD.custom, reset = () => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [] }); };
+  reset();
+  check('an old save without custom loads with an empty library', Array.isArray(PD.model.custom) && PD.model.custom.length === 0);
+  const bad = [{ name: '', len: 200 }, { name: 'x', len: 10 }, { name: 'x', len: 3001 }, { name: 'x', len: 'abc' }, { name: 'x', len: 200, wt: -1 }, { name: 'x', len: 200, k: -2 }];
+  check('bad input is refused with a message and adds nothing', bad.every(f => { const r = C.add(f); return r.err && !r.e; }) && PD.model.custom.length === 0, JSON.stringify(bad.map(f => C.validate(f).err)));
+  const r1 = C.add({ name: 'Y-strainer', brand: 'Acme', model: 'S-100', len: '250', wt: '12,5', k: 3, prefix: 'sx!' });
+  const id = r1.e && r1.e.id;
+  check('add: fields are cleaned (length number, comma decimal, tag prefix upper case)', r1.e && r1.e.len === 250 && r1.e.wt === 12.5 && r1.e.prefix === 'SX' && PD.model.custom.length === 1 && /^[A-Za-z0-9_-]+$/.test(id));
+  check('the Custom palette has one chip per entry with the brand and model', C.parts().length === 1 && C.parts()[0][0] === 'cu:' + id && C.parts()[0][1].includes('Y-strainer') && C.parts()[0][1].includes('Acme S-100'), JSON.stringify(C.parts()));
+  check('update with a bad length is refused and the entry is unchanged', C.update(id, { len: 5 }).err && PD.model.custom[0].len === 250);
+  // place it the way a finger does: Parts chip, then tap the pipe
+  els['t-parts'].onclick();
+  L.parts.click({ target: { closest: () => ({ dataset: { chip: 'cu:' + id, cat: 'custom' } }) } });
+  tapOn([2, 0, 0]);
+  const it = PD.model.items[0];
+  check('tapping a pipe with a Custom chip places an inline item of that type', PD.model.items.length === 1 && it.t === 'cu:' + id && it.n === 4, JSON.stringify(PD.model.items));
+  check('BOM row: name, brand and model with the size, quantity 1, brand and model and weight in the standard column',
+    PD.rows().some(r => r[0] === 'Y-strainer, Acme S-100, NPS 4' && r[1] === '1' && r[2] === 'Acme S-100, 12.5 kg each'), JSON.stringify(PD.rows()));
+  check('the pipe BOM quantity loses the part length', has('Pipe, NPS 4 SCH 40, BE | 3.75 m'), rows());
+  const fab = PD.fab();
+  check('cut list splits the pipe around the part (lengths add up to the BOM pipe)', fab.pieces.length === 2 && Math.abs(fab.pieces.reduce((s, p) => s + p.len, 0) - 3.75) < 0.001, JSON.stringify(fab.pieces.map(p => p.len)));
+  check('the tag uses the prefix', PD.tags().items[0] === 'SX-1');
+  const isoP = PD.iso('', 0, true, 'pic'), isoS = PD.iso('', 0, true, 'sym');
+  check('iso sheet balloons the part and lists it in the material list', isoP.includes('Y-strainer, Acme S-100, NPS 4') && /<circle[^>]*r="9.5"/.test(isoP));
+  check('with no picture the iso draws the generic box in both styles', isoP.includes('<line x1="-9" y1="-8" x2="9" y2="8"') && isoS.includes('<line x1="-9" y1="-8" x2="9" y2="8"') && !isoP.includes('<image'));
+  const tiny = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==';
+  check('a picture is stored and drawn in the pic style only', C.setImg(id, tiny) && PD.iso('', 0, true, 'pic').includes('<image href="' + tiny) && !PD.iso('', 0, true, 'sym').includes('<image'));
+  check('a picture over the size limit or of the wrong type is refused', !C.setImg(id, 'data:image/jpeg;base64,' + 'A'.repeat(41000)) && !C.setImg(id, 'data:text/html;base64,AAAA') && !C.setImg(id, 'javascript:alert(1)') && PD.model.custom[0].img === tiny);
+  check('Remove picture clears it', C.setImg(id, '') && !PD.model.custom[0].img);
+  // hydraulics: K used only when given
+  PD.model.lines['L-001'] = { q: 40 }; PD.rebuild();
+  check('loss K enters the hydraulics', PD.hyd().fits.some(f => f.label.startsWith('Y-strainer') && f.K === 3));
+  C.update(id, { k: '' }); PD.rebuild();
+  check('K of 0 is ignored in hydraulics', !PD.hyd().fits.some(f => f.label.startsWith('Y-strainer')));
+  // editing the length re-trims the pipes
+  C.update(id, { len: 500 });
+  check('editing the length changes the pipe trim for every placed copy', has('Pipe, NPS 4 SCH 40, BE | 3.50 m') && Math.abs(PD.fab().pieces.reduce((s, p) => s + p.len, 0) - 3.5) < 0.001, rows());
+  C.update(id, { name: 'Strainer B' });
+  check('editing the name renames the BOM row', PD.rows().some(r => r[0].startsWith('Strainer B, Acme S-100')) && C.parts()[0][1].includes('Strainer B'));
+  // duplicate
+  const d = C.dup(id);
+  check('duplicate makes a separate entry with a new id and the same data', d && d.id !== id && PD.model.custom.length === 2 && d.len === 500 && d.brand === 'Acme' && d.name === 'Strainer B copy');
+  // save and reopen
+  const saved = JSON.parse(JSON.stringify({ app: 'pipedraft', version: 2, model: PD.model }));
+  PD.load({ pipes: [], valves: [] });
+  check('a cleared project has an empty library', PD.model.custom.length === 0 && C.parts().length === 0);
+  PD.load(saved.model);
+  check('a saved and reopened project keeps the library and the placed items', PD.model.custom.length === 2 && PD.model.items.length === 1 && PD.model.items[0].t === 'cu:' + id && C.parts().length === 2 && has('Pipe, NPS 4 SCH 40, BE | 3.50 m'), rows());
+  // delete a used entry
+  const n0 = C.count(id), nDel = C.del(id);
+  check('deleting a used entry reports how many are placed', n0 === 1 && nDel === 1 && PD.model.custom.length === 1);
+  check('the placed item still works: same BOM text, length, tag and iso', PD.rows().some(r => r[0].startsWith('Strainer B, Acme S-100, NPS 4') && r[1] === '1') && has('Pipe, NPS 4 SCH 40, BE | 3.50 m') && PD.tags().items[0] === 'SX-1' && PD.iso('', 0, true, 'pic').includes('Strainer B'), rows());
+  els['t-sel'].onclick(); tapOn([2, 0, 0]);
+  check('the inspector shows the deleted part without breaking', els['insp'].innerHTML.includes('Inline fitting') && els['insp'].innerHTML.includes('Strainer B (deleted)'));
+  els['t-parts'].onclick();
+  L.parts.click({ target: { closest: () => ({ dataset: { chip: 'cu:' + id, cat: 'custom' } }) } });
+  tapOn([3.2, 0, 0]);
+  check('a deleted part cannot be placed again', PD.model.items.length === 1);
+  check('the library list has Duplicate and Delete for each entry', (() => { const h = C.html(); return h.includes('Strainer B copy') && h.includes('Duplicate') && h.includes('Delete'); })());
+  PD.model.items.push({ p: [3.2, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:' + d.id, s: 40 }); PD.rebuild();
+  check('the list shows a placed count for used entries', C.html().includes('1 placed'));
+  check('move/copy/mirror keep working with a custom part', (() => { PD.group.copy(0, 0, 3, 0, 1); return PD.model.items.filter(i => i.t === 'cu:' + d.id).length === 2; })());
+  // subset sheet per line
+  reset(); PD.model.pipes[0].ln = 'L-009'; PD.model.pipes.push({ a: [0, 0, 3], b: [4, 0, 3], n: 4, s: 40, ln: 'L-010', fl: 0 });
+  const rr = C.add({ name: 'Meter', len: 300 }); PD.model.items.push({ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:' + rr.e.id, s: 40 }); PD.rebuild();
+  check('a line sheet keeps custom parts on its own line only', PD.iso('L-009', 0).includes('Meter, NPS 4') && !PD.iso('L-010', 0).includes('Meter'));
+  check('the BOM by line works with a custom part', PD.bomByLine().includes('Meter'));
+  // export / import merge
+  reset();
+  C.add({ name: 'A', len: 100 }); C.add({ name: 'B', len: 120, brand: 'Bx' });
+  const text = C.exp();
+  check('export is a PipeDraft custom parts file with both entries', JSON.parse(text).kind === 'custom-parts' && JSON.parse(text).custom.length === 2);
+  check('importing the same file adds nothing', C.imp(text) === 0 && PD.model.custom.length === 2);
+  const clash = JSON.parse(text); clash.custom[0].name = 'A changed'; clash.custom.push({ id: 'newone', name: 'C', len: 80 });
+  check('import merges by id: a clashing id gets a new id, a new one is added, existing entries stay', C.imp(JSON.stringify(clash)) === 2 && PD.model.custom.length === 4 && PD.model.custom[0].name === 'A' && PD.model.custom.filter(e => e.name === 'A changed').length === 1 && new Set(PD.model.custom.map(e => e.id)).size === 4, JSON.stringify(PD.model.custom.map(e => [e.id, e.name])));
+  check('import refuses junk and drops unusable entries', C.imp('not json') === -1 && C.imp('{"x":1}') === -1 && C.imp(JSON.stringify([{ name: '', len: 5 }, 7, null])) === 0 && PD.model.custom.length === 4);
+  // hand-edited saves
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], custom: [{ id: 'q', name: 'Ok', len: 150 }, { id: 'q', name: 'Dup id', len: 150 }, { name: '', len: 1 }, { id: 'z', name: 'Evil', len: 100, img: 'javascript:alert(1)' }, 'junk'] });
+  check('normalize drops bad library entries, repairs repeated ids and refuses a non-image picture', PD.model.custom.length === 3 && new Set(PD.model.custom.map(e => e.id)).size === 3 && !PD.model.custom.some(e => e.img));
+  // image helpers
+  const sz1 = C.imgSize(1600, 800), sz2 = C.imgSize(100, 50), sz3 = C.imgSize(300, 900);
+  check('picture size: long side at most 160 px, aspect kept, never enlarged', sz1.w === 160 && sz1.h === 80 && sz2.w === 100 && sz2.h === 50 && sz3.h === 160 && sz3.w === 53 && C.imgSize(0, 5).w === 0);
+  const q = [];
+  const fake = { toDataURL(t, qq) { q.push(qq); return 'data:image/jpeg;base64,' + 'A'.repeat(qq > 0.7 ? 50000 : qq > 0.4 ? 30000 : 100); } };
+  check('picture encoding lowers the JPEG quality until it fits 40 KB', C.imgEncode(fake) !== '' && q.join() === '0.8,0.65' && C.imgEncode({ toDataURL: () => 'data:image/jpeg;base64,' + 'A'.repeat(90000) }) === '' && C.imgEncode({ toDataURL() { throw new Error('x'); } }) === '');
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
