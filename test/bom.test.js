@@ -770,6 +770,17 @@ check('a pipe leaving a nozzle is not', PD.clashes().length === 0, JSON.stringif
 PD.load({ pipes: [{ a: [3, 0.4, 3], b: [6, 0.4, 3], n: 4 }], valves: [], equip: [{ k: 'vessel', p: [0, 0, 0], r: 0 }] });
 check('and a pipe away from equipment is not', PD.clashes().length === 0);
 
+// Clash check, valves.
+const VH = { pipes: [{ a: [0, 1, 0], b: [6, 1, 0], n: 4, ln: 'L-001' }] };
+PD.load({ pipes: VH.pipes.concat([{ a: [3, 1, -2], b: [3, 1, 2], n: 4, ln: 'L-002' }]), valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a pipe through a valve body is flagged', PD.clashes().some(c => c.kind === 'valve' && c.i === 0 && c.j === 1 && Math.abs(c.at[0] - 3) < 0.01 && Math.abs(c.at[2]) < 0.01) && PD.warns().some(w => w.includes('Valve GV-1 (gate, NPS 4) and pipe 2 (L-002) run into each other')), JSON.stringify(PD.clashes()) + PD.warns().join());
+PD.load({ pipes: VH.pipes.concat([{ a: [3, 1.6, -2], b: [3, 1.6, 2], n: 4, ln: 'L-002' }]), valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a pipe passing clear of a valve is not', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+PD.load({ pipes: [{ a: [0, 1, 0], b: [3.12, 1, 0], n: 4, ln: 'L-001' }, { a: [3.12, 1, 0], b: [6, 1, 0], n: 4, ln: 'L-001' }, { a: [3.12, 1, 0], b: [3.12, 1, 3], n: 4, ln: 'L-002' }], valves: [{ p: [3, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+check('a branch starting on the header beside a valve is not', PD.clashes().filter(c => c.kind === 'valve').length === 0, JSON.stringify(PD.clashes()));
+PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'L-001' }, { a: [3, 1, 0], b: [3, 1, 3], n: 4, ln: 'L-001' }], valves: [{ p: [2.9, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'ball' }, { p: [0.1, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'globe' }, { p: [3, 1, 2.9], d: [0, 0, 1], n: 4, s: 40, k: 'check' }] });
+check('valves next to an elbow or at a pipe end do not crash or clash', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+
 // Flanges at pipe ends, valve ends and flanges fitted against valves.
 const ve = id => els['ve-' + id].onclick();
 fresh(run4()); ve('auto'); chipTap('flange', 'wn'); tapOn([5.9, 1, 0]);

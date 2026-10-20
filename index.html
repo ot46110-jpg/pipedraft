@@ -891,7 +891,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var clashList = clashes();
     clashList.slice(0, 8).forEach(function (x) { warns.push(x.text + ' near ' + cadText(x.at) + '.'); });
     if (clashList.length > 8) warns.push((clashList.length - 8) + ' more clashes not listed.');
-    clashList.forEach(function (x) { [x.i, x.kind === 'pipe' ? x.j : -1].forEach(function (q) { if (q >= 0 && pipeMesh[q] && pipeMesh[q].material.emissive) pipeMesh[q].material.emissive.setHex(0x7a1d14); }); });
+    clashList.forEach(function (x) { [x.i, x.kind !== 'equip' ? x.j : -1].forEach(function (q) { if (q >= 0 && pipeMesh[q] && pipeMesh[q].material.emissive) pipeMesh[q].material.emissive.setHex(0x7a1d14); }); });
     clashList.slice(0, 8).forEach(function (x) {                    // a translucent red ball at each listed clash, same style as the bad-joint ball
       var cm = new T.Mesh(new T.SphereGeometry(Math.max((x.r || 0.1) * 1.4, 0.1), 16, 12), new T.MeshBasicMaterial({ color: 0xd9534f, transparent: true, opacity: 0.45, depthWrite: false }));
       cm.position.copy(V(x.at)); world.add(cm);
@@ -1355,6 +1355,24 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (d < R - 0.004) out.push({ kind: 'pipe', i: i, j: j, at: mm3(hit), r: R, d: d, text: 'Pipe ' + (i + 1) + ' (' + P[i].ln + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
     }
     var tg = assignTags();
+    model.valves.forEach(function (v, vi) {                          // a valve body is a cylinder along its pipe; other pipes must keep out of it
+      var hi = hostOf(v.p); if (hi < 0 || !OD[v.n]) return;
+      var kind = VALVE_FF[v.k] ? v.k : 'gate', ff = VALVE_FF[kind][v.n]; if (!ff) return;
+      var h = seg[hi], hd = h.b.clone().sub(h.a); if (hd.lengthSq() < 1e-9) return; hd.normalize();
+      var c = V(v.p), half = ff / 2, A = c.clone().addScaledVector(hd, -half), B = c.clone().addScaledVector(hd, half);
+      var fl = FL[v.n], Rv = Math.max(OD[v.n] / 2000, fl ? 0.75 * fl[0] / 2 : OD[v.n] / 2000 * 1.5);
+      for (var j = 0; j < n; j++) {
+        if (j === hi) continue;
+        var t = seg[j], R = Rv + t.r, ta = t.a.clone(), tb = t.b.clone();
+        function onHost(pt) { var u = clamp(pt.clone().sub(h.a).dot(h.b.clone().sub(h.a)) / h.a.distanceToSquared(h.b), 0, 1); return h.a.clone().lerp(h.b, u).distanceTo(pt) < 0.02; }
+        var dj = tb.clone().sub(ta), Lj = dj.length(); if (Lj < 1e-9) continue; dj.normalize();
+        var cut = R + 0.01, s0 = onHost(ta) ? cut : 0, s1 = Lj - (onHost(tb) ? cut : 0);   // a branch or joint at the host: ignore the stretch right next to its own end
+        if (s1 - s0 < 1e-6) continue;
+        var qa = ta.clone().addScaledVector(dj, s0), qb = ta.clone().addScaledVector(dj, s1);
+        var hit = new T.Vector3(), d = segDist(A, B, qa, qb, hit);
+        if (d < R - 0.004) out.push({ kind: 'valve', i: hi, j: j, at: mm3(hit), r: R, d: d, text: 'Valve ' + tg.valves[vi] + ' (' + kind + ', NPS ' + nl(v.n) + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
+      }
+    });
     model.equip.forEach(function (e, ei) {
       var rot = (e.r || 0) * Math.PI / 2, base = V(e.p), inside = function (pt) {
         var l = pt.clone().sub(base).applyAxisAngle(UP, -rot), m = 0.03;
