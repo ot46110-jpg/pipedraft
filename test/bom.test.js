@@ -704,8 +704,11 @@ check('it counts length, valves and welds from the drawing', Math.abs(ll[1].len 
 check('sizes are listed largest first', ll[1].size === 'NPS 4 / NPS 3' || ll[1].size.includes('/'), ll[1].size);
 check('typed line data and the flow come through', ll[0].svc === 'Cooling water' && ll[0].q === 12 && ll[1].svc === '');
 const lcsv = PD.lineCsv();
+check('line designation reads size-code-line-class', ll[0].desig.startsWith('2"-L-001-') && ll[1].desig.startsWith('4"-L-002-'), ll[0].desig + ' | ' + ll[1].desig);
+check('a typed fluid code goes into the designation and the iso title block', (PD.model.lines['L-001'].code = 'CW', PD.lineDesignation('L-001')) === '2"-CW-L-001-' + ll[0].desig.split('L-001-')[1] && (PD.isoCtx.ln = 'L-001', PD.iso('L-001', 'auto', true)).includes('2&quot;-CW-L-001') || PD.iso('L-001', 'auto', true).includes('2"-CW-L-001'));
+check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', true).includes('WELD LIST') && !PD.iso('L-001', 'auto', true).includes('WELD LIST'));
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
-check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 10);
+check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 12);
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: ' 16 bar g ' } });
 check('editing a field in the line list stores it trimmed', PD.model.lines['L-002'].pdes === '16 bar g' && PD.lineList()[1].pdes === '16 bar g');
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: '' } });
