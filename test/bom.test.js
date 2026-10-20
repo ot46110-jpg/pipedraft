@@ -460,7 +460,7 @@ els['sp-std'].value = 'asme'; els['sp-std'].onchange.call(els['sp-std']);
 check('and back to NPS with ASME', PD.model.spec.sizeMode === 'NPS' && els['nps'].innerHTML.includes('NPS 4 · 114.3 mm'));
 
 // Exact input: typed lengths and start coordinates while drawing.
-['sx', 'sy', 'sz', 'lenIn', 'g-x', 'g-y', 'g-z', 'g-n', 'i-len', 'i-ax', 'i-ay', 'i-az', 'i-bx', 'i-by', 'i-bz', 'i-pos'].forEach(id => doc.getElementById(id));
+['sx', 'sy', 'sz', 'lenIn', 'g-x', 'g-y', 'g-z', 'g-n', 'i-len', 'i-ax', 'i-ay', 'i-az', 'i-bx', 'i-by', 'i-bz', 'i-pos', 'g-el', 'g-setel'].forEach(id => doc.getElementById(id));
 const floorOut = () => { els['t-pipe'].onclick(); els['finish'].onclick(); for (let i = 0; i < 6; i++) els['down'].onclick(); };
 const cur = () => PD.cursor();
 PD.load({ pipes: [], valves: [] }); floorOut();
@@ -553,6 +553,15 @@ els['i-pos'].value = '2500'; els['i-pos'].onchange();
 check('typing a position moves the valve along the pipe', near(PD.model.valves[0].p, [2.5, 0, 0]));
 els['i-pos'].value = '20'; els['i-pos'].onchange();
 check('a position too close to an end is refused', near(PD.model.valves[0].p, [2.5, 0, 0]));
+
+// The inspector's height field shows the lowest point and the button moves the whole line, undoably.
+PD.load({ pipes: [{ a: [0, 0.5, 0], b: [4, 0.5, 0], n: 4 }, { a: [4, 0.5, 0], b: [4, 2, 0], n: 4 }], valves: [] });
+els['t-sel'].onclick(); tapOn([2, 0.5, 0]);
+check('the height field shows the lowest point of the connected piping', els['insp'].innerHTML.includes('id="g-el" value="500"') && els['insp'].innerHTML.includes('id="g-setel"'), els['insp'].innerHTML.slice(-300));
+els['g-el'].value = '1200'; els['g-setel'].onclick();
+check('Set height moves the whole connected piping', near(PD.model.pipes[0].a, [0, 1.2, 0]) && near(PD.model.pipes[1].b, [4, 2.7, 0]));
+els['undo'].onclick();
+check('Set height can be undone', near(PD.model.pipes[0].a, [0, 0.5, 0]) && near(PD.model.pipes[1].b, [4, 2, 0]));
 
 // Cut list, weld numbers and spools.
 const pipeQty = () => { const r = PD.rows().find(x => x[0].startsWith('Pipe, ') && /m$/.test(x[1])); return r ? parseFloat(r[1]) : 0; };
