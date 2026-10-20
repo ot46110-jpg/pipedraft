@@ -529,6 +529,9 @@ PD.load(Object.assign(grp(), { pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n:
 check('piping tied to equipment cannot be moved, copied or rotated', PD.group.move(0, 100, 0, 0) === false && PD.group.copy(0, 0, 500, 0, 1) === false && PD.group.rotate(0) === false && PD.model.pipes.length === 1);
 PD.load(grp());
 check('a move or copy that goes below the floor is refused', PD.group.move(0, 0, 0, -1000) === false && PD.group.copy(0, 0, 0, -1000, 1) === false && PD.model.pipes.length === 2);
+PD.load(grp());
+check('one typed height puts the lowest point of the connected piping at that EL and takes its valves along', PD.group.setHeight(0, 1500) === true && PD.model.pipes.every(p => near(p.a.slice(1, 2), [1.5]) && near(p.b.slice(1, 2), [1.5])) && Math.abs(PD.model.valves[0].p[1] - 1.5) < 1e-9, JSON.stringify(PD.model.pipes.map(p => [p.a, p.b])));
+check('the same height again, or one below the floor, changes nothing', PD.group.setHeight(0, 1500) === false && PD.group.setHeight(0, -100) === false && Math.abs(PD.model.pipes[0].a[1] - 1.5) < 1e-9);
 
 // The inspector fields do the same through the screen.
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });

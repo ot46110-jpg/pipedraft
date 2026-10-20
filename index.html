@@ -2007,7 +2007,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var pts = []; Object.keys(g.set).forEach(function (i) { pts.push(model.pipes[i].a, model.pipes[i].b); });
     return pts;
   }
-  function applyGroup(i, tf, copies, label) {                       // tf: {pt, dir} on arrays; copies 0 moves in place
+  function setGroupHeight(i, elMm) {                                // move the piping connected to pipe i straight up or down so its lowest point is at elMm
+    var low = Math.min.apply(null, groupPoints(groupOf(i)).map(function (pt) { return pt[1]; })), dz = Math.round(elMm - low * 1000);
+    if (!dz) { toast('Already at that height'); return false; }
+    return applyGroup(i, shiftTf(0, 0, dz), 0, 'Moved');
+  }
+  function applyGroup(i, tf, copies, label) {                      // tf: {pt, dir} on arrays; copies 0 moves in place
     var g = groupOf(i);
     if (g.eq) { toast('This piping is tied to equipment. Move the equipment first.'); return false; }
     var idx = Object.keys(g.set).map(Number).sort(function (a, b) { return a - b; });
@@ -2068,6 +2073,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       + row('Start X · Y · Z', a, 'i-a') + row('End X · Y · Z', b, 'i-b')
       + '<p class="dim">Changing an end moves the piping beyond it, so the rest of the line follows.</p></details>'
       + '<details class="dd"><summary>Move, copy, mirror</summary>'
+      + '<div class="row"><label class="field">Height of this piping, mm (lowest point EL)<input type="text" inputmode="decimal" id="g-el" value="' + Math.round(Math.min.apply(null, groupPoints(groupOf(sel.i)).map(function (pt) { return pt[1]; })) * 1000) + '"></label><button id="g-setel">Set height</button></div>'
       + '<div class="field" style="margin-bottom:8px">Offset X · Y · Z, mm<div class="coord"><input type="text" inputmode="decimal" id="g-x" value="0"><input type="text" inputmode="decimal" id="g-y" value="0"><input type="text" inputmode="decimal" id="g-z" value="0"></div></div>'
       + '<div class="row"><label class="field">Copies<input type="text" inputmode="numeric" id="g-n" value="1"></label></div>'
       + '<div class="row"><button id="g-move">Move</button><button id="g-copy">Copy</button></div>'
@@ -2093,6 +2099,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     $('i-sl').onchange = function () { var v = Math.round(numField('i-sl') || 0); if (v && Math.abs(it.b[1] - it.a[1]) > 1e-6) toast('Slope notes belong on horizontal pipe'); pushHist(); if (v >= 2) it.sl = v; else delete it.sl; changed(); };
     $('i-sld').onchange = function () { pushHist(); it.sld = Number(this.value) === -1 ? -1 : 1; changed(); };
+    $('g-setel').onclick = function () {                            // one typed height for the whole connected piping: its lowest point goes to that EL
+      var el = numField('g-el'); if (el == null) { toast('Type the height in mm'); return; }
+      setGroupHeight(i, el);
+    };
     function offs() { return [numField('g-x') || 0, numField('g-y') || 0, numField('g-z') || 0]; }
     $('g-move').onclick = function () { var o = offs(); applyGroup(i, shiftTf(o[0], o[1], o[2]), 0, 'Moved'); };
     $('g-copy').onclick = function () { var o = offs(), n = Math.max(1, Math.min(50, Math.round(numField('g-n') || 1))); if (!o[0] && !o[1] && !o[2]) { toast('Type an offset for the copy'); return; } applyGroup(i, shiftTf(o[0], o[1], o[2]), n, 'Copied'); };
@@ -3648,7 +3658,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
-    group: { move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
