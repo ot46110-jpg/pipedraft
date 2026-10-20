@@ -270,6 +270,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="f-open">Open project</button>
         <button id="f-bk">Backups</button>
         <button id="f-csv">Export BOM (.csv)</button>
+        <button id="f-bomln">Export BOM by line (.csv)</button>
         <button id="f-fab">Export cut list and welds (.csv)</button>
         <button id="f-ll">Export line list (.csv)</button>
         <button id="f-dxf">Export centrelines (.dxf)</button>
@@ -1410,8 +1411,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to)].join(','); }).join('\n') + '\n';
   }
 
+  function bomByLineCsv() {                                         // the material list of each line number on its own, rows tagged with the line designation
+    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; }, names = {}, rows = [], orig = model;
+    model.pipes.forEach(function (p) { names[p.ln] = 1; });
+    var order = Object.keys(names).sort(), desig = {};
+    order.forEach(function (ln) { desig[ln] = lineDesignation(ln); });
+    try {
+      order.forEach(function (ln) {
+        model = orig; model = subsetFor(ln); rebuild();             // same swap as a one-line iso sheet (subsetFor copies the current model, so start each line from the whole one); nothing from rebuild() is kept past this block
+        bomRows().forEach(function (r) { rows.push([q(ln), q(desig[ln]), q(r[0]), q(r[1]), q(r[2])].join(',')); });
+      });
+    } finally { model = orig; rebuild(); }
+    return 'Line,Designation,Description,Quantity,Standard / material\n' + rows.join('\n') + (rows.length ? '\n' : '');
+  }
+
   // ---------- BOM ----------
-  function stdOf(l) {                                               // the standard and material a BOM row is made to
+  function stdOf(l) {                                              // the standard and material a BOM row is made to
     var s = std(), c = l.cat;
     if (c === CAT.pipe) return l.desc.indexOf('Pipe,') === 0 ? s.pipe : '';
     if ([CAT.elbow, CAT.reducer, CAT.tee, CAT.olet, CAT.cross, CAT.cap].indexOf(c) >= 0) return s.fit;
@@ -3575,6 +3590,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('fabBtn').onclick = function () { $('more').hidden = true; showFab(); };
   $('llBtn').onclick = function () { $('more').hidden = true; $('llBody').innerHTML = lineListHtml(); $('ll').hidden = false; };
   $('ll-close').onclick = function () { $('ll').hidden = true; };
+  $('f-bomln').onclick = function () { saveBlob('pipedraft-bom-by-line.csv', new Blob([bomByLineCsv()], { type: 'text/csv' })); };
   $('ll-csv').onclick = $('f-ll').onclick = function () { saveBlob('pipedraft-linelist.csv', new Blob([lineCsv()], { type: 'text/csv' })); };
   $('llBody').addEventListener('change', function (e) {
     var t = e.target, f = t && t.getAttribute ? t.getAttribute('data-ll') : null, ln = t && t.getAttribute ? t.getAttribute('data-ln') : null; if (!f || ln == null) return;
@@ -3657,7 +3673,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     load: function (m) { model = normalize(m); sel = null; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
-    setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
+    setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }

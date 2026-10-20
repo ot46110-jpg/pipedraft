@@ -733,6 +733,11 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
 check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 16);
 check('from and to reach the csv and the foot note of that line sheet', (PD.model.lines['L-001'].from = 'Tank T-101', PD.model.lines['L-001'].to = 'Pump <P-101>', PD.lineCsv()).includes('"Tank T-101","Pump <P-101>"') && (s => s.includes('FROM Tank T-101  TO Pump &lt;P-101&gt;') && !s.includes('<P-101>'))(PD.iso('L-001', 'auto', true)) && !PD.iso('L-002', 'auto', true).includes('FROM '));
+const bomBefore = JSON.stringify(PD.rows()), bomPipes0 = PD.model.pipes.length, bl = PD.bomByLine();
+const blRows = bl.split('\n').filter(Boolean), blOf = ln => blRows.filter(r => r.startsWith('"' + ln + '"'));
+check('BOM by line has the rows of each line under its designation', bl.startsWith('Line,Designation,Description,Quantity') && blOf('L-001').length > 0 && blOf('L-002').length > 0 && blOf('L-001').every(r => r.includes('"2""-L-001-')) && blOf('L-002').every(r => r.includes('"4""-L-002-')), bl);
+check('and each line lists only its own parts', blOf('L-001').some(r => r.includes('"5.80 m"')) && blOf('L-001').every(r => !r.includes('NPS 4')) && blOf('L-002').every(r => !r.includes('NPS 2 ')), bl);
+check('and building it leaves the project exactly as it was', JSON.stringify(PD.rows()) === bomBefore && PD.model.pipes.length === bomPipes0);
 if (process.env.PD_WRITE_SVG) { Object.assign(PD.model.lines['L-002'] = PD.model.lines['L-002'] || {}, { code: 'P', cls: 'A1A-CS', svc: 'Process water', pdes: '10 bar g', tdes: '60 C', from: 'Tank T-101', to: 'Pump P-101' }); fs.writeFileSync(path.join(process.env.PD_WRITE_SVG, 'line.svg'), PD.iso('L-002', 'auto', true)); }
 L['llBody'].change({ target: { getAttribute: k => ({ 'data-ll': 'pdes', 'data-ln': 'L-002' })[k], value: ' 16 bar g ' } });
 check('editing a field in the line list stores it trimmed', PD.model.lines['L-002'].pdes === '16 bar g' && PD.lineList()[1].pdes === '16 bar g');
