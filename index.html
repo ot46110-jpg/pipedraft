@@ -669,7 +669,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     return -1;
   }
-  function segDist(p1, q1, p2, q2) {
+  function segDist(p1, q1, p2, q2, mid) {
     var d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), r = p1.clone().sub(p2);
     var a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r), s, t;
     if (a <= 1e-9 && e <= 1e-9) return r.length();
@@ -684,7 +684,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); } else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
       }
     }
-    return p1.clone().addScaledVector(d1, s).distanceTo(p2.clone().addScaledVector(d2, t));
+    var c1 = p1.clone().addScaledVector(d1, s), c2 = p2.clone().addScaledVector(d2, t);
+    if (mid) mid.copy(c1).add(c2).multiplyScalar(0.5);               // optional: the point halfway between the two closest points
+    return c1.distanceTo(c2);
   }
   function label(text) {
     var c = document.createElement('canvas'); c.width = 256; c.height = 64;
@@ -889,6 +891,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     clashList.slice(0, 8).forEach(function (x) { warns.push(x.text + ' near ' + cadText(x.at) + '.'); });
     if (clashList.length > 8) warns.push((clashList.length - 8) + ' more clashes not listed.');
     clashList.forEach(function (x) { [x.i, x.kind === 'pipe' ? x.j : -1].forEach(function (q) { if (q >= 0 && pipeMesh[q] && pipeMesh[q].material.emissive) pipeMesh[q].material.emissive.setHex(0x7a1d14); }); });
+    clashList.slice(0, 8).forEach(function (x) {                    // a translucent red ball at each listed clash, same style as the bad-joint ball
+      var cm = new T.Mesh(new T.SphereGeometry(Math.max((x.r || 0.1) * 1.4, 0.1), 16, 12), new T.MeshBasicMaterial({ color: 0xd9534f, transparent: true, opacity: 0.45, depthWrite: false }));
+      cm.position.copy(V(x.at)); world.add(cm);
+    });
 
     // Two 90° elbows with no straight pipe between them, bending the same way, are one return bend.
     model.pipes.forEach(function (p, i) {
@@ -1344,8 +1350,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         || Math.min(s.a.y, s.b.y) - R > Math.max(t.a.y, t.b.y) || Math.max(s.a.y, s.b.y) + R < Math.min(t.a.y, t.b.y)
         || Math.min(s.a.z, s.b.z) - R > Math.max(t.a.z, t.b.z) || Math.max(s.a.z, s.b.z) + R < Math.min(t.a.z, t.b.z)) continue;
       if (touches(s, t)) continue;
-      var d = segDist(s.a, s.b, t.a, t.b);
-      if (d < R - 0.004) out.push({ kind: 'pipe', i: i, j: j, at: mm3(s.a.clone().add(s.b).multiplyScalar(0.5)), d: d, text: 'Pipe ' + (i + 1) + ' (' + P[i].ln + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
+      var hit = new T.Vector3(), d = segDist(s.a, s.b, t.a, t.b, hit);
+      if (d < R - 0.004) out.push({ kind: 'pipe', i: i, j: j, at: mm3(hit), r: R, d: d, text: 'Pipe ' + (i + 1) + ' (' + P[i].ln + ') and pipe ' + (j + 1) + ' (' + P[j].ln + ') run into each other' });
     }
     var tg = assignTags();
     model.equip.forEach(function (e, ei) {

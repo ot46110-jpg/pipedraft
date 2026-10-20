@@ -730,6 +730,9 @@ check('the class typed in the line list reaches the title block of that line she
 // Clash check.
 PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1, -2], b: [2, 1, 2], n: 4 }], valves: [] });
 check('two pipes crossing at the same height clash', PD.clashes().length === 1 && PD.clashes()[0].kind === 'pipe' && PD.warns().some(w => w.includes('run into each other') && w.includes('2000, 0, 1000')), PD.warns().join());
+// The clash point is where the pipes meet, not the middle of the first pipe.
+PD.load({ pipes: [{ a: [0, 1, 0], b: [10, 1, 0], n: 4 }, { a: [7, 1, -2], b: [7, 1, 2], n: 4 }], valves: [] });
+check('the clash is reported where the pipes cross', PD.clashes().length === 1 && PD.clashes()[0].at[0] === 7 && PD.clashes()[0].at[2] === 0 && PD.warns().some(w => w.includes('7000, 0, 1000')), JSON.stringify(PD.clashes().map(c => c.at)));
 PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1.3, -2], b: [2, 1.3, 2], n: 4 }], valves: [] });
 check('crossing one pipe diameter and more clear of each other is fine', PD.clashes().length === 0);
 PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }, { a: [2, 1, 0], b: [2, 1, 3], n: 4 }], valves: [] });
