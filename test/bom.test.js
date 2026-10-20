@@ -1189,6 +1189,14 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const cuOpenCard = C.html();
   check('the panel list shows equipment size and nozzle count', cuOpenCard.includes('Equipment 2000×1000×1500 mm') && cuOpenCard.includes('6 nozzles'), cuOpenCard.slice(0, 600));
   check('an inline add still works next to equipment and keeps the two kinds apart', C.add({ name: 'Inline Z', len: 100 }).e && C.parts().length === 1 && C.eqParts().length === 4);
+  // review fixes: a very long pipe must not stall the equipment clash walk, and an import must not reuse the id of a placed copy of the other kind
+  PD.load({ pipes: [{ a: [-1e6, 0.3, 0], b: [1e6, 0.3, 0], n: 4 }], custom: [], equip: [{ k: 'pump', p: [3, 0, 0], r: 0 }, { k: 'vessel', p: [9, 0, 0], r: 0 }] });
+  const t0 = Date.now(); const lc = PD.clashes();
+  check('a 2000 km pipe through equipment is checked quickly and still reported', Date.now() - t0 < 500 && lc.filter(c => c.kind === 'equip').length === 2, Date.now() - t0 + ' ms ' + lc.length);
+  PD.load({ pipes: [], custom: [], equip: [] });
+  const sx = C.add({ kind: 'equipment', name: 'Stray', shape: 'box', w: 1000, d: 800, h: 1000, noz: [] }); PD.model.equip.push({ k: 'cu:' + sx.e.id, p: [0, 0, 0], r: 0 }); PD.rebuild(); C.del(sx.e.id);
+  C.imp(JSON.stringify({ custom: [{ id: sx.e.id, kind: 'inline', name: 'Inl', len: 200 }] })); PD.rebuild();
+  check('an inline import does not take the id of a placed equipment copy', PD.model.custom.length === 1 && PD.model.custom[0].id !== sx.e.id && PD.tags().equip[0] === 'EQ-1', JSON.stringify(PD.tags().equip));
 }
 
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
