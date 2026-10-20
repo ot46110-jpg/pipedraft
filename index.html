@@ -116,8 +116,8 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #isoInfo { background: var(--panel2, var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 #isoInfo[hidden] { display: none; }
 #isoInfo h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
-@media print { body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: fixed; inset: 0; background: #fff; overflow: visible; } #isoSheet svg { width: 100%; height: 100%; } }
-#isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; }
+@media print { body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: fixed; inset: 0; background: #fff; overflow: visible; } #isoSheet svg { width: 100% !important; height: 100% !important; } }
+#isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 #isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
 #status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font: 400 12px var(--font-data); color: var(--dim); }
 #status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -288,6 +288,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <button id="iso-style" aria-pressed="false">Symbols</button>
           <button id="iso-info" aria-pressed="false">Title block</button>
         </span>
+        <button id="iso-zo" aria-label="Zoom out">−</button><button id="iso-zf" aria-label="Fit the sheet">Fit</button><button id="iso-zi" aria-label="Zoom in">+</button>
         <button id="iso-pdf">Save PDF</button><button id="iso-print">Print</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
       <div id="isoInfo" hidden></div>
       <div id="isoSheet"></div>
@@ -3595,8 +3596,40 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('isoTools').hidden = !isIso; $('iso-print').hidden = false; if (!isIso) $('isoInfo').hidden = true;
     isoCur = svg; isoName = file; $('isoTitle').textContent = title;
     $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
+    isoZ = 1; applyIsoZoom();
     $('iso').hidden = false;
   }
+  // Zoom for every sheet: the svg is sized as a multiple of the window and the window scrolls, so one finger pans.
+  var isoZ = 1, ISO_ZMAX = 8;
+  function applyIsoZoom(cx, cy) {                                   // cx, cy: the point (in window pixels) that stays still while zooming
+    var box = $('isoSheet'), svg = box.querySelector ? box.querySelector('svg') : null; if (!svg) return;
+    var w0 = box.scrollWidth || 1, h0 = box.scrollHeight || 1, fx = (box.scrollLeft + (cx || 0)) / w0, fy = (box.scrollTop + (cy || 0)) / h0;
+    svg.style.width = (isoZ * 100) + '%'; svg.style.height = (isoZ * 100) + '%';
+    if (cx != null) { box.scrollLeft = fx * box.scrollWidth - cx; box.scrollTop = fy * box.scrollHeight - cy; }
+    else { box.scrollLeft = 0; box.scrollTop = 0; }
+    var z = $('iso-zf'); if (z) z.textContent = isoZ === 1 ? 'Fit' : Math.round(isoZ * 100) + '%';
+  }
+  function zoomIso(f, cx, cy) {
+    var box = $('isoSheet'), r = box.getBoundingClientRect ? box.getBoundingClientRect() : { width: 0, height: 0 };
+    isoZ = Math.min(ISO_ZMAX, Math.max(1, isoZ * f)); if (isoZ < 1.02) isoZ = 1;
+    applyIsoZoom(cx != null ? cx : r.width / 2, cy != null ? cy : r.height / 2);
+  }
+  $('iso-zi').onclick = function () { zoomIso(1.5); };
+  $('iso-zo').onclick = function () { zoomIso(1 / 1.5); };
+  $('iso-zf').onclick = function () { isoZ = 1; applyIsoZoom(); };
+  (function () {                                                    // two-finger pinch and ctrl+wheel (trackpad pinch) on the sheet
+    var box = $('isoSheet'), ptrs = {}, last = 0;
+    function dist() { var k = Object.keys(ptrs); if (k.length < 2) return 0; var a = ptrs[k[0]], b = ptrs[k[1]]; return Math.hypot(a.x - b.x, a.y - b.y); }
+    box.addEventListener('pointerdown', function (e) { ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; last = dist(); });
+    box.addEventListener('pointermove', function (e) {
+      if (!ptrs[e.pointerId]) return; ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var d = dist(); if (!d || !last) return;
+      var k = Object.keys(ptrs), r = box.getBoundingClientRect();
+      zoomIso(d / last, (ptrs[k[0]].x + ptrs[k[1]].x) / 2 - r.left, (ptrs[k[0]].y + ptrs[k[1]].y) / 2 - r.top); last = d;
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) { box.addEventListener(n, function (e) { delete ptrs[e.pointerId]; last = dist(); }); });
+    box.addEventListener('wheel', function (e) { if (!e.ctrlKey) return; e.preventDefault(); var r = box.getBoundingClientRect(); zoomIso(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  })();
   $('isoBtn').onclick = function () { $('more').hidden = true; refreshIso(); };
   $('iso-line').onchange = function () { isoOpts.ln = this.value; refreshIso(); };
   $('iso-view').onchange = function () { isoOpts.view = this.value; refreshIso(); };
@@ -3616,7 +3649,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var v = String(t.value).trim();
     if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'from', 'to'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
     else model.title[k] = v;
-    save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open;
+    save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open; applyIsoZoom(0, 0);
   });
   $('hydBtn').onclick = showHyd;
   $('hyd-close').onclick = function () { $('hyd').hidden = true; };
