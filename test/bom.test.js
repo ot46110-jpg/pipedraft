@@ -1028,6 +1028,30 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const q = [];
   const fake = { toDataURL(t, qq) { q.push(qq); return 'data:image/jpeg;base64,' + 'A'.repeat(qq > 0.7 ? 50000 : qq > 0.4 ? 30000 : 100); } };
   check('picture encoding lowers the JPEG quality until it fits 40 KB', C.imgEncode(fake) !== '' && q.join() === '0.8,0.65' && C.imgEncode({ toDataURL: () => 'data:image/jpeg;base64,' + 'A'.repeat(90000) }) === '' && C.imgEncode({ toDataURL() { throw new Error('x'); } }) === '');
+  // hostile hand-edited save
+  const evil = '<script>x</script>"\' onfocus="x';
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }, { a: [4, 0, 0], b: [4, 0, 2], n: 4 }], custom: [{ id: 'q', name: '=' + evil, brand: '+cmd', model: '@x', len: 150 }],
+    items: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:q' }, { p: [1, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:a" onfocus="x' }, { p: [3, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:z', cl: 1e9, ck: 1e9, cn: '=big'.repeat(50), cp: '<i>' }] });
+  els['t-sel'].onclick(); tapOn([3, 0, 0]);
+  check('a cu: type with odd characters is dropped; a stale cache is clamped (length, K, text, tag prefix)', PD.model.items.length === 2 && C.ux()['cu:z'].len === 0.2 && C.ux()['cu:z'].k === 0 && C.ux()['cu:z'].name.length <= 40 && !/^[=+@]/.test(C.ux()['cu:z'].name) && C.ux()['cu:z'].prefix === 'I' && Number(PD.rows()[0][1].split(' ')[0]) > 0, JSON.stringify(PD.rows()[0]));
+  check('names lose a leading = + @ (CSV formula) and the inspector escapes option values', !/^[=+@]/.test(PD.model.custom[0].name) && !/^[=+@]/.test(PD.model.custom[0].brand) && !els['insp'].innerHTML.includes('onfocus="x'));
+  const many = []; for (let i = 0; i < 1000; i++) many.push({ id: 'i' + i, name: 'P' + i, len: 100 });
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], custom: many });
+  check('the library is capped at 300 entries on load, add, duplicate and import', PD.model.custom.length === 300 && C.add({ name: 'x', len: 100 }).err && C.dup('i0') === null && C.imp(JSON.stringify(many.map(e => ({ name: 'n' + e.id, len: 100 })))) === 0);
+  // a part longer than the pipe is reported
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], valves: [] });
+  const lg = C.add({ name: 'Long', len: 200 }).e; PD.model.items.push({ p: [1, 0, 0], d: [1, 0, 0], n: 4, t: 'cu:' + lg.id, s: 40 }); PD.rebuild();
+  check('no warning while it fits', !PD.warns().some(w => w.includes('does not fit')));
+  C.update(lg.id, { len: 3000 });
+  check('a part longer than the pipe left raises a warning', PD.warns().some(w => w.startsWith('Long (3000 mm) does not fit on pipe 1')), PD.warns().join('|'));
+  // storage: pictures make snapshots big
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }] });
+  const pic = 'data:image/jpeg;base64,' + 'A'.repeat(39000);
+  for (let i = 0; i < 30; i++) C.add({ name: 'P' + i, len: 100, img: pic });
+  Object.keys(memStore).forEach(k => delete memStore[k]);
+  for (let i = 0; i < 6; i++) { PD.model.pipes[0].b[0] = 4 + i; PD.backup(true); }
+  const bk = PD.backups();
+  check('backups with 30 pictures are limited in total size so the project still fits storage', bk.length >= 1 && bk.length <= 2 && bk.reduce((n, b) => n + b.json.length, 0) <= 2.5e6, String(bk.length));
 }
 
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }

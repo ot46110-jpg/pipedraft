@@ -480,9 +480,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var a = [c.brand, c.model].filter(Boolean).join(' ');
     return a + (c.wt > 0 ? (a ? ', ' : '') + c.wt + ' kg each' : '');
   }
+  var CU_MAX = 300;                                                 // entries per project: the panel and the Parts list render every one
+  function cuTxt(v) { return String(v == null ? '' : v).trim().replace(/^[=+@\t\r]+/, '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 40); }   // no leading = + @ so a CSV cell is never read as a formula
   function cuNum(v) { var t = String(v).trim().replace(',', '.'); return t === '' ? NaN : Number(t); }
   function cuValidate(f) {                                          // raw field values -> { e } or { err }
-    var e = { name: String(f.name == null ? '' : f.name).trim().slice(0, 40), brand: String(f.brand || '').trim().slice(0, 40), model: String(f.model || '').trim().slice(0, 40), kind: 'inline' };
+    var e = { name: cuTxt(f.name), brand: cuTxt(f.brand), model: cuTxt(f.model), kind: 'inline' };
     if (!e.name) return { err: 'Give the part a name' };
     var len = cuNum(f.len);
     if (!(len >= CU_LEN_MIN && len <= CU_LEN_MAX)) return { err: 'Length must be between ' + CU_LEN_MIN + ' and ' + CU_LEN_MAX + ' mm' };
@@ -538,6 +540,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function cuCount(id) { var n = 0; model.items.forEach(function (it) { if (it.t === 'cu:' + id) n++; }); return n; }
   function cuAdd(f) {                                               // new library entry from raw fields; returns { e } or { err }
     var v = cuValidate(f); if (!v.e) return v;
+    if (model.custom.length >= CU_MAX) return { err: 'The library is full (' + CU_MAX + ' parts)' };
     v.e.id = cuFresh(); if (cuImgOk(f.img)) v.e.img = f.img;
     pushHist(); model.custom.push(v.e); cuChanged(); return v;
   }
@@ -552,7 +555,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     pushHist(); if (u) e.img = u; else delete e.img; cuChanged(); return true;
   }
   function cuDup(id) {
-    var e = cuGet(id); if (!e) return null;
+    var e = cuGet(id); if (!e || model.custom.length >= CU_MAX) return null;
     var c = JSON.parse(JSON.stringify(e)); c.id = cuFresh(); c.name = (c.name + ' copy').slice(0, 40);
     pushHist(); model.custom.splice(model.custom.indexOf(e) + 1, 0, c); cuChanged(); return c;
   }
@@ -573,6 +576,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!e.id || same || add.some(function (x) { return x.id === e.id; })) e.id = cuFresh(add);
       add.push(e);
     });
+    add = add.slice(0, Math.max(0, CU_MAX - model.custom.length));
     if (add.length) { pushHist(); add.forEach(function (e) { model.custom.push(e); }); cuChanged(); }
     return add.length;
   }
@@ -584,7 +588,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!isCu(it.t)) return;
       var c = CUX[it.t];
       if (c) { it.cn = c.name; it.cb = c.brand; it.cm = c.model; it.cl = Math.round(c.len * 1000); it.ck = c.k; it.cp = c.prefix; }
-      else CUX[it.t] = { name: it.cn || 'Custom part', brand: it.cb || '', model: it.cm || '', len: (it.cl > 0 ? it.cl : 200) / 1000, wt: 0, k: it.ck || 0, prefix: it.cp || 'CU', img: '', lib: false };
+      else {                                                        // the entry is gone: use what the item cached, cleaned the way a library entry is
+        var cl = Number(it.cl), ck = Number(it.ck), cp = String(it.cp || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+        CUX[it.t] = { name: cuTxt(it.cn) || 'Custom part', brand: cuTxt(it.cb), model: cuTxt(it.cm), len: (cl >= CU_LEN_MIN && cl <= CU_LEN_MAX ? cl : 200) / 1000, wt: 0, k: ck >= 0 && ck <= 1000 ? ck : 0, prefix: cp || 'CU', img: '', lib: false };
+      }
     });
     Object.keys(SYM).forEach(function (k) { if (isCu(k)) { delete SYM[k]; delete ISOS[k]; delete ISOA[k]; } });
     Object.keys(CUX).forEach(function (k) {
@@ -643,14 +650,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.valves = (m.valves || []).map(function (v) { v.s = v.s || 40; v.k = v.k || 'gate'; return v; });
     o.flanges = (m.flanges || []).map(function (f) { f.s = f.s || 40; f.t = f.t || 'wn'; return f; });
     o.caps = m.caps || []; o.equip = m.equip || [];
-    o.items = (m.items || []).map(function (it) { it.s = it.s || 40; return it; });
+    o.items = (m.items || []).filter(function (it) { return it && typeof it === 'object' && !(isCu(it.t) && !/^cu:[A-Za-z0-9_-]{1,24}$/.test(it.t)); }).map(function (it) { it.s = it.s || 40; return it; });   // a cu: type with odd characters can only come from a hand-edited file
     o.instr = (m.instr || []).filter(function (q) { return INSTR[q.k]; });
     o.supports = (m.supports || []).filter(function (q) { return SUPPORT_NAME[q.t]; });
     o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
     o.fit = m.fit || {}; o.field = m.field || {}; o.title = m.title || {}; o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, m.spec || {});
     (Array.isArray(m.custom) ? m.custom : []).forEach(function (r) {   // the custom parts library; a bad entry is dropped, a missing or repeated id gets a new one
-      var e = cuClean(r); if (!e) return;
+      var e = cuClean(r); if (!e || o.custom.length >= CU_MAX) return;
       if (!e.id || o.custom.some(function (x) { return x.id === e.id; })) e.id = cuFresh(o.custom);
       o.custom.push(e);
     });
@@ -658,7 +665,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- storage ----------
-  var BK = 'pipedraft.backups.v1', BK_KEEP = 8, BK_EVERY = 120000, saveFailed = false;
+  var BK = 'pipedraft.backups.v1', BK_KEEP = 8, BK_CHARS = 1.2e6, BK_EVERY = 120000, saveFailed = false;
   function save() {
     try { localStorage.setItem(STORE, JSON.stringify(model)); saveFailed = false; }
     catch (e) { if (!saveFailed) { saveFailed = true; try { toast('This device could not store the project. Save a .json file from the File menu.'); } catch (e2) {} } return; }
@@ -672,6 +679,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!force && list[0] && Date.now() - list[0].t < BK_EVERY) return;
     list.unshift({ t: Date.now(), json: s, n: model.pipes.length });
     list = list.slice(0, BK_KEEP);
+    for (var q = 0, tot = 0; q < list.length; q++) { tot += list[q].json.length; if (tot > BK_CHARS && q > 0) { list = list.slice(0, q); break; } }   // pictures make a snapshot big, and the project itself must still fit the same storage
     for (var k = 0; k < 3; k++) { try { localStorage.setItem(BK, JSON.stringify(list)); return; } catch (e) { list = list.slice(0, Math.max(1, Math.floor(list.length / 2))); } }
   }
   function backupsHtml() {
@@ -1258,7 +1266,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       add('item', (isCu(it.t) ? cuDesc(it.t) : ITEM_NAME[it.t] || it.t) + ', ' + sz(it.n), 1, 'pc', isCu(it.t) ? cuNote(it.t) : '');
       add('pipe', 'Pipe, ' + sz(it.n) + ' SCH ' + (it.s || 40) + ', ' + pipeEnd(it.n), -L, 'm');
       total -= L; weight -= L * lineWeight(it.n, it.s || 40);
-      var hi = hostOf(it.p); if (hi >= 0) pipeLen[hi] = Math.max(0, (pipeLen[hi] || 0) - L);
+      var hi = hostOf(it.p);
+      if (hi >= 0 && isCu(it.t) && (pipeLen[hi] || 0) < L - 0.0005) warns.push(cuDesc(it.t).split(',')[0] + ' (' + Math.round(L * 1000) + ' mm) does not fit on pipe ' + (hi + 1) + ': shorten it, move it, or lengthen the pipe. The pipe quantity and cut list are not reliable until then.');
+      if (hi >= 0) pipeLen[hi] = Math.max(0, (pipeLen[hi] || 0) - L);
     });
 
     // Supports: shoe, guide and anchor stand on a post to the floor, hangers drop from above.
@@ -1651,7 +1661,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- editing ----------
-  function pushHist() { hist.push(JSON.stringify(model)); if (hist.length > 100) hist.shift(); }
+  function pushHist() {
+    hist.push(JSON.stringify(model)); if (hist.length > 100) hist.shift();
+    for (var i = hist.length - 1, tot = 0; i > 0; i--) { tot += hist[i].length; if (tot > 30e6) { hist.splice(0, i); break; } }   // pictures make a snapshot big: keep the last 30 MB of them, not 100 copies
+  }
   function changed() { sample = false; $('mode').textContent = 'My layout'; save(); rebuild(); updateUi(); }
 
   function resizeRun(idx, n, entryEnd) {                            // give one pipe and the run beyond it a new size
@@ -2336,7 +2349,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- inspector ----------
-  function opts(list, cur) { return list.map(function (v) { return '<option value="' + v[0] + '"' + (String(v[0]) === String(cur) ? ' selected' : '') + '>' + v[1] + '</option>'; }).join(''); }
+  function opts(list, cur) { return list.map(function (v) { return '<option value="' + esc(v[0]) + '"' + (String(v[0]) === String(cur) ? ' selected' : '') + '>' + v[1] + '</option>'; }).join(''); }
   var SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
   function showInsp() {
     var el = $('insp');
