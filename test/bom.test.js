@@ -1054,5 +1054,142 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('backups with 30 pictures are limited in total size so the project still fits storage', bk.length >= 1 && bk.length <= 2 && bk.reduce((n, b) => n + b.json.length, 0) <= 2.5e6, String(bk.length));
 }
 
+// Custom equipment (phase 2): library entries of kind 'equipment', placed through the Equipment tool as model.equip {k:'cu:'+id}.
+{
+  const C = PD.custom, E = 'cu:';
+  const six = [
+    { x: 1000, y: 200, z: 700, dir: '+X', n: 4 }, { x: -1000, y: -200, z: 700, dir: '-X', n: 3 }, { x: 300, y: 500, z: 800, dir: '+Y', n: 2 },
+    { x: -300, y: -500, z: 800, dir: '-Y', n: 2 }, { x: 100, y: 100, z: 1500, dir: '+Z', n: 4 }, { x: -100, y: 0, z: 0, dir: '-Z', n: 1.5 }];
+  const box = { kind: 'equipment', name: 'Skid A', brand: 'Acme', model: 'K-9', shape: 'box', w: 2000, d: 1000, h: 1500, col: 2, prefix: 'sk!', wt: 800, noz: six };
+  const base = { kind: 'equipment', shape: 'box', w: 1000, d: 800, h: 1200 };
+  PD.load({ pipes: [], valves: [] });
+  const bad = [{ name: '' }, { name: 'x', w: 50 }, { name: 'x', w: 20001 }, { name: 'x', w: 'abc' }, { name: 'x', h: 99 }, { name: 'x', shape: 'sphere' }, { name: 'x', wt: -1 },
+    { name: 'x', noz: Array(9).fill(six[0]) }, { name: 'x', noz: [{ x: 'a', y: 0, z: 0, dir: '+X', n: 4 }] }, { name: 'x', noz: [{ x: 0, y: 0, z: 0, dir: '+Q', n: 4 }] }, { name: 'x', noz: [{ x: Infinity, y: 0, z: 0, dir: '+X', n: 4 }] }, { name: 'x', noz: [{ x: 0, y: 0, z: 0, dir: '+X' }] }];
+  check('equipment: bad input is refused with a message and adds nothing', bad.every(f => { const r = C.add(Object.assign({}, base, f)); return r.err && !r.e; }) && PD.model.custom.length === 0, JSON.stringify(bad.map(f => C.validate(Object.assign({}, base, f)).err)));
+  const r1 = C.add(box), id = r1.e && r1.e.id, key = E + id;
+  check('equipment: add cleans fields (prefix upper case, integers, kind)', r1.e && r1.e.kind === 'equipment' && r1.e.prefix === 'SK' && r1.e.noz.length === 6 && r1.e.w === 2000 && r1.e.col === 2 && r1.e.wt === 800 && PD.model.custom.length === 1);
+  check('equipment: it is a chip in Parts > Equipment, not in Custom', C.eqParts().length === 3 && C.eqParts()[2][0] === key && C.eqParts()[2][1].includes('Skid A') && C.eqParts()[2][1].includes('Acme K-9') && C.parts().length === 0, JSON.stringify(C.eqParts()));
+  check('equipment: an out-of-range nozzle is clamped to 500 mm outside the outline', C.update(id, { noz: [{ x: 9999, y: -9999, z: 99999, dir: '+X', n: 4 }] }).e && JSON.stringify(PD.model.custom[0].noz[0]) === JSON.stringify({ x: 1500, y: -1000, z: 2000, dir: '+X', n: 4 }), JSON.stringify(PD.model.custom[0].noz));
+  C.update(id, { noz: six });
+  check('equipment: a bad update leaves the entry unchanged', C.update(id, { h: 5 }).err && PD.model.custom[0].h === 1500 && C.update(id, { noz: [{ x: 1, y: 1, z: 1, dir: 'up', n: 4 }] }).err && PD.model.custom[0].noz.length === 6);
+  // place it the way a finger does
+  els['t-parts'].onclick();
+  L.parts.click({ target: { closest: () => ({ dataset: { chip: key, cat: 'equip' } }) } });
+  tapOn([3, 0, 2]);
+  const q0 = PD.model.equip[0];
+  check('tapping the grid with the chip places equipment with k = cu:id', PD.model.equip.length === 1 && q0.k === key && q0.r === 0 && Math.abs(q0.p[0] - 3) < 1 && Math.abs(q0.p[2] - 2) < 1 && q0.p[1] === PD.elevNow(), JSON.stringify(PD.model.equip));
+  check('BOM row: name, brand and model, quantity 1, brand model and weight in the standard column', PD.rows().some(r => r[0] === 'Skid A, Acme K-9' && r[1] === '1' && r[2] === 'Acme K-9, 800 kg each'), JSON.stringify(PD.rows()));
+  check('the tag uses the prefix', PD.tags().equip[0] === 'SK-1');
+  // nozzle positions: all four rotations, all six directions
+  const DIRV = { '+X': [1, 0, 0], '-X': [-1, 0, 0], '+Y': [0, 0, 1], '-Y': [0, 0, -1], '+Z': [0, 1, 0], '-Z': [0, -1, 0] };
+  const rotv = (v, r) => { const t = r * Math.PI / 2, c = Math.round(Math.cos(t)), s = Math.round(Math.sin(t)); return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c]; };
+  let posOk = true, msg = '';
+  for (let r = 0; r < 4; r++) {
+    PD.model.equip[0].r = r; PD.rebuild();
+    const nzs = PD.nozzles().filter(z => z.e === 0);
+    if (nzs.length !== 6) { posOk = false; msg += 'count ' + nzs.length; }
+    six.forEach((s, i) => {
+      const lp = rotv([s.x / 1000, s.z / 1000, s.y / 1000], r), ld = rotv(DIRV[s.dir], r), z = nzs[i];
+      const wantP = [q0.p[0] + lp[0], q0.p[1] + lp[1], q0.p[2] + lp[2]];
+      if (!z || [z.p.x, z.p.y, z.p.z].some((v, k) => Math.abs(v - wantP[k]) > 1e-6) || [z.d.x, z.d.y, z.d.z].some((v, k) => Math.abs(v - ld[k]) > 1e-6) || z.n !== s.n || z.idx !== i) { posOk = false; msg += ' r' + r + 'N' + (i + 1); }
+    });
+  }
+  check('nozzle positions and directions are right for 4 rotations x 6 directions', posOk, msg);
+  PD.model.equip[0].r = 0; PD.rebuild();
+  check('the +X nozzle at rotation 0 is where the CAD numbers say (x 1000, y 200, z 700 from the base)', (() => { const z = PD.nozzles()[0], b = PD.model.equip[0].p; return Math.abs(z.p.x - (b[0] + 1)) < 1e-9 && Math.abs(z.p.z - (b[2] + 0.2)) < 1e-9 && Math.abs(z.p.y - (b[1] + 0.7)) < 1e-9; })());
+  // a pipe snaps to a nozzle
+  const ax = PD.model.equip[0].p;
+  PD.startAtNozzle(PD.nozzles()[0]);
+  check('a run starts on the custom nozzle and leaves along its axis', PD.model.pipes.length === 1 && PD.cursor()[0] > ax[0] + 1.2 && Math.abs(PD.cursor()[1] - (ax[1] + 0.7)) < 1e-9, JSON.stringify(PD.model.pipes));
+  const arr3 = z => [z.p.x, z.p.y, z.p.z].map(v => Math.round(v * 1000) / 1000);
+  PD.routeTo(PD.cursor(), arr3(PD.nozzles()[1]), PD.nozzles()[1]); PD.rebuild();
+  check('a nozzle-to-nozzle route ends on the second nozzle; a size mismatch is reported', PD.cursor() === null && PD.warns().some(w => w.includes('skid a nozzle N2 is NPS 3 but the pipe is NPS 4') || w.includes('Skid A nozzle N2 is NPS 3 but the pipe is NPS 4')), PD.warns().join('|'));
+  // clash
+  const lib0 = JSON.parse(JSON.stringify(PD.model.custom[0]));
+  PD.load({ pipes: [{ a: [-3, 0.7, 0], b: [3, 0.7, 0], n: 4 }], equip: [{ k: key, p: [0, 0, 0], r: 0 }], custom: [lib0] });
+  check('a pipe through the body clashes with the equipment', PD.clashes().some(c => c.kind === 'equip' && c.text.includes('SK-1')), JSON.stringify(PD.clashes()));
+  PD.load({ pipes: [{ a: [1, 0.7, 0.2], b: [3, 0.7, 0.2], n: 4 }], equip: [{ k: key, p: [0, 0, 0], r: 0 }], custom: [lib0] });
+  check('a pipe starting at a nozzle does not clash', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+  PD.load({ pipes: [{ a: [-3, 2, 0], b: [3, 2, 0], n: 4 }], equip: [{ k: key, p: [0, 0, 0], r: 0 }], custom: [lib0] });
+  check('a pipe above the body does not clash', PD.clashes().length === 0);
+  PD.load({ pipes: [{ a: [0, 0.7, -3], b: [0, 0.7, 3], n: 4 }, { a: [1.5, 0.7, -3], b: [1.5, 0.7, 3], n: 4 }], equip: [{ k: key, p: [0, 0, 0], r: 0 }], custom: [lib0] });
+  check('unrotated the body is 2000 wide in X and 1000 deep: a pipe along Z at x 0 clashes, one at x 1.5 clears it', PD.clashes().length === 1);
+  PD.load({ pipes: [{ a: [0, 0.7, -3], b: [0, 0.7, 3], n: 4 }, { a: [1.5, 0.7, -3], b: [1.5, 0.7, 3], n: 4 }, { a: [-3, 1.8, 0.8], b: [3, 1.8, 0.8], n: 4 }], equip: [{ k: key, p: [0, 0, 0], r: 1 }], custom: [lib0] });
+  check('rotated 90 degrees the body is 1000 wide in X and 2000 long in Z: the pipe along Z still clashes, x 1.5 clears, a pipe along X above the 1500 body clears it', PD.clashes().length === 1, JSON.stringify(PD.clashes().map(c => c.text)));
+  // cylinder
+  const rc = C.add({ kind: 'equipment', name: 'Tank', shape: 'cyl', dia: 1200, h: 2500, col: 1, prefix: 'TK', noz: [{ x: 0, y: 0, z: 2500, dir: '+Z', n: 4 }, { x: 600, y: 0, z: 300, dir: '+X', n: 3 }, { x: 0, y: -600, z: 300, dir: '-Y', n: 3 }] });
+  const ckey = E + rc.e.id, cust = [JSON.parse(JSON.stringify(rc.e))];
+  PD.load({ pipes: [{ a: [-3, 1, 0.5], b: [3, 1, 0.5], n: 4 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }], custom: cust });
+  check('cylinder: a pipe through the body clashes', PD.clashes().some(c => c.kind === 'equip'));
+  PD.load({ pipes: [{ a: [-3, 1, 0.7], b: [3, 1, 0.7], n: 4 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }], custom: cust });
+  check('cylinder: a pipe passing outside the radius does not clash', PD.clashes().length === 0, JSON.stringify(PD.clashes()));
+  PD.load({ pipes: [{ a: [0, 2.5, 0], b: [0, 4, 0], n: 4 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }], custom: cust });
+  check('cylinder: a pipe leaving the top nozzle has no clash and no warning about the axis', PD.clashes().length === 0 && PD.warns().filter(w => w.includes('Tank')).length === 0, PD.warns().join('|'));
+  check('cylinder: BOM and tag', PD.rows().some(r => r[0] === 'Tank' && r[1] === '1') && PD.tags().equip[0] === 'TK-1');
+  // instrument on equipment, iso, P&ID
+  PD.load({ pipes: [{ a: [0, 2.5, 0], b: [0, 4, 0], n: 4 }, { a: [0.6, 0.3, 0], b: [3, 0.3, 0], n: 3 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }, { k: key, p: [6, 0, 0], r: 0 }], custom: cust.concat([lib0]),
+    instr: [{ k: 'LT', eq: 0, p: [0.6, 1.5, 0], num: 101 }] });
+  check('an instrument mounted on custom equipment is in the BOM and keeps its tag', has('Level transmitter LT-101 | 1'), rows());
+  const isoE = PD.iso('', 0, true, 'sym'), pidE = PD.pid();
+  check('the iso sheet draws custom equipment with its tag and nozzle numbers', isoE && isoE.includes('>TK-1<') && isoE.includes('>SK-1<') && isoE.includes('>N1<') && !isoE.includes('NaN'));
+  check('the P&ID sheet draws custom equipment with its tag', pidE && pidE.includes('>TK-1<') && pidE.includes('>SK-1<') && !pidE.includes('NaN') && !pidE.includes('undefined'));
+  check('DXF and CSV still work with custom equipment', PD.dxf().includes('EQUIPMENT') && PD.csv().includes('Tank'));
+  // group move refused when tied
+  PD.load({ pipes: [{ a: [0.6, 0.3, 0], b: [3, 0.3, 0], n: 3 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }], custom: cust });
+  check('piping tied to custom equipment cannot be moved as a group', PD.group.move(0, 100, 0, 0) === false && PD.group.rotate(0) === false && PD.model.pipes[0].a[0] === 0.6);
+  // editing the entry moves the nozzle and every placed copy follows; the pipe stays and a toast counts it
+  PD.load({ pipes: [{ a: [0.6, 0.3, 0], b: [3, 0.3, 0], n: 3 }], equip: [{ k: ckey, p: [0, 0, 0], r: 0 }, { k: ckey, p: [0, 0, 5], r: 0 }], custom: cust });
+  const z1 = () => PD.nozzles().filter(z => z.idx === 1).map(z => [z.p.x, z.p.y, z.p.z]);
+  check('before the edit: N2 of both copies is at x 0.6', Math.abs(z1()[0][0] - 0.6) < 1e-9 && Math.abs(z1()[1][2] - 5) < 1e-9);
+  els.toast.textContent = '';
+  const cid = ckey.slice(3), noz2 = PD.model.custom.find(e => e.id === cid).noz.map(z => Object.assign({}, z));
+  noz2[1].x = 400; noz2[1].z = 1000;
+  C.update(cid, { noz: noz2 });
+  check('editing the nozzle moves it on every placed copy', Math.abs(z1()[0][0] - 0.4) < 1e-9 && Math.abs(z1()[0][1] - 1) < 1e-9 && Math.abs(z1()[1][0] - 0.4) < 1e-9, JSON.stringify(z1()));
+  check('the pipe that was on the nozzle is kept and a toast says how many ends were left', PD.model.pipes.length === 1 && /1 pipe end is no longer on a nozzle/.test(els.toast.textContent), els.toast.textContent);
+  C.update(cid, { dia: 2000, h: 3000 });
+  check('editing the size updates the instances', PD.model.equip.every(e => e.cu.dia === 2000 && e.cu.h === 3000));
+  C.update(cid, { noz: noz2.slice(0, 1) });
+  check('removing nozzles keeps the pipe', PD.model.pipes.length === 1 && PD.nozzles().filter(z => z.e >= 0).length === 2);
+  // delete the entry
+  const before = JSON.stringify(PD.nozzles().map(z => [z.p.x, z.p.y, z.p.z, z.n]));
+  const nDel = C.del(cid);
+  check('deleting the entry reports the placed copies and keeps them working', nDel === 2 && PD.model.custom.length === 0 && PD.model.equip.length === 2 && JSON.stringify(PD.nozzles().map(z => [z.p.x, z.p.y, z.p.z, z.n])) === before && PD.rows().some(r => r[0] === 'Tank' && r[1] === '2'), String(nDel));
+  check('deleted equipment still draws on the iso and P&ID', PD.iso('', 0, true, 'sym').includes('>TK-1<') && PD.pid().includes('>TK-2<'));
+  els['t-parts'].onclick(); L.parts.click({ target: { closest: () => ({ dataset: { chip: ckey, cat: 'equip' } }) } });
+  tapOn([8, 0, 8]);
+  check('a deleted entry cannot be placed again', PD.model.equip.length === 2 && /not in the library/.test(els.toast.textContent), els.toast.textContent);
+  // round trip
+  const saved = JSON.stringify(PD.model), nz0 = JSON.stringify(PD.nozzles().map(z => [z.p.x, z.p.y, z.p.z, z.n]));
+  PD.load(JSON.parse(saved));
+  check('save and open keeps the equipment, the cache and the nozzles', JSON.stringify(PD.model.equip.map(e => e.k)) === JSON.stringify([ckey, ckey]) && JSON.stringify(PD.nozzles().map(z => [z.p.x, z.p.y, z.p.z, z.n])) === nz0);
+  // old saves
+  PD.load({ pipes: [], valves: [], equip: [{ k: 'pump', p: [0, 0, 0] }, { k: 'vessel', p: [5, 0, 0], r: 1 }] });
+  check('an old save with plain pump and vessel still loads', PD.model.equip.length === 2 && PD.model.equip[0].r === 0 && PD.nozzles().length === 5);
+  // hostile
+  PD.load({ pipes: [], equip: [{ k: 'cu:bad id', p: [0, 0, 0], r: 0 }, { k: 'cu:nolib', p: [1, 0, 0], r: 0 }, { k: 'constructor', p: [0, 0, 0] }, { k: '__proto__', p: [0, 0, 0] }, { k: 'pump', p: [NaN, 0, 0] }, { k: 'pump', p: 'x' }, null, { k: 'pump', p: [2, 0, 0], r: 7.4 }],
+    instr: [{ k: 'LT', eq: 0, p: [0, 1, 0] }, { k: 'LT', eq: 7, p: [2, 1, 0], num: 105 }] });
+  check('hand-edited equipment with a bad id, no library entry, a prototype name or a bad position is dropped; the rest is kept with r 0..3', PD.model.equip.length === 1 && PD.model.equip[0].k === 'pump' && PD.model.equip[0].r === 3, JSON.stringify(PD.model.equip));
+  check('instruments follow the equipment indexes and those on dropped equipment go', PD.model.instr.length === 1 && PD.model.instr[0].eq === 0 && PD.model.instr[0].num === 105, JSON.stringify(PD.model.instr));
+  const evil = { id: 'h', kind: 'equipment', name: '=cmd', brand: '+x', model: '@y', shape: 'cyl', w: 1e12, d: -5, dia: 1e9, h: 'abc', col: 99, wt: 'x', prefix: '<b>', img: 'javascript:alert(1)',
+    noz: Array.from({ length: 30 }, (_, i) => ({ x: 1e12, y: -1e12, z: i * 1e9, dir: i % 2 ? '+z' : '-X', n: 99 })).concat([{ x: 0, y: 0, z: 0, dir: '+Q', n: 4 }, null, 5, { x: NaN, y: 0, z: 0, dir: '+X', n: 4 }, { x: 0, y: 0, z: 0, dir: '__proto__', n: 4 }]) };
+  PD.load({ pipes: [], custom: [evil, { id: 'k', kind: 'weird', name: 'x', len: 100 }, { id: 'j', kind: 'equipment', name: '', w: 100 }], equip: [{ k: 'cu:h', p: [0, 0, 0] }] });
+  const h = PD.model.custom[0];
+  check('hostile equipment values are clamped: 8 nozzles, in range, sane texts, a legal colour, no unknown kinds', PD.model.custom.length === 1 && h.noz.length === 8 && h.w === 20000 && h.d === 100 && h.dia === 20000 && h.h === 1200 && h.col === 0 && h.wt === 0 && !/^[=+@]/.test(h.name) && h.prefix === 'B' && !h.img
+    && h.noz.every(z => Math.hypot(z.x, z.y) <= 10501 && z.z >= -500 && z.z <= 20500 && z.n === 12 && /^[+-][XYZ]$/.test(z.dir)), JSON.stringify(h));
+  check('and the equipment built from it is placed with 8 nozzles', PD.model.equip.length === 1 && PD.nozzles().filter(z => z.e === 0).length === 8);
+  // hostile cache on a placed copy whose entry is missing
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4 }], equip: [{ k: 'cu:ghost', p: [3, 0, 0], r: 0, cu: { name: '=Ghost', shape: 'box', w: 1e9, d: 1e9, h: 1e9, noz: Array(50).fill({ x: 1e9, y: 1e9, z: 1e9, dir: '+X', n: 4 }), junk: 'x'.repeat(100000) } }] });
+  const gc = PD.model.equip[0] && PD.model.equip[0].cu;
+  check('a cached copy without a library entry is clamped and bounded', gc && gc.w === 20000 && gc.noz.length === 8 && !('junk' in gc) && !/^=/.test(gc.name) && JSON.stringify(gc).length < 2000, JSON.stringify(gc));
+  // duplicate and the panel
+  PD.load({ pipes: [] });
+  const d1 = C.add(box), dd = C.dup(d1.e.id);
+  check('duplicate makes a separate equipment entry with the same nozzles', dd && dd.id !== d1.e.id && dd.kind === 'equipment' && dd.noz.length === 6 && dd.name === 'Skid A copy');
+  const cuOpenCard = C.html();
+  check('the panel list shows equipment size and nozzle count', cuOpenCard.includes('Equipment 2000×1000×1500 mm') && cuOpenCard.includes('6 nozzles'), cuOpenCard.slice(0, 600));
+  check('an inline add still works next to equipment and keeps the two kinds apart', C.add({ name: 'Inline Z', len: 100 }).e && C.parts().length === 1 && C.eqParts().length === 4);
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

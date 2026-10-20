@@ -141,7 +141,10 @@ html { overscroll-behavior: none; }
 body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior: none; }
 /* hydraulics sheet */
 #hyd, #cu { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
-#hyd header, #cu header { display: flex; align-items: center; gap: 8px; }
+#hyd header, #cu header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cu-noz { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 6px 0; padding: 6px 0; border-top: 1px dashed var(--line); }
+.cu-noz b { align-self: center; min-width: 32px; font: 600 13px var(--font-data); }
+.cu-noz .field { min-width: 78px; flex: 1 1 78px; }
 #hyd header h2, #cu header h2 { margin: 0 auto 0 0; }
 #hydBody, #cuBody { flex: 1; min-height: 0; overflow: auto; -webkit-user-select: text; user-select: text; }
 .scroll { overflow-x: auto; margin-bottom: 12px; }
@@ -326,7 +329,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div id="llBody"></div>
     </section>
     <section id="cu" class="sheet" hidden aria-label="Custom parts">
-      <header><h2>Custom parts</h2><button id="cu-add">Add part</button><button id="cu-close">Close</button></header>
+      <header><h2>Custom parts</h2><button id="cu-add">Add inline part</button><button id="cu-addeq">Add equipment</button><button id="cu-close">Close</button></header>
       <div id="cuBody"></div>
     </section>
     <div id="toast" role="status"></div>
@@ -481,6 +484,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function cuTxt(v) { return String(v == null ? '' : v).trim().replace(/^[=+@\t\r]+/, '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 40); }   // no leading = + @ so a CSV cell is never read as a formula
   function cuNum(v) { var t = String(v).trim().replace(',', '.'); return t === '' ? NaN : Number(t); }
   function cuValidate(f) {                                          // raw field values -> { e } or { err }
+    if (f && f.kind === 'equipment') return eqValidate(f, true);
     var e = { name: cuTxt(f.name), brand: cuTxt(f.brand), model: cuTxt(f.model), kind: 'inline' };
     if (!e.name) return { err: 'Give the part a name' };
     var len = cuNum(f.len);
@@ -527,14 +531,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function cuFresh(extra) { var id; do { id = 'c' + Math.floor(Math.random() * 1e9).toString(36); } while (model.custom.concat(extra || []).some(function (e) { return e.id === id; })); return id; }
   function cuClean(e) {                                             // an entry from a file or an old save, or null when it is not usable
     if (!e || typeof e !== 'object') return null;
-    var v = cuValidate({ name: e.name, brand: e.brand, model: e.model, len: e.len, wt: e.wt, k: e.k, prefix: e.prefix });
+    if (e.kind != null && e.kind !== 'inline' && e.kind !== 'equipment') return null;
+    var v = e.kind === 'equipment' ? eqValidate(e, false) : cuValidate({ name: e.name, brand: e.brand, model: e.model, len: e.len, wt: e.wt, k: e.k, prefix: e.prefix });
     if (!v.e) return null;
     var o = v.e; o.id = typeof e.id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(e.id) ? e.id : '';
     if (cuImgOk(e.img)) o.img = e.img;
     return o;
   }
   function cuGet(id) { return model.custom.filter(function (x) { return x.id === id; })[0]; }
-  function cuCount(id) { var n = 0; model.items.forEach(function (it) { if (it.t === 'cu:' + id) n++; }); return n; }
+  function cuCount(id) { var n = 0; model.items.forEach(function (it) { if (it.t === 'cu:' + id) n++; }); model.equip.forEach(function (q) { if (q.k === 'cu:' + id) n++; }); return n; }
   function cuAdd(f) {                                               // new library entry from raw fields; returns { e } or { err }
     var v = cuValidate(f); if (!v.e) return v;
     if (model.custom.length >= CU_MAX) return { err: 'The library is full (' + CU_MAX + ' parts)' };
@@ -544,7 +549,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function cuUpdate(id, f) {
     var e = cuGet(id); if (!e) return { err: 'That part no longer exists' };
     var v = cuValidate(Object.assign({}, e, f)); if (!v.e) return v;
-    pushHist(); Object.assign(e, v.e); cuChanged(true); return { e: e };
+    var before = e.kind === 'equipment' ? nozPipes('cu:' + id) : 0;
+    pushHist(); Object.assign(e, v.e); cuChanged(true);
+    if (before) { var after = nozPipes('cu:' + id); if (after < before) toast((before - after) + ' pipe end' + (before - after === 1 ? ' is' : 's are') + ' no longer on a nozzle. The pipe stays; move it or the nozzle back.'); }
+    return { e: e };
   }
   function cuSetImg(id, u) {
     var e = cuGet(id); if (!e) return false;
@@ -577,10 +585,79 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (add.length) { pushHist(); add.forEach(function (e) { model.custom.push(e); }); cuChanged(); }
     return add.length;
   }
+  // Custom equipment (kind 'equipment' in model.custom): a box or vertical cylinder with up to 8 nozzles, placed with the Equipment tool as
+  // model.equip {k:'cu:'+id, p, r}. Nozzle x, y, z are mm from the middle of the base in the equipment's own frame (CAD axes, z up); dir points out
+  // of the equipment. CEQ maps each type in use to a def shaped like an EQUIP entry (in scene metres), built by syncCustom(). Every placed copy
+  // caches the cleaned entry in q.cu (bounded: 8 nozzles, 40 character texts) so it survives deleting the library entry.
+  var EQ_MIN = 100, EQ_MAX = 20000, EQ_NOZ = 8, EQ_OVER = 500, CEQ = {};
+  var EQ_COL = [0x5f7a88, 0x4f8a5b, 0xa65f3d, 0x7a65a8, 0xb8902f, 0x8b9399], EQ_COLN = ['Steel', 'Green', 'Rust', 'Violet', 'Ochre', 'Grey'];
+  var EQ_DIRS = { '+X': [1, 0, 0], '-X': [-1, 0, 0], '+Y': [0, 0, 1], '-Y': [0, 0, -1], '+Z': [0, 1, 0], '-Z': [0, -1, 0] };   // CAD direction as a scene vector (scene Y is up)
+  function eqNearNps(v) { var best = 4; if (isFinite(v)) NPS_LIST.forEach(function (s) { if (Math.abs(s - v) < Math.abs(best - v)) best = s; }); return best; }
+  function eqValidate(f, strict) {                                  // raw fields -> { e } or { err }; strict (the panel) refuses, lenient (files, saves) clamps or drops
+    var e = { name: cuTxt(f.name), brand: cuTxt(f.brand), model: cuTxt(f.model), kind: 'equipment' };
+    if (!e.name) return { err: 'Give the equipment a name' };
+    e.shape = f.shape === 'cyl' ? 'cyl' : 'box';
+    if (strict && f.shape != null && f.shape !== 'box' && f.shape !== 'cyl') return { err: 'Shape must be box or cylinder' };
+    var bad = '';
+    function dim(k, label, def, used) {
+      var x = cuNum(f[k]);
+      if (!isFinite(x) || x < EQ_MIN || x > EQ_MAX) { if (strict && used) bad = bad || label + ' must be between ' + EQ_MIN + ' and ' + EQ_MAX + ' mm'; x = isFinite(x) ? Math.min(EQ_MAX, Math.max(EQ_MIN, x)) : def; }
+      return Math.round(x);
+    }
+    var cyl = e.shape === 'cyl';
+    e.w = dim('w', 'Width', 1000, !cyl); e.d = dim('d', 'Depth', 800, !cyl); e.dia = dim('dia', 'Diameter', 1000, cyl); e.h = dim('h', 'Height', 1200, true);
+    if (bad) return { err: bad };
+    var c = Math.round(Number(f.col)); e.col = c >= 0 && c < EQ_COL.length ? c : 0;
+    var wt = String(f.wt == null ? '' : f.wt).trim() === '' ? 0 : cuNum(f.wt);
+    if (!(wt >= 0 && wt <= 1e6)) { if (strict) return { err: 'Weight must be a positive number in kg' }; wt = 0; }
+    e.wt = wt;
+    e.prefix = String(f.prefix || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'EQ';
+    var src = Array.isArray(f.noz) ? f.noz : [];
+    if (strict && src.length > EQ_NOZ) return { err: 'At most ' + EQ_NOZ + ' nozzles' };
+    e.noz = [];
+    for (var i = 0; i < src.length && e.noz.length < EQ_NOZ; i++) {
+      var z = src[i], x = NaN, y = NaN, zz = NaN, dir = '', n = NaN;
+      if (z && typeof z === 'object') { x = cuNum(z.x); y = cuNum(z.y); zz = cuNum(z.z); n = cuNum(z.n); dir = typeof z.dir === 'string' && /^[+-][XYZxyz]$/.test(z.dir) ? z.dir.toUpperCase() : ''; }
+      if (!isFinite(x) || !isFinite(y) || !isFinite(zz) || !dir) { if (strict) return { err: 'Nozzle N' + (i + 1) + ' needs numbers for x, y and z and a direction' }; continue; }
+      if (NPS_LIST.indexOf(n) < 0) { if (strict && !isFinite(n)) return { err: 'Nozzle N' + (i + 1) + ' needs a size' }; n = eqNearNps(n); }
+      var hx = (cyl ? e.dia : e.w) / 2 + EQ_OVER, hy = (cyl ? e.dia : e.d) / 2 + EQ_OVER;
+      if (cyl) { var rr = Math.hypot(x, y); if (rr > hx) { x = x * hx / rr; y = y * hx / rr; } }
+      else { x = Math.max(-hx, Math.min(hx, x)); y = Math.max(-hy, Math.min(hy, y)); }
+      zz = Math.max(-EQ_OVER, Math.min(e.h + EQ_OVER, zz));
+      e.noz.push({ x: Math.round(x), y: Math.round(y), z: Math.round(zz), dir: dir, n: n });
+    }
+    return { e: e };
+  }
+  function eqMakeDef(c) {                                           // an entry as an EQUIP-style def: scene metres, nozzle p/d in the equipment's frame
+    var box = c.shape !== 'cyl', W = (box ? c.w : c.dia) / 1000, D = (box ? c.d : c.dia) / 1000, H = c.h / 1000, a = [c.brand, c.model].filter(Boolean).join(' ');
+    return {
+      name: c.name + (a ? ', ' + a : ''), short: c.name, custom: true, shape: box ? 'box' : 'cyl', W: W, D: D, H: H, col: EQ_COL[c.col | 0], prefix: c.prefix, lib: false,
+      note: a + (c.wt > 0 ? (a ? ', ' : '') + c.wt + ' kg each' : ''),
+      noz: c.noz.map(function (z) { return { p: [z.x / 1000, z.z / 1000, z.y / 1000], d: EQ_DIRS[z.dir].slice(), n: z.n }; }),
+      build: function (g) {
+        var m = mat(this.col, 0.6), body = new T.Mesh(box ? new T.BoxGeometry(W, H, D) : new T.CylinderGeometry(W / 2, W / 2, H, 32), m);
+        body.position.y = H / 2; g.add(body);
+      }
+    };
+  }
+  function eqDef(k) { return Object.prototype.hasOwnProperty.call(EQUIP, k) ? EQUIP[k] : Object.prototype.hasOwnProperty.call(CEQ, k) ? CEQ[k] : undefined; }
+  function eqInside(def, k, l, m) {                                 // is the equipment-frame scene point l inside the outline shrunk by m (metres)
+    if (def && def.custom) return (def.shape === 'cyl' ? Math.hypot(l.x, l.z) < def.W / 2 - m : Math.abs(l.x) < def.W / 2 - m && Math.abs(l.z) < def.D / 2 - m) && l.y > m && l.y < def.H - m;
+    return k === 'vessel' ? Math.hypot(l.x, l.z) < 0.6 - m && l.y > m && l.y < 2.4 - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
+  }
+  function eqLabel(k) { var d = eqDef(k) || EQUIP.pump; return (d.custom ? d.short : d.name).toLowerCase(); }
+  function eqIsVessel(e) { var d = eqDef(e.k); return e.k === 'vessel' || !!(d && d.custom && d.shape === 'cyl'); }
+  function nozPipes(k) {                                            // pipe ends sitting on a nozzle of this equipment type, to tell the user what an edit left behind
+    var at = {}, n = 0; nozList.forEach(function (z) { if (z.e >= 0 && model.equip[z.e] && model.equip[z.e].k === k) at[key(mm3(z.p))] = 1; });
+    model.pipes.forEach(function (p) { if (at[key(p.a)]) n++; if (at[key(p.b)]) n++; });
+    return n;
+  }
   function cuGeneric(fill) { return '<rect x="-9" y="-8" width="18" height="16" fill="' + fill + '"/><line x1="-9" y1="-8" x2="9" y2="8" stroke-width="0.8"/><line x1="9" y1="-8" x2="-9" y2="8" stroke-width="0.8"/>'; }
   function syncCustom() {                                           // refresh CUX, the symbols and the Custom chips from the library and the placed items
-    CUX = {};
-    model.custom.forEach(function (e) { CUX['cu:' + e.id] = { name: e.name, brand: e.brand || '', model: e.model || '', len: e.len / 1000, wt: e.wt || 0, k: e.k || 0, prefix: e.prefix || 'CU', img: e.img || '', lib: true }; });
+    CUX = {}; CEQ = {};
+    model.custom.forEach(function (e) {
+      if (e.kind === 'equipment') { var d = eqMakeDef(e); d.lib = true; CEQ['cu:' + e.id] = d; return; }
+      CUX['cu:' + e.id] = { name: e.name, brand: e.brand || '', model: e.model || '', len: e.len / 1000, wt: e.wt || 0, k: e.k || 0, prefix: e.prefix || 'CU', img: e.img || '', lib: true }; });
     model.items.forEach(function (it) {
       if (!isCu(it.t)) return;
       var c = CUX[it.t];
@@ -590,14 +667,25 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         CUX[it.t] = { name: cuTxt(it.cn) || 'Custom part', brand: cuTxt(it.cb), model: cuTxt(it.cm), len: (cl >= CU_LEN_MIN && cl <= CU_LEN_MAX ? cl : 200) / 1000, wt: 0, k: ck >= 0 && ck <= 1000 ? ck : 0, prefix: cp || 'CU', img: '', lib: false };
       }
     });
+    model.equip.forEach(function (q) {                              // placed equipment keeps a bounded copy of its entry, used when the entry is deleted
+      if (!q || !isCu(q.k)) return;
+      var lib = CEQ[q.k] && CEQ[q.k].lib ? cuGet(q.k.slice(3)) : null, c = eqValidate(lib || q.cu || {}, false);
+      if (!c.e) return;
+      q.cu = c.e;
+      if (!CEQ[q.k]) CEQ[q.k] = eqMakeDef(c.e);
+    });
     Object.keys(SYM).forEach(function (k) { if (isCu(k)) { delete SYM[k]; delete ISOS[k]; delete ISOA[k]; } });
+    Object.keys(CEQ).forEach(function (k) {
+      var d = CEQ[k];
+      SYM[k] = { name: d.short, tag: d.prefix, svg: d.shape === 'cyl' ? '<rect x="-9" y="-16" width="18" height="32" rx="3"/>' : '<rect x="-13" y="-9" width="26" height="18"/>' };
+    });
     Object.keys(CUX).forEach(function (k) {
       var c = CUX[k];
       SYM[k] = { name: c.name, tag: c.prefix, svg: cuGeneric('none') };
       ISOS[k] = cuGeneric('#ffffff');
       ISOA[k] = c.img ? '<rect x="-10" y="-9" width="20" height="18" fill="#ffffff"/><image href="' + c.img + '" x="-9" y="-8" width="18" height="16" preserveAspectRatio="xMidYMid meet"/>' : cuGeneric('#dde3e6');
     });
-    var sig = model.custom.map(function (e) { return e.id + '|' + e.name + '|' + e.brand + '|' + e.model; }).join('\n');
+    var sig = model.custom.map(function (e) { return e.id + '|' + e.kind + '|' + e.name + '|' + e.brand + '|' + e.model; }).join('\n');
     if (sig !== cuSig) { cuSig = sig; refreshCustomParts(); }
   }
   var CV = byNps([4, 8, 14, 30, 60, 90, 130, 230, 500, 800, 1300, 1900]);   // control valve Cv fully open, assumed
@@ -646,7 +734,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.pipes = m.pipes.map(function (p) { p.s = p.s || 40; p.ln = p.ln || 'L-001'; p.fl = p.fl || 0; return p; });
     o.valves = (m.valves || []).map(function (v) { v.s = v.s || 40; v.k = v.k || 'gate'; return v; });
     o.flanges = (m.flanges || []).map(function (f) { f.s = f.s || 40; f.t = f.t || 'wn'; return f; });
-    o.caps = m.caps || []; o.equip = m.equip || [];
+    o.caps = m.caps || [];
     o.items = (m.items || []).filter(function (it) { return it && typeof it === 'object' && !(isCu(it.t) && !/^cu:[A-Za-z0-9_-]{1,24}$/.test(it.t)); }).map(function (it) { it.s = it.s || 40; return it; });   // a cu: type with odd characters can only come from a hand-edited file
     o.instr = (m.instr || []).filter(function (q) { return INSTR[q.k]; });
     o.supports = (m.supports || []).filter(function (q) { return SUPPORT_NAME[q.t]; });
@@ -658,6 +746,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!e.id || o.custom.some(function (x) { return x.id === e.id; })) e.id = cuFresh(o.custom);
       o.custom.push(e);
     });
+    var emap = [], dropped = 0;                                     // equipment: known type, a position and a quarter-turn count; instruments follow the new indexes
+    (Array.isArray(m.equip) ? m.equip : []).forEach(function (q, i) {
+      var ok = q && typeof q === 'object' && typeof q.k === 'string' && Array.isArray(q.p) && q.p.length >= 3 && [0, 1, 2].every(function (j) { return typeof q.p[j] === 'number' && isFinite(q.p[j]); });
+      if (ok) {
+        if (Object.prototype.hasOwnProperty.call(EQUIP, q.k)) { /* built in */ }
+        else if (/^cu:[A-Za-z0-9_-]{1,24}$/.test(q.k)) {
+          var lib = o.custom.filter(function (x) { return 'cu:' + x.id === q.k && x.kind === 'equipment'; })[0];
+          ok = !!lib || !!(q.cu && typeof q.cu === 'object' && eqValidate(q.cu, false).e);
+        } else ok = false;
+      }
+      if (!ok) { dropped++; emap[i] = -1; return; }
+      q.r = ((Math.round(Number(q.r)) || 0) % 4 + 4) % 4;
+      emap[i] = o.equip.length; o.equip.push(q);
+    });
+    o.instr = o.instr.filter(function (q) { if (q.eq == null) return true; if (!(emap[q.eq] >= 0)) return false; q.eq = emap[q.eq]; return true; });
+    if (dropped) { try { toast(dropped + ' equipment record' + (dropped > 1 ? 's' : '') + ' could not be used and ' + (dropped > 1 ? 'were' : 'was') + ' left out'); } catch (e) {} }
     return o;
   }
 
@@ -880,7 +984,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function sizeText(a, b) { return a === b ? sz(a) : sz(a) + '×' + szs(b); }
   function equipNozzles(e) {
     var rot = (e.r || 0) * Math.PI / 2;
-    return EQUIP[e.k].noz.map(function (z) {
+    return eqDef(e.k).noz.map(function (z) {
       return { p: V(z.p).applyAxisAngle(UP, rot).add(V(e.p)), d: V(z.d).applyAxisAngle(UP, rot), n: z.n };
     });
   }
@@ -907,7 +1011,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       (atKey[key(p.b)] = atKey[key(p.b)] || []).push({ n: p.n, d: d.clone().negate() });
     });
     model.equip.forEach(function (e, i) {
-      var def = EQUIP[e.k]; if (!def) return;
+      var def = eqDef(e.k); if (!def) return;
       curRef = ['equip', i];
       var g = new T.Group(), m = mat(0x5f7a88, 0.6), zs = equipNozzles(e);
       def.build(g, m);
@@ -924,7 +1028,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.traverse(function (x) { x.userData = { kind: 'equip', i: i }; });
       world.add(g);
       zs.forEach(function (z, k) { z.e = i; z.idx = k; nozList.push(z); });
-      add('equip', def.name, 1, 'pc');
+      add('equip', def.name, 1, 'pc', def.note);
     });
 
     // 2. Collect every pipe end into joints.
@@ -1553,9 +1657,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
     });
     model.equip.forEach(function (e, ei) {
+      var def = eqDef(e.k); if (!def) return;
       var rot = (e.r || 0) * Math.PI / 2, base = V(e.p), inside = function (pt) {
         var l = pt.clone().sub(base).applyAxisAngle(UP, -rot), m = 0.03;
-        return e.k === 'vessel' ? Math.hypot(l.x, l.z) < 0.6 - m && l.y > m && l.y < 2.4 - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
+        return eqInside(def, e.k, l, m);
       };
       var nz = nozList.filter(function (z) { return z.e === ei; });
       P.forEach(function (q, pi) {
@@ -2041,6 +2146,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       pushHist(); model.instr.push(ir); changed();
     } else if (tool === 'equip') {
       var pp = planePoint(e); if (!pp) return;
+      if (!eqDef(eqk) || (isCu(eqk) && !CEQ[eqk].lib)) { toast('That equipment is not in the library any more'); return; }
       pushHist(); model.equip.push({ k: eqk, p: [rs(pp.x), elev, rs(pp.z)], r: curRot }); changed();
     } else if (tool === 'measure') {
       var mp = planePoint(e); if (!mp) return;
@@ -2383,7 +2489,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = '<h2>Instrument ' + esc(instrTag(it)) + '</h2><div class="row"><label class="field">Type<select id="i-in">' + opts(Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }), it.k) + '</select></label>'
         + '<label class="field">Loop number<input type="text" id="i-num" value="' + (it.num || 101) + '" maxlength="5" inputmode="numeric"></label></div>';
       if (dv.dcs) h += '<div class="row"><label class="field">Controls valve<select id="i-link">' + opts([['', 'None']].concat(model.valves.map(function (v, k) { return v.k === 'control' ? [k, tg0.valves[k]] : null; }).filter(Boolean)), it.link == null ? '' : it.link) + '</select></label></div>';
-      h += '<p>' + (it.eq != null ? 'On ' + EQUIP[model.equip[it.eq].k].name.toLowerCase() : 'On pipe, ' + sz(it.n)) + '</p>';
+      h += '<p>' + (it.eq != null ? 'On ' + eqLabel(model.equip[it.eq].k) : 'On pipe, ' + sz(it.n)) + '</p>';
     } else if (sel.kind === 'fit') {
       var ov = model.fit[sel.i] || {}, ty = it.type;
       var nm = { elbow: 'Elbow', reducer: 'Reducer', tee: 'Tee', rtee: 'Reducing tee', lat: 'Lateral 45°', olet: 'Olet', stub: 'Stub-in branch', cap: 'End closure', cross: 'Cross' }[ty] || ty;
@@ -2398,7 +2504,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (ty === 'cap') h += '<div class="row"><label>Type<select id="i-ct">' + opts([['cap', 'Cap BW'], ['plug', 'Plug THD']], it.plug ? 'plug' : 'cap') + '</select></label></div>';
       h += '<p>' + sz(it.nmax) + ' SCH ' + it.s + '</p>';
     } else {
-      h = '<h2>' + EQUIP[it.k].name + '</h2><p>Nozzles: ' + EQUIP[it.k].noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
+      var ed = eqDef(it.k);
+      h = '<h2>' + esc(ed.custom ? ed.short : ed.name) + '</h2>' + (ed.custom ? '<p>' + esc(ed.note || 'Custom equipment') + (ed.lib ? '' : '. Deleted from the library: it keeps its size and nozzles') + '. ' + (ed.shape === 'cyl' ? 'Ø' + Math.round(ed.W * 1000) : Math.round(ed.W * 1000) + ' × ' + Math.round(ed.D * 1000)) + ' × ' + Math.round(ed.H * 1000) + ' mm. Edit it under ⋯, Project, Custom parts.</p>' : '')
+        + '<p>Nozzles: ' + (ed.noz.length ? ed.noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') : 'none') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
     }
     if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
@@ -2731,6 +2839,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     function eqGeom(e) {                                            // equipment as a wire outline
       var rot = (e.r || 0) * Math.PI / 2, base = V(e.p);
       function W3(x, y, z) { return A(new T.Vector3(x, y, z).applyAxisAngle(UP, rot).add(base)); }
+      var cd = eqDef(e.k);
+      if (cd && cd.custom) {
+        if (cd.shape === 'cyl') {
+          var cr = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(cd.W / 2 * Math.cos(i / 28 * 2 * Math.PI), y, cd.W / 2 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
+          var c0 = cr(0), c1 = cr(cd.H);
+          return { kind: 'vessel', r0: c0, r1: c1, pts: c0.concat(c1), c: W3(0, cd.H / 2, 0) };
+        }
+        var bc = [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(function (q) { return W3(q[0] * cd.W / 2, q[1] * cd.H, q[2] * cd.D / 2); });
+        return { kind: 'pump', cs: bc, pts: bc, c: W3(0, cd.H / 2, 0) };
+      }
       if (e.k === 'vessel') {
         var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(0.6 * Math.cos(i / 28 * 2 * Math.PI), y, 0.6 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
         var r0 = ring(0), r1 = ring(2.4);
@@ -2853,8 +2971,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return { d: depth3(W3(cx, cy, cz)) + 0.01, s: '<polygon points="' + pstr(hull2(pts)) + '" fill="' + EBD + '" stroke="' + INK + '" stroke-width="1" stroke-linejoin="round"/>' };
     }
     function eqPicture(e, ei) {
-      var W3 = eqW3(e), prims = [];
-      if (e.k === 'vessel') {
+      var W3 = eqW3(e), prims = [], cd = eqDef(e.k);
+      if (cd && cd.custom) {                                        // user equipment: one box or one cylinder
+        if (cd.shape === 'cyl') prims.push(cylPrim(W3, 'y', 0, cd.H / 2, 0, cd.W / 2, cd.H));
+        else prims.push(boxPrim(W3, -cd.W / 2, cd.W / 2, 0, cd.H, -cd.D / 2, cd.D / 2));
+      } else if (e.k === 'vessel') {
         prims.push(cylPrim(W3, 'y', 0, 1.2, 0, 0.6, 2.4));
         prims.push(domePrim(W3, 0, 2.4, 0, 0.6, 0.18, true));
         [[0.45, 0.45], [-0.45, 0.45], [0.45, -0.45], [-0.45, -0.45]].forEach(function (lg) { prims.push(boxPrim(W3, lg[0] - 0.04, lg[0] + 0.04, -0.25, 0.02, lg[1] - 0.04, lg[1] + 0.04, EBD)); });
@@ -3244,10 +3365,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     function drawNode(id, x, yy, hasIn) {                           // returns where the outgoing lines start
       if (isEq(id)) {
-        var e = model.equip[+id.slice(1)], w = e.k === 'vessel' ? 16 : 20, cx = x + 34;
+        var e = model.equip[+id.slice(1)], vs = eqIsVessel(e), w = vs ? 16 : 20, cx = x + 34;
         if (hasIn) s += '<line x1="' + x + '" y1="' + yy + '" x2="' + (cx - w) + '" y2="' + yy + '" stroke="' + INK + '" stroke-width="1.8"/>';
-        s += symS(mark(e.k), cx, yy, 0, e.k === 'vessel' ? 1.5 : 1.8) + svgText(cx, yy + (e.k === 'vessel' ? 40 : 34), tags.equip[+id.slice(1)], 11, 'middle', 600);
-        equipBubbles(id, cx, yy - (e.k === 'vessel' ? 26 : 22));
+        s += symS(mark(e.k), cx, yy, 0, vs ? 1.5 : 1.8) + svgText(cx, yy + (vs ? 40 : 34), tags.equip[+id.slice(1)], 11, 'middle', 600);
+        equipBubbles(id, cx, yy - (vs ? 26 : 22));
         return x + 70;
       }
       var J = jointInfo[id];
@@ -3499,7 +3620,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     flange: { label: 'Flanges', items: [['wn', 'Weld-neck pair'], ['so', 'Slip-on pair'], ['lj', 'Lap-joint pair'], ['th', 'Threaded pair'], ['sw', 'Socket-weld pair'], ['ro', 'Orifice flange pair'], ['bl', 'Blind, pipe end']] },
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
-    equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] },
+    equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] },    // plus one chip per equipment entry of the library
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
@@ -3531,7 +3652,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
   }
   function refreshCustomParts() {                                   // the Custom chips follow the library
-    PARTS.custom.items = model.custom.map(function (e) { var sub = [e.brand, e.model].filter(Boolean).join(' '); return ['cu:' + e.id, esc(e.name) + (sub ? '<small>' + esc(sub) + '</small>' : '')]; });
+    var chip = function (e) { var sub = [e.brand, e.model].filter(Boolean).join(' '); return ['cu:' + e.id, esc(e.name) + (sub ? '<small>' + esc(sub) + '</small>' : '')]; };
+    PARTS.custom.items = model.custom.filter(function (e) { return e.kind !== 'equipment'; }).map(chip);
+    PARTS.equip.items = [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']].concat(model.custom.filter(function (e) { return e.kind === 'equipment'; }).map(chip));
+    if (isCu(eqk) && !PARTS.equip.items.some(function (it) { return it[0] === eqk; })) eqk = 'pump';
     buildParts(); if (PARTS[tool]) syncParts();
   }
   function scrollParts(c) {
@@ -3590,7 +3714,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       cap: ck === 'ret' ? 'Tap an open pipe end. A return bend turns it back on itself. Pick the direction below.' : 'Tap an open pipe end to close it.',
       branch: bk === 'tee' ? 'Tap a pipe where the branch starts. The branch is the same size. Pick its direction below.' : 'Tap a pipe where the branch starts. Set the branch size and direction below.',
       reduce: 'Tap a pipe where the size changes. The part toward the nearer end takes the size below.',
-      equip: 'Tap the grid to place the ' + EQUIP[eqk].name.toLowerCase() + '. Its nozzles are start points for pipes.',
+      equip: 'Tap the grid to place the ' + eqLabel(eqk) + '. Its nozzles are start points for pipes.',
       measure: 'Tap two points to measure. Pipe ends and nozzles snap.',
       del: 'Tap a pipe, valve, flange or equipment to remove it.'
     };
@@ -3898,23 +4022,41 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- custom parts panel (⋯ → Project → Custom parts) ----------
   var cuOpen = null, cuArm = null, cuImgFor = null;
   function cuHtml() {
-    var h = '<p class="empty" style="margin:0 0 10px;font-size:12px">Your own in-line parts, saved with the project. Place them from Parts, Custom. Editing a part updates every copy in the drawing. Lengths are face to face, in mm.</p>';
-    if (!model.custom.length) return h + '<p class="empty">No custom parts yet. Tap Add part.</p>';
+    var h = '<p class="empty" style="margin:0 0 10px;font-size:12px">Your own parts, saved with the project. Inline parts go in Parts, Custom (length is face to face, mm). Equipment goes in Parts, Equipment: a box or cylinder with nozzles (mm from the middle of the base, X and Y horizontal, Z up). Editing a part updates every copy in the drawing.</p>';
+    if (!model.custom.length) return h + '<p class="empty">No custom parts yet. Tap Add inline part or Add equipment.</p>';
     return h + model.custom.map(function (e) {
       var n = cuCount(e.id), open = cuOpen === e.id, id = esc(e.id), sub = [e.brand, e.model].filter(Boolean).join(' ');
       var s = '<div class="cu-card" data-cu="' + id + '"><div class="top">'
         + (e.img ? '<img class="thumb" alt="" src="' + e.img + '">' : '')
-        + '<b>' + esc(e.name) + '</b><span class="meta">' + (sub ? esc(sub) + ' · ' : '') + e.len + ' mm · ' + esc(e.prefix) + (n ? ' · ' + n + ' placed' : '') + '</span>'
+        + '<b>' + esc(e.name) + '</b><span class="meta">' + (sub ? esc(sub) + ' · ' : '') + (e.kind === 'equipment' ? 'Equipment ' + (e.shape === 'cyl' ? 'Ø' + e.dia : e.w + '×' + e.d) + '×' + e.h + ' mm · ' + e.noz.length + ' nozzle' + (e.noz.length === 1 ? '' : 's') : e.len + ' mm') + ' · ' + esc(e.prefix) + (n ? ' · ' + n + ' placed' : '') + '</span>'
         + '<button data-cua="edit" data-id="' + id + '" aria-expanded="' + open + '">' + (open ? 'Done' : 'Edit') + '</button>'
         + '<button data-cua="dup" data-id="' + id + '">Duplicate</button>'
         + '<button data-cua="del" data-id="' + id + '">' + (cuArm === e.id ? 'Tap again to delete' : 'Delete') + '</button></div>';
       if (cuArm === e.id && n) s += '<p class="warn">' + n + ' of these ' + (n === 1 ? 'is' : 'are') + ' placed in the drawing. They stay, with the name and length they have now, but can no longer be edited here.</p>';
       if (open) {
         var f = function (k, label, v, extra) { return '<label class="field">' + label + '<input type="text" data-cuf="' + k + '" data-id="' + id + '" value="' + esc(v == null ? '' : v) + '" autocomplete="off"' + (extra || '') + '></label>'; };
+        var pic = '<div class="row">' + (e.img ? '<img class="thumb" alt="Picture" src="' + e.img + '" style="width:96px;height:80px">' : '<span class="meta" style="align-self:center">No picture.</span>')
+          + '<button data-cua="img" data-id="' + id + '">' + (e.img ? 'Change picture' : 'Choose picture') + '</button>' + (e.img ? '<button data-cua="noimg" data-id="' + id + '">Remove picture</button>' : '') + '</div>';
+        if (e.kind === 'equipment') {
+          var cyl = e.shape === 'cyl', dirs = Object.keys(EQ_DIRS);
+          s += '<div class="row" style="margin-top:10px">' + f('name', 'Name', e.name, ' maxlength="40"') + f('brand', 'Brand', e.brand, ' maxlength="40"') + f('model', 'Model', e.model, ' maxlength="40"') + '</div>'
+            + '<div class="row"><label class="field">Shape<select data-cuf="shape" data-id="' + id + '">' + [['box', 'Box'], ['cyl', 'Vertical cylinder']].map(function (o) { return '<option value="' + o[0] + '"' + (e.shape === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>'
+            + (cyl ? f('dia', 'Diameter, mm', e.dia, ' inputmode="decimal"') : f('w', 'Width X, mm', e.w, ' inputmode="decimal"') + f('d', 'Depth Y, mm', e.d, ' inputmode="decimal"')) + f('h', 'Height Z, mm', e.h, ' inputmode="decimal"')
+            + '<label class="field">Colour<select data-cuf="col" data-id="' + id + '">' + EQ_COLN.map(function (nm, ci) { return '<option value="' + ci + '"' + (e.col === ci ? ' selected' : '') + '>' + nm + '</option>'; }).join('') + '</select></label></div>'
+            + '<div class="row">' + f('wt', 'Weight, kg', e.wt || '', ' inputmode="decimal"') + f('prefix', 'Tag prefix', e.prefix, ' maxlength="4"') + '</div>'
+            + '<div class="meta" style="margin-top:6px">Nozzles (' + e.noz.length + ' of ' + EQ_NOZ + '): offset from the middle of the base, direction points out of the equipment.</div>';
+          e.noz.forEach(function (z, zi) {
+            var nf = function (k, label) { return '<label class="field">' + label + '<input type="text" data-cunz="' + zi + '" data-cunk="' + k + '" data-id="' + id + '" value="' + esc(z[k]) + '" inputmode="decimal" autocomplete="off"></label>'; };
+            s += '<div class="cu-noz"><b>N' + (zi + 1) + '</b>' + nf('x', 'X mm') + nf('y', 'Y mm') + nf('z', 'Z mm')
+              + '<label class="field">Direction<select data-cunz="' + zi + '" data-cunk="dir" data-id="' + id + '">' + dirs.map(function (d) { return '<option value="' + d + '"' + (z.dir === d ? ' selected' : '') + '>' + d + '</option>'; }).join('') + '</select></label>'
+              + '<label class="field">Size<select data-cunz="' + zi + '" data-cunk="n" data-id="' + id + '">' + NPS_LIST.map(function (nn) { return '<option value="' + nn + '"' + (z.n === nn ? ' selected' : '') + '>' + esc(sz(nn)) + '</option>'; }).join('') + '</select></label>'
+              + '<button data-cua="nrem" data-id="' + id + '" data-i="' + zi + '">Remove</button></div>';
+          });
+          s += '<div class="row"><button data-cua="nadd" data-id="' + id + '"' + (e.noz.length >= EQ_NOZ ? ' disabled' : '') + '>Add nozzle</button></div>' + pic;
+        } else
         s += '<div class="row" style="margin-top:10px">' + f('name', 'Name', e.name, ' maxlength="40"') + f('brand', 'Brand', e.brand, ' maxlength="40"') + f('model', 'Model', e.model, ' maxlength="40"') + '</div>'
           + '<div class="row">' + f('len', 'Length, mm (' + CU_LEN_MIN + ' to ' + CU_LEN_MAX + ')', e.len, ' inputmode="decimal"') + f('wt', 'Weight, kg', e.wt || '', ' inputmode="decimal"') + f('k', 'Loss K (0 = ignore)', e.k || '', ' inputmode="decimal"') + f('prefix', 'Tag prefix', e.prefix, ' maxlength="4"') + '</div>'
-          + '<div class="row">' + (e.img ? '<img class="thumb" alt="Picture" src="' + e.img + '" style="width:96px;height:80px">' : '<span class="meta" style="align-self:center">No picture: the iso sheet draws a plain box.</span>')
-          + '<button data-cua="img" data-id="' + id + '">' + (e.img ? 'Change picture' : 'Choose picture') + '</button>' + (e.img ? '<button data-cua="noimg" data-id="' + id + '">Remove picture</button>' : '') + '</div>';
+          + pic.replace('No picture.', 'No picture: the iso sheet draws a plain box.');
       }
       return s + '</div>';
     }).join('');
@@ -3924,7 +4066,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('cu-close').onclick = function () { $('cu').hidden = true; cuArm = null; };
   $('cu-add').onclick = function () {
     var r = cuAdd({ name: 'New part', len: 200, prefix: 'CU' });
-    if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); }
+    if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); } else toast(r.err);
+  };
+  $('cu-addeq').onclick = function () {
+    var r = cuAdd({ kind: 'equipment', name: 'New equipment', shape: 'box', w: 1000, d: 800, h: 1200, col: 0, prefix: 'EQ', noz: [{ x: 500, y: 0, z: 600, dir: '+X', n: 4 }] });
+    if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); } else toast(r.err);
   };
   $('cuBody').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-cua]') : null; if (!b) return;
@@ -3935,13 +4081,28 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (cuArm !== id) { cuArm = id; $('cuBody').innerHTML = cuHtml(); setTimeout(function () { if (cuArm === id) { cuArm = null; if (!$('cu').hidden) $('cuBody').innerHTML = cuHtml(); } }, 4000); return; }
       cuArm = null; var n = cuDelete(id); if (cuOpen === id) cuOpen = null; cuChanged(); toast(n > 0 ? 'Deleted. ' + n + ' placed ' + (n === 1 ? 'copy keeps' : 'copies keep') + ' its name and length.' : 'Deleted');
     }
+    else if (a === 'nadd' || a === 'nrem') {
+      var q = cuGet(id); if (!q || q.kind !== 'equipment') return;
+      var nz = q.noz.map(function (z) { return Object.assign({}, z); });
+      if (a === 'nadd') nz.push({ x: q.shape === 'cyl' ? Math.round(q.dia / 2) : Math.round(q.w / 2), y: 0, z: Math.round(q.h / 2), dir: '+X', n: 4 }); else nz.splice(+b.getAttribute('data-i'), 1);
+      var r2 = cuUpdate(id, { noz: nz }); if (r2.err) toast(r2.err); $('cuBody').innerHTML = cuHtml();
+    }
     else if (a === 'img') { cuImgFor = id; $('cuimgf').click(); }
     else if (a === 'noimg') cuSetImg(id, '');
   });
   $('cuBody').addEventListener('change', function (e) {
-    var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-cuf') : null; if (!k) return;
+    var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-cuf') : null;
+    if (!k && t && t.getAttribute && t.getAttribute('data-cunz') != null) {   // one nozzle field: rewrite that nozzle and validate the whole entry
+      var q = cuGet(t.getAttribute('data-id')); if (!q || q.kind !== 'equipment') return;
+      var nz = q.noz.map(function (z) { return Object.assign({}, z); }), zi = +t.getAttribute('data-cunz'), nk = t.getAttribute('data-cunk');
+      if (!nz[zi]) return; nz[zi][nk] = t.value;
+      var r3 = cuUpdate(q.id, { noz: nz }); if (r3.err) toast(r3.err); $('cuBody').innerHTML = cuHtml();
+      return;
+    }
+    if (!k) return;
     var r = cuUpdate(t.getAttribute('data-id'), (function (o) { o[k] = t.value; return o; })({}));
     if (r.err) { toast(r.err); $('cuBody').innerHTML = cuHtml(); }
+    else if (k === 'shape') $('cuBody').innerHTML = cuHtml();
   });
   $('cuimgf').onchange = function () {
     var f = this.files && this.files[0], id = cuImgFor; this.value = ''; if (!f || !id) return;
@@ -3980,7 +4141,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
-    custom: { add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
+    custom: { eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
