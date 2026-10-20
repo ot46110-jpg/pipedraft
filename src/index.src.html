@@ -1409,16 +1409,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   function bomByLineCsv() {                                         // the material list of each line number on its own, rows tagged with the line designation
-    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; }, names = {}, rows = [], orig = model;
+    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; }, names = {}, rows = [], orig = model, sel0 = sel;
     model.pipes.forEach(function (p) { names[p.ln] = 1; });
     var order = Object.keys(names).sort(), desig = {};
     order.forEach(function (ln) { desig[ln] = lineDesignation(ln); });
     try {
       order.forEach(function (ln) {
-        model = orig; model = subsetFor(ln); rebuild();             // same swap as a one-line iso sheet (subsetFor copies the current model, so start each line from the whole one); nothing from rebuild() is kept past this block
+        model = orig; rebuild(); model = subsetFor(ln); rebuild();   // same swap as a one-line iso sheet; subsetFor reads nozList, so rebuild the whole model first or line 2 sees line 1's equipment; nothing from rebuild() is kept past this block
         bomRows().forEach(function (r) { rows.push([q(ln), q(desig[ln]), q(r[0]), q(r[1]), q(r[2])].join(',')); });
       });
-    } finally { model = orig; rebuild(); }
+    } finally { model = orig; sel = sel0; rebuild(); }         // showInsp() drops a selection that is missing in the subset, so put it back
     return 'Line,Designation,Description,Quantity,Standard / material\n' + rows.join('\n') + (rows.length ? '\n' : '');
   }
 
@@ -2930,8 +2930,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
     isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym';
     if (!ln) return isoCore(rot);
-    model = subsetFor(ln); rebuild();
-    try { svg = isoCore(rot); } finally { model = orig; rebuild(); }
+    var sel0 = sel; model = subsetFor(ln); rebuild();
+    try { svg = isoCore(rot); } finally { model = orig; sel = sel0; rebuild(); }
     return svg;
   }
   function legendSvg() {                                            // every symbol, for reference

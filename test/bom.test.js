@@ -906,5 +906,19 @@ check('iso sheet renders', /^<svg/.test(PD.iso()) && PD.iso().includes('DRAWING 
 PD.load({ pipes: [], valves: [] });
 check('iso sheet empty returns null', PD.iso() === null);
 
+// BOM by line: equipment on a later line, a selection that only exists in the whole model, awkward line names, an empty project.
+const awk = 'Z"1,' + String.fromCharCode(10) + 'x';
+PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'A' }, { a: [-0.35, 0.4, 8], b: [-3, 0.4, 8], n: 4, ln: awk }], valves: [], equip: [{ k: 'pump', p: [0, 0, 8], r: 0 }] });
+{
+  const rowsBefore = JSON.stringify(PD.rows()), warnsBefore = JSON.stringify(PD.warns());
+  els['t-sel'].onclick(); tapOn([-1.5, 0.4, 8]);
+  const inspBefore = els['insp'].innerHTML, hidBefore = els['insp'].hidden;
+  const out = PD.bomByLine(), q = '"' + awk.replace(/"/g, '""') + '"', part = out.split(q);
+  check('BOM by line: a later line keeps its own equipment, and a line name with quote, comma and newline stays one quoted field', part.length > 2 && /Centrifugal pump/.test(part.slice(1).join('')) && !/Centrifugal pump/.test(part[0]), out);
+  check('BOM by line: selection, inspector, warnings and BOM are as before', !hidBefore && inspBefore.includes('Pipe 2<') && els['insp'].innerHTML === inspBefore && els['insp'].hidden === hidBefore && JSON.stringify(PD.rows()) === rowsBefore && JSON.stringify(PD.warns()) === warnsBefore);
+}
+PD.load({ pipes: [], valves: [] });
+check('BOM by line: an empty project gives just the header', PD.bomByLine() === 'Line,Designation,Description,Quantity,Standard / material' + String.fromCharCode(10));
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
