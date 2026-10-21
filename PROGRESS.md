@@ -62,3 +62,5 @@
 - Iso: revision block (REVISIONS: rev ปัจจุบัน + 3 rev เก่า, กรอกใน iso info), ปุ่ม Coordinates (E/N mm ที่ปลายท่ออิสระ).
 
 - รอบ audit (21 ต.ค.): ปรับขนาดท่อพาวาล์ว/หน้าแปลน/ชิ้นส่วนบนท่อไปด้วย, รันใหม่ที่เริ่มจากปลายท่อสืบทอดขนาด/schedule/line, พิมพ์ตัวเลขเข้ม (1,500 / 1200+300 / ปฏิเสธ 4'6"), ท่อสั้นกว่า 50 มม. ไม่วาด, เตือน: วาล์วหน้าแปลนไม่มีหน้าแปลน / ขนาดไม่ตรงท่อ / ท่อซ้อนกัน / BOM ติดลบ, ตัวอย่างเริ่มต้นมีหน้าแปลนครบ, ปุ่ม BOM แสดงจำนวนคำเตือน + แตะคำเตือนที่ระบุท่อเพื่อเลือก, ชื่อไฟล์ส่งออกจาก project/drawing/rev/วันที่, เตือนให้เก็บสำเนานอก Safari.
+
+- Pipe inspector: Size of the whole run + Apply schedule and line to the whole run (runPipes = same-size pipes through elbows, stops at tee/nozzle/size change); Line list: rename line number; valve/inline part/support/instrument: เลือกใน Select แล้วลากลูกศรเหลืองเลื่อนตามท่อ (valve พาหน้าแปลนไปด้วย).

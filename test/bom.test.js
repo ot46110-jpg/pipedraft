@@ -1363,5 +1363,28 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('file names come from the project, drawing, kind, revision and date', /^Plant-A-Unit-2_ISO-101_bom_revB_[0-9]{4}-[0-9]{2}-[0-9]{2}.csv$/.test(PD.fname('bom', 'csv')), PD.fname('bom', 'csv'));
 }
 
+// whole-run edits, line rename, valves that slide along their pipe
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [0, 1, 0], n: 4, ln: 'A' }, { a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'A' }, { a: [3, 1, 0], b: [3, 1, 2], n: 4, ln: 'A' }, { a: [3, 1, 2], b: [5, 1, 2], n: 3, ln: 'A' }, { a: [3, 1, 0], b: [3, 0, 0], n: 4, ln: 'B' }],
+    valves: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+  PD.addValveFlanges(PD.model.valves[0]); PD.rebuild();
+  const run = PD.runPipes(0).sort();
+  check('a run is the same-size pipes joined through elbows, stopping at a tee and at a size change', JSON.stringify(run) === '[0,1]' || JSON.stringify(run) === '[0,1,2]', JSON.stringify(run));
+  const cnt = PD.setRunSize(0, 6);
+  check('a new size for the run reaches every pipe of it and the valve on it', cnt === run.length && run.every(i => PD.model.pipes[i].n === 6) && PD.model.valves[0].n === 6 && PD.model.flanges.every(f => f.n === 6) && PD.model.pipes[3].n === 3, JSON.stringify(PD.model.pipes.map(p => p.n)));
+  PD.model.pipes[0].s = 80; PD.model.pipes[0].ln = 'Z'; PD.setRunProps(0);
+  check('schedule and line number go to the whole run', run.every(i => PD.model.pipes[i].s === 80 && PD.model.pipes[i].ln === 'Z') && PD.model.pipes[4].ln === 'B');
+  PD.model.lines.Z = { svc: 'Brine' };
+  check('renaming a line number renames its pipes and keeps its data', PD.renameLine('Z', 'Q-1') && PD.model.pipes.filter(p => p.ln === 'Q-1').length === run.length && PD.model.lines['Q-1'].svc === 'Brine' && !PD.model.lines.Z);
+  check('a rename to an empty name or the same name does nothing', PD.renameLine('Q-1', '') === false && PD.renameLine('Q-1', 'Q-1') === false && PD.renameLine('Q-1', '__proto__') && !PD.model.pipes.some(p => p.ln === '__proto__'));
+  const fl0 = PD.model.flanges.map(f => f.p.slice());
+  const r1 = PD.alongMove('valve', 0, 0.4);
+  check('a valve slides along its pipe and takes its flanges with it', r1.ok && Math.abs(r1.s[0] - 1.9) < 1e-6 && r1.fl >= 1 && PD.model.flanges.every((f, i) => Math.abs(f.p[0] - fl0[i][0] - 0.4) < 1e-6), JSON.stringify(r1));
+  const r2 = PD.alongMove('valve', 0, 50);
+  check('a valve stops 50 mm short of the pipe end', r2.ok && Math.abs(r2.s[0] - 2.95) < 1e-6, JSON.stringify(r2));
+  check('an unknown part or an instrument on equipment cannot slide', PD.alongMove('valve', 9, 1) === null && PD.alongMove('pipe', 0, 1) === null);
+  check('a valve on a short pipe is not given arrows to move along', (() => { PD.load({ pipes: [{ a: [0, 0, 0], b: [0.1, 0, 0], n: 4 }], valves: [{ p: [0.05, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] }); return PD.alongMove('valve', 0, 0.02) === null; })());
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
