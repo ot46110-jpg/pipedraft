@@ -2376,6 +2376,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var hit;
     if (pickLevel) { pickLevelAt(e); return; }
     if (tool === 'pipe') {
+      if (cursor) {                                                 // a tap on the white start dot ends the run, so another point can be picked
+        var cs = scr(V(cursor));
+        if (Math.hypot(e.clientX - cs.x, e.clientY - cs.y) < 28) { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); toast('Run ended'); return; }
+      }
       var ss = screenSnap(e);
       if (!cursor) {
         if (ss && ss.noz && !atNozzle(ss.noz)) { pushHist(); startAtNozzle(ss.noz); changed(); }
@@ -2391,7 +2395,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var am = aim(e), q = am && am.q;
         if (q) { pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; elev = q[1]; changed(); }
       }
-      ghost(e);
+      if (e.pointerType === 'touch') { marker.visible = false; ghostLine.visible = false; } else ghost(e);   // a finger does not hover: leave no marker or guide behind
     } else if (tool === 'valve' || tool === 'item' || (tool === 'flange' && fk !== 'bl')) {
       hit = pickMeshes(e, 'pipe')[0]; if (!hit) return;
       var op = onPipe(hit); if (!op) return;

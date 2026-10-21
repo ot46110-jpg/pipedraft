@@ -66,3 +66,5 @@
 - Pipe inspector: Size of the whole run + Apply schedule and line to the whole run (runPipes = same-size pipes through elbows, stops at tee/nozzle/size change); Line list: rename line number; valve/inline part/support/instrument: เลือกใน Select แล้วลากลูกศรเหลืองเลื่อนตามท่อ (valve พาหน้าแปลนไปด้วย).
 
 - ส่งออก: DXF มี $INSUNITS(มม.)/layer ต่อ line/TEXT tag; PDF ทั้งหมดทุกไลน์ในไฟล์เดียว + เลือก A3/A4; Weld gap ใน Project settings หักจาก cut length; หน้า How to draw (⋯ → Project, เปิดเองครั้งแรก).
+
+- แก้ "จุดขาวค้าง": แตะบนจุดขาว (จุดเริ่มรัน) เพื่อจบรัน/เลือกจุดใหม่; นิ้วแตะแล้วไม่ทิ้ง marker/เส้นนำไว้.

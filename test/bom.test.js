@@ -1404,5 +1404,16 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the old single page call still works', Buffer.from(PD.buildPdf(jpg(40), 2400, 1700)).toString('latin1').includes('/Count 1'));
 }
 
+// a tap on the white start dot ends the run
+{
+  PD.load({ pipes: [] }); ctx.document.getElementById('t-pipe').onclick();
+  tapAt(420, 330);
+  const c0 = PD.cursor();
+  const s0 = c0 && PD.project(c0);
+  check('a first tap starts a run', !!c0);
+  if (c0) { tapAt(s0.x + 6, s0.y - 5); check('a tap on the start dot ends the run and leaves no pipe', PD.cursor() === null && PD.model.pipes.length === 0); }
+  tapAt(420, 330); check('another point can be picked after that', !!PD.cursor());
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
