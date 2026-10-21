@@ -48,3 +48,5 @@
 - วาดรูปร่างอุปกรณ์เอง (custom equipment): `parts` ได้ 12 ชิ้น (box / cyl ตั้ง / cyl แนว X / cyl แนว Y / sph) มี preview 3D ในแผง; outline (box/cyl หลัก) ยังเป็นขนาดที่ใช้ตรวจ clash และวาดบน iso, ซ่อนได้ด้วย `hide`.
 
 - วาดอุปกรณ์เอง: ลากชิ้นส่วนบน preview ได้ (ข้าม / ขึ้น-ลง, snap 10 mm, แตะ S1.. เพื่อเลือก), iso วาดรูปที่ประกอบแล้ว (boxPrim/cylPrim/domePrim ต่อชิ้น).
+
+- Custom equipment preview: ลูกศร X/Y/Z ย้ายตามแกน + จุดจับสีขาวยืดขนาดทีละหน้า (หน้าตรงข้ามคงที่) — รอบแรกของแนว "เหมือน Plant 3D" (เฟส 1). เฟสต่อไป: วางอุปกรณ์/ท่อด้วย gizmo ใน view หลัก, piping spec/catalog, iso อัตโนมัติ. ห้ามใช้ข้อมูล/สัญลักษณ์ Autodesk.
