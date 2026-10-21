@@ -4204,9 +4204,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
     });
   }
+  var CP_W = 640, CP_H = 460, cuPrevRT = null, cuPrevBuf = null, cuPrevImg = null;
+  function cuPrevBlit(sc, cam) {                                      // render with the main renderer into a target, then copy the pixels to the preview canvas
+    if (!cuPrevRT) { cuPrevRT = new T.WebGLRenderTarget(CP_W, CP_H); cuPrevBuf = new Uint8Array(CP_W * CP_H * 4); }
+    var ctx = cuPrevR.domElement.getContext('2d'), old = renderer.getRenderTarget(); if (!cuPrevImg) cuPrevImg = ctx.createImageData(CP_W, CP_H);
+    sc.background = new T.Color(0x182026);
+    try { renderer.setRenderTarget(cuPrevRT); renderer.render(sc, cam); renderer.readRenderTargetPixels(cuPrevRT, 0, 0, CP_W, CP_H, cuPrevBuf); } finally { renderer.setRenderTarget(old); }
+    var srgb = renderer.outputEncoding === T.sRGBEncoding, dst = cuPrevImg.data, row = CP_W * 4, y, i, v;
+    for (y = 0; y < CP_H; y++) for (i = 0; i < row; i++) { v = cuPrevBuf[(CP_H - 1 - y) * row + i]; dst[y * row + i] = srgb && (i & 3) < 3 ? Math.round(255 * Math.pow(v / 255, 1 / 2.2)) : v; }
+    ctx.putImageData(cuPrevImg, 0, 0);
+  }
   function cuPrevSetup() {
-    cuPrevR = new T.WebGLRenderer({ antialias: true, alpha: true }); cuPrevR.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); cuPrevR.setSize(320, 230);
-    var el = cuPrevR.domElement, x0 = null, drag = null;
+    var cvp = document.createElement('canvas'); cvp.width = CP_W; cvp.height = CP_H; cuPrevR = { domElement: cvp };   // a plain 2D canvas: the main renderer draws into it, so there is only ever one WebGL context
+    var el = cvp, x0 = null, drag = null;
     el.style.cssText = 'position:static;inset:auto;display:block;width:100%;max-width:420px;height:auto;touch-action:none;border:1px solid var(--line);border-radius:8px;background:var(--panel)';
     el.addEventListener('pointerdown', function (ev) {
       try { el.setPointerCapture(ev.pointerId); } catch (z) {}
@@ -4273,7 +4283,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var cam = new T.PerspectiveCamera(35, 320 / 230, 0.05, 200), dist = r * 2.9;
       cam.position.set(c.x + Math.sin(cuPrevYaw) * dist * 0.85, c.y + dist * 0.5, c.z + Math.cos(cuPrevYaw) * dist * 0.85); cam.lookAt(c); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
       cuPrevCam = cam; cuPrevG = g; cam.updateMatrixWorld(); sc.updateMatrixWorld(true);
-      cuPrevR.render(sc, cam);
+      cuPrevBlit(sc, cam);
       sc.traverse(function (o) { if (o.geometry && o !== g) o.geometry.dispose(); if (o.material) o.material.dispose(); });   // the picked group's meshes are rebuilt on every draw
     } catch (x) {}
   }
