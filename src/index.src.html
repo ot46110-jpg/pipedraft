@@ -313,6 +313,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <select id="iso-line" aria-label="Line number"></select>
           <select id="iso-view" aria-label="View direction"><option value="auto">View: auto</option><option value="0">View 1</option><option value="1">View 2</option><option value="2">View 3</option><option value="3">View 4</option></select>
           <button id="iso-tidy" aria-pressed="true">Auto layout</button>
+          <button id="iso-coords" aria-pressed="false">Coordinates</button>
           <button id="iso-style" aria-pressed="false">Symbols</button>
           <button id="iso-info" aria-pressed="false">Title block</button>
         </span>
@@ -3063,8 +3064,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return { lines: wrap(r[0]), std: r[2] || '', tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
     });
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
+    var T1 = model.title || {}, revHist = [1, 2, 3].filter(function (k) { return T1['h' + k + 'rev'] || T1['h' + k + 'desc'] || T1['h' + k + 'date']; }), revH = 30 + 13 * (1 + revHist.length);
     var TB = 110, cutRows = fabrication().pieces, weldRows = fabrication().welds, cutH = cutRows.length || weldRows.length ? Math.max(cutRows.length, weldRows.length) * 11 + 60 : 0;   // the two lists stand side by side
-    var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100), Wd = W - MAT;
+    var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100 + revH), Wd = W - MAT;
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
     var c30 = Math.cos(Math.PI / 6);
@@ -3478,6 +3480,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var et = 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), nzE = nozList.filter(function (z) { return z.e >= 0 && key(mm3(z.p)) === k; })[0];
       if (nzE && tg.equip[nzE.e]) et += '  TO ' + tg.equip[nzE.e] + '/N' + (nzE.idx + 1);      // connection note: which nozzle the pipe ends on
       else if (model.contAt && model.contAt[k]) et += '  CONT. ' + model.contAt[k].join(', ');      // the line that carries on from this end
+      if (isoCtx.coords) et += '  E ' + Math.round(j.pos[0] * 1000) + ' N ' + Math.round(j.pos[2] * 1000);   // plant coordinates in mm, east and north
       var ew = tagText(et, 9);
       want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(q[0], q[1], cx, cy, 6) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
@@ -3502,6 +3505,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + '<line x1="' + f1(cx - ux * 14) + '" y1="' + f1(cy - uy * 14) + '" x2="' + f1(cx + ux * 14) + '" y2="' + f1(cy + uy * 14) + '" stroke="' + INK + '" stroke-width="1.4"/>'
         + '<polygon points="' + f1(cx + ux * 17) + ',' + f1(cy + uy * 17) + ' ' + f1(cx + ux * 7 - uy * 4) + ',' + f1(cy + uy * 7 + ux * 4) + ' ' + f1(cx + ux * 7 + uy * 4) + ',' + f1(cy + uy * 7 - ux * 4) + '" fill="' + INK + '"/>'
         + svgText(cx + ux * 31 - (ux < -0.3 ? 4 : 0), cy + uy * 31 + 4, 'N', 11, 'middle', 600);
+    })();
+    (function () {                                                  // revision block: REV, DATE, DESCRIPTION, BY, CHK; the newest row first
+      var T2 = model.title || {}, x0 = Wd + 8, x1 = W - 20, y0 = H - TB - revH + 2, cols = [[0, 'REV'], [30, 'DATE'], [100, 'DESCRIPTION'], [252, 'BY'], [286, 'CHK']];
+      var rows = [[T2.rev || '0', T2.date || new Date().toISOString().slice(0, 10), T2.rdesc || 'Issued', T2.by || '', T2.checked || '']];
+      [1, 2, 3].forEach(function (k) { if (T2['h' + k + 'rev'] || T2['h' + k + 'desc'] || T2['h' + k + 'date']) rows.push([T2['h' + k + 'rev'] || '', T2['h' + k + 'date'] || '', T2['h' + k + 'desc'] || '', T2['h' + k + 'by'] || '', T2['h' + k + 'chk'] || '']); });
+      o += '<text x="' + (x0 + 6) + '" y="' + (y0 + 10) + '" font-size="9" font-weight="600" fill="' + INK + '">REVISIONS</text><line x1="' + x0 + '" y1="' + (y0 + 14) + '" x2="' + x1 + '" y2="' + (y0 + 14) + '" stroke="' + INK + '" stroke-width="0.8"/>';
+      cols.forEach(function (c) { o += '<text x="' + (x0 + 6 + c[0]) + '" y="' + (y0 + 24) + '" font-size="7" fill="#555">' + c[1] + '</text>'; });
+      rows.forEach(function (r, ri) {
+        var ry = y0 + 37 + ri * 13;
+        r.forEach(function (v, ci) { o += '<text x="' + (x0 + 6 + cols[ci][0]) + '" y="' + ry + '" font-size="' + (ci === 2 ? 8.5 : 9) + '" fill="' + INK + '">' + esc(String(v).slice(0, ci === 2 ? 26 : ci === 1 ? 11 : 6)) + '</text>'; });
+        o += '<line x1="' + x0 + '" y1="' + (ry + 4) + '" x2="' + x1 + '" y2="' + (ry + 4) + '" stroke="#888" stroke-width="0.5"/>';
+      });
+      o += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (14 + 12 + 13 * rows.length) + '" fill="none" stroke="' + INK + '" stroke-width="0.8"/>';
     })();
     var ax = 84, ay = H - TB - 52;
     [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y (N)'], [[0, 1, 0], 'Z']].forEach(function (a3) {
@@ -3590,7 +3606,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!model.pipes.length) return null;
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
-    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym';
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true;
     if (!ln) return isoCore(rot);
     var sel0 = sel; model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; sel = sel0; rebuild(); }
@@ -4234,7 +4250,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function isoInfoHtml() {
     var T0 = model.title || {}, ln = isoOpts.ln, LD = ln ? (model.lines[ln] || {}) : null;
     function f(id, label, v, ph) { return '<label class="field">' + label + '<input type="text" data-t="' + id + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
-    var o = '<h3>Title block</h3>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked);
+    var o = '<h3>Title block</h3>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked) + f('rdesc', 'Revision description', T0.rdesc, 'Issued');
+    o += '<h3>Earlier revisions</h3>' + [1, 2, 3].map(function (k) { return f('h' + k + 'rev', 'Rev ' + k, T0['h' + k + 'rev']) + f('h' + k + 'date', 'Date', T0['h' + k + 'date']) + f('h' + k + 'desc', 'Description', T0['h' + k + 'desc']) + f('h' + k + 'by', 'By', T0['h' + k + 'by']) + f('h' + k + 'chk', 'Checked', T0['h' + k + 'chk']); }).join('');
     if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('from', 'From', LD.from, 'e.g. Tank T-101') + f('to', 'To', LD.to, 'e.g. Pump P-101') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none');
     else o += '<p class="empty" style="grid-column:1/-1;margin:0">Pick a line number above to set its service, class, pressure, temperature and insulation. A sheet for one line also lists only that line\'s parts, cuts and welds.</p>';
     return o;
@@ -4246,6 +4263,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
+    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true));
     $('isoInfo').innerHTML = isoInfoHtml();
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
@@ -4292,6 +4310,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-view').onchange = function () { isoOpts.view = this.value; refreshIso(); };
   $('iso-style').onclick = function () { isoOpts.style = isoOpts.style === 'pic' ? 'sym' : 'pic'; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
+  $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {
     if (!isoCur) { toast('Nothing to save'); return; }

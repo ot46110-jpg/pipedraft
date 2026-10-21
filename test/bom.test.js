@@ -1326,5 +1326,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('a new edit ends the redo line', PD.model.pspecs.length === 1 && PD.model.pspecs[0].name === 'Stainless 316L 150#');
 }
 
+// iso sheet: revision block, connection notes, coordinates
+{
+  check('the iso sheet has a revision block with the current revision', isoP.includes('>REVISIONS<') && isoP.includes('>Issued<'));
+  check('a pipe end on a nozzle says which nozzle it ends on', /TO (P|V)-[0-9]\/N[0-9]/.test(isoP), (isoP.match(/EL [^<]*</g) || []).join(' | '));
+  PD.model.title.h1rev = 'A'; PD.model.title.h1desc = 'First issue'; PD.model.title.rdesc = 'For fabrication';
+  const isoR = PD.iso();
+  check('earlier revisions and the revision text come onto the sheet', isoR.includes('>First issue<') && isoR.includes('>For fabrication<'));
+  delete PD.model.title.h1rev; delete PD.model.title.h1desc; delete PD.model.title.rdesc;
+  ctx.document.getElementById('iso-coords').onclick();
+  const isoC = PD.iso();
+  check('coordinates in mm can be added at free ends', /EL [^<]* E -?[0-9]+ N -?[0-9]+</.test(isoC), (isoC.match(/EL [^<]*</g) || []).slice(0, 3).join(' | '));
+  ctx.document.getElementById('iso-coords').onclick();
+  check('a one-line sheet names the line that continues from a cut end', (() => {
+    PD.load({ pipes: [{ a: [0, 0.5, 0], b: [2, 0.5, 0], n: 4, ln: 'L-1' }, { a: [2, 0.5, 0], b: [2, 0.5, 2], n: 4, ln: 'L-2' }] });
+    return PD.iso('L-1').includes('CONT. L-2');
+  })());
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
