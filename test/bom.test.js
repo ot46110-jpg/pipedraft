@@ -1282,5 +1282,49 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('classes from a file are cleaned and capped', PD.model.pspecs.length === 20 && p0.name === 'cmd' && p0.code === 'AB' && p0.sch === 40 && p0.minN === 0.5 && p0.maxN === 12 && p0.noValve.length === 1, JSON.stringify(p0));
 }
 
+// hardening from the review: hostile or damaged data must neither crash a rebuild nor reach storage, CSV cells never start a formula
+{
+  const base = { pipes: [{ a: [0, 0.5, 0], b: [2, 0.5, 0], n: 4, ln: 'L-001' }] };
+  const bad = [
+    { caps: [null] }, { caps: {} }, { flanges: [{ p: [1, 0.5, 0], d: [1, 0, 0], n: 4, t: 'zz' }] },
+    { supports: [{ p: [1, 0, 0], t: 'constructor' }] }, { valves: [{ k: 'gate', n: 4 }] }, { pipes: [{ b: [1, 1, 1], n: 4 }, { a: [0, 0, 0], b: [1, 0, 0], n: 4 }] },
+    { instr: [{ k: 'PT', p: [1, 0.5, 0], link: '__proto__' }] }, { spec: { std: 'constructor' } }, { lines: { 'L-001': null } }, { lines: { __proto__: { x: 1 } } },
+    { items: [{ p: [1, 0.5, 0], d: [1, 0, 0], n: 4, t: 'toString' }] }, { fit: [1, 2], field: 'x', title: 5 }, { fluid: 'constructor' },
+    { pipes: [{ a: [0, 0, NaN], b: [1, 0, 0], n: 4 }, { a: [0, 0, 0], b: [1e300, 0, 0], n: 4 }, { a: [0, 0, 0], b: ['1', 0, 0], n: 4 }] }
+  ];
+  let crashed = '';
+  bad.forEach((b, i) => { try { PD.load(Object.assign({}, JSON.parse(JSON.stringify(base)), JSON.parse(JSON.stringify(b)))); PD.iso(); PD.rows(); PD.lineCsv(); PD.bomByLine(); } catch (e) { crashed += i + ':' + e.message + ' '; } });
+  check('damaged project data loads without a crash in rebuild, sheets or exports', crashed === '', crashed);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4, ln: 'toString' }, { a: [0, 0, 1], b: [1, 0, 1], n: 4, ln: '__proto__', fl: 1 }], lines: { toString: { q: 5 } } });
+  check('line numbers that are object keys are renamed and the line list and hydraulics survive', PD.lineList().length === 2 && PD.model.pipes.every(p => !/^(toString|__proto__)$/.test(p.ln)), JSON.stringify(PD.model.pipes.map(p => p.ln)));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4, ln: 'L-1' }], lines: { 'L-1': { svc: '=cmd|"/c calc"!A1', from: '-2+3', to: '@SUM(1)' } } });
+  const lc = PD.lineCsv();
+  check('CSV cells that start with = - + @ are made harmless', lc.includes("\"'=cmd|") && lc.includes("\"'-2+3\"") && lc.includes("\"'@SUM(1)\"") && !/,"[=@]/.test(lc), lc);
+  check('the line CSV shows the class of a line with a piping class', (() => { PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4, ln: 'L-1' }] }); const c = PD.spec.add('ss316'); PD.spec.assign('L-1', c.e.id); return PD.lineCsv().includes('"S1"'); })());
+  const c2 = PD.spec.add('cs150'); PD.spec.assign('L-1', c2.e.id); PD.spec.update(c2.e.id, { sch: 80 });
+  check('changing the schedule of a class changes the pipes of the lines that use it', PD.model.pipes.every(p => p.s === 80));
+  PD.model.valves.push({ p: [0.3, 0, 0], d: [1, 0, 0], n: 4, s: 80, k: 'gate' }, { p: [0.6, 0, 0], d: [1, 0, 0], n: 4, s: 80, k: 'gate' }); PD.spec.update(c2.e.id, { noValve: ['gate'] });
+  check('a forbidden valve kind is reported once per line', PD.warns().filter(w => /not allowed by class/.test(w)).length === 1, JSON.stringify(PD.warns()));
+  // moving equipment
+  PD.load({ pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n: 4 }], flanges: [{ p: [-0.35, 0.4, 0], d: [1, 0, 0], n: 4, t: 'wn', e: 1 }], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
+  const mv = PD.eqMove(0, 'x', 0.5);
+  check('an end flange on the followed pipe end moves with the equipment', mv.ok && PD.model.flanges[0].p[0] === 0.15, JSON.stringify(PD.model.flanges[0]));
+  check('a move by NaN or Infinity is refused and leaves the position alone', PD.eqMove(0, 'x', NaN).ok === false && PD.eqMove(0, 'x', Infinity).ok === false && PD.model.equip[0].p.every(Number.isFinite) && PD.model.equip[0].p[0] === 0.5);
+}
+
+// redo and the menu state
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4 }] });
+  const els0 = ctx.document.getElementById('undo');
+  PD.spec.add('cs150');
+  ctx.document.getElementById('undo').onclick();
+  const gone = PD.model.pspecs.length === 0;
+  ctx.document.getElementById('redo').onclick();
+  check('redo brings back what undo took away', gone && PD.model.pspecs.length === 1);
+  ctx.document.getElementById('undo').onclick(); PD.spec.add('ss316');
+  ctx.document.getElementById('redo').onclick();
+  check('a new edit ends the redo line', PD.model.pspecs.length === 1 && PD.model.pspecs[0].name === 'Stainless 316L 150#');
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
