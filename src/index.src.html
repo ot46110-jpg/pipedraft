@@ -1520,7 +1520,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     })();
     hydroWarnings();
     matDirty = true;
-    renderBom(); showInsp();
+    renderBom(); showInsp(); updateEgz();
     $('undo').disabled = !hist.length;
   }
 
@@ -1892,6 +1892,75 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function pickMeshes(e, kind) {
     setRay(e); if (matDirty) { world.updateMatrixWorld(true); matDirty = false; }
     return ray.intersectObjects(world.children, true).filter(function (h) { return h.object.userData.kind && (!kind || h.object.userData.kind === kind); });
+  }
+  // ---------- move placed equipment with axis arrows (select tool) ----------
+  var EAX = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }, ECOL = { x: 0xe5484d, y: 0x3e63dd, z: 0x30a46c }, EGSNAP = 0.05;
+  var egz = new T.Group(); egz.visible = false; scene.add(egz); var egzMeshes = [], egzDrag = null;
+  function eqNozEnds(i) {                                           // pipe ends sitting on a nozzle of equipment i
+    var at = {}, n = 0; nozList.forEach(function (z) { if (z.e === i) at[key(mm3(z.p))] = 1; });
+    model.pipes.forEach(function (p) { if (at[key(p.a)]) n++; if (at[key(p.b)]) n++; });
+    return n;
+  }
+  function eqMoveStart(i, ax) {                                     // remember where equipment i and the pipes on its nozzles are; a pipe follows only when the move runs along it
+    var e = model.equip[i]; if (!e || !EAX[ax]) return null;
+    var A = V(EAX[ax]), at = {}, ends = [];
+    nozList.forEach(function (z) { if (z.e === i) at[key(mm3(z.p))] = 1; });
+    model.pipes.forEach(function (p, pi) {
+      [['a', 'b'], ['b', 'a']].forEach(function (se) {
+        if (!at[key(p[se[0]])]) return;
+        var d = V(p[se[1]]).sub(V(p[se[0]])), L = d.length(); if (L < 1e-9) return;
+        if (Math.abs(d.normalize().dot(A)) > 0.9999) ends.push({ pi: pi, end: se[0], orig: p[se[0]].slice(), other: p[se[1]].slice() });
+      });
+    });
+    return { i: i, ax: ax, A: A, orig: e.p.slice(), ends: ends, before: eqNozEnds(i) };
+  }
+  function eqMoveTo(st, delta) {                                    // equipment and followers at orig + delta metres along the axis; false when a followed pipe would get too short
+    var e = model.equip[st.i]; if (!e) return false;
+    if (st.ax === 'y') delta = Math.max(delta, -st.orig[1]);          // never below the floor
+    var ok = true;
+    st.ends.forEach(function (s) { var np = V(s.orig).addScaledVector(st.A, delta); if (np.distanceTo(V(s.other)) < 0.05 || V(s.other).sub(np).dot(V(s.other).sub(V(s.orig))) <= 0) ok = false; });
+    if (!ok) return false;
+    e.p = mm3(V(st.orig).addScaledVector(st.A, delta));
+    st.ends.forEach(function (s) { model.pipes[s.pi][s.end] = mm3(V(s.orig).addScaledVector(st.A, delta)); });
+    return true;
+  }
+  function updateEgz() {                                            // arrows on the selected equipment, kept the same size on screen by the render loop
+    while (egz.children.length) { var c = egz.children[0]; egz.remove(c); c.geometry.dispose(); c.material.dispose(); }
+    egzMeshes = [];
+    var e = tool === 'sel' && sel && sel.kind === 'equip' ? model.equip[sel.i] : null;
+    if (!e) { egz.visible = false; return; }
+    var d = eqDef(e.k) || EQUIP.pump, hh = d.custom ? d.H : e.k === 'vessel' ? 2.4 : 0.7;
+    egz.position.set(e.p[0], e.p[1] + hh / 2, e.p[2]);
+    ['x', 'y', 'z'].forEach(function (ax) {
+      var A = V(EAX[ax]), q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), A);
+      [[new T.CylinderGeometry(0.035, 0.035, 0.7, 8), 0.65], [new T.ConeGeometry(0.1, 0.28, 14), 1.14]].forEach(function (g) {
+        var m = new T.Mesh(g[0], new T.MeshBasicMaterial({ color: ECOL[ax], depthTest: false, transparent: true })); m.renderOrder = 20; m.quaternion.copy(q); m.position.copy(A).multiplyScalar(g[1]);
+        m.userData.egz = ax; egz.add(m); egzMeshes.push(m);
+      });
+    });
+    egz.visible = true;
+  }
+  function egzDown(e) {                                             // true when the touch grabbed an arrow
+    if (!egz.visible || tool !== 'sel' || !sel || sel.kind !== 'equip') return false;
+    setRay(e); egz.updateMatrixWorld(true);
+    var hit = ray.intersectObjects(egzMeshes, false)[0]; if (!hit) return false;
+    var ax = hit.object.userData.egz, st = eqMoveStart(sel.i, ax); if (!st) return false;
+    var v = camera.position.clone().sub(hit.point); v.addScaledVector(st.A, -v.dot(st.A)); if (v.lengthSq() < 1e-8) return false;
+    egzDrag = { st: st, id: e.pointerId, pl: new T.Plane().setFromNormalAndCoplanarPoint(v.normalize(), hit.point), at: hit.point.clone(), moved: false, last: 0 };
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    return true;
+  }
+  function egzMove(e) {
+    var g = egzDrag; setRay(e); var pt = new T.Vector3(); if (!ray.ray.intersectPlane(g.pl, pt)) return;
+    var dl = Math.round(pt.sub(g.at).dot(g.st.A) / EGSNAP) * EGSNAP;
+    if (dl === g.last) return;
+    if (!g.moved) { pushHist(); g.moved = true; }
+    if (eqMoveTo(g.st, dl)) { g.last = dl; rebuild(); }
+  }
+  function egzEnd() {
+    var g = egzDrag; egzDrag = null; if (!g || !g.moved) return;
+    changed();
+    var after = eqNozEnds(g.st.i); if (after < g.st.before) toast((g.st.before - after) + ' pipe end' + (g.st.before - after === 1 ? ' is' : 's are') + ' no longer on a nozzle. Only pipes running along the move follow the equipment.');
   }
   function snapPoint(p) {                                           // existing pipe end or equipment nozzle near the tap
     var best = null, bd = 0.3;
@@ -2558,7 +2627,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else {
       var ed = eqDef(it.k);
       h = '<h2>' + esc(ed.custom ? ed.short : ed.name) + '</h2>' + (ed.custom ? '<p>' + esc(ed.note || 'Custom equipment') + (ed.lib ? '' : '. Deleted from the library: it keeps its size and nozzles') + '. ' + (ed.shape === 'cyl' ? 'Ø' + Math.round(ed.W * 1000) : Math.round(ed.W * 1000) + ' × ' + Math.round(ed.D * 1000)) + ' × ' + Math.round(ed.H * 1000) + ' mm. Edit it under ⋯, Project, Custom parts.</p>' : '')
-        + '<p>Nozzles: ' + (ed.noz.length ? ed.noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') : 'none') + '</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
+        + '<p>Nozzles: ' + (ed.noz.length ? ed.noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') : 'none') + '</p><p>Drag an arrow in the picture to move it. Pipes running along the move follow; others stay.</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
     }
     if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
@@ -3637,6 +3706,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
+    if (egzDown(e)) return;                                        // an arrow of the selected equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
@@ -3646,6 +3716,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   cv.addEventListener('pointermove', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
+    if (egzDrag && egzDrag.id === e.pointerId) { egzMove(e); return; }
     var p = ptrs[e.pointerId];
     if (!p) { if (e.pointerType !== 'touch') queueGhost(e); return; }
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
@@ -3662,6 +3733,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
   });
   function end(e) {
+    if (egzDrag && egzDrag.id === e.pointerId) { egzEnd(); return; }
     if (!ptrs[e.pointerId]) return;
     if (e.pointerType === 'pen') lastPen = performance.now();
     var pen = e.pointerType === 'pen' && tool !== 'nav';
@@ -4385,6 +4457,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    selectEq: function (i) { setTool('sel'); sel = { kind: 'equip', i: i }; rebuild(); return egzMeshes.length; },
+    egz: function () { return { m: egzMeshes, cam: camera }; },
+    eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
@@ -4396,6 +4471,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   applyStd(); fillSizes();
   buildParts();
   rebuild(); updateUi(); resize();
-  (function loop() { placeCamera(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>

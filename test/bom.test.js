@@ -1238,5 +1238,19 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('place-on-face on a cylinder uses the radius and the update validates', C.onFace(cy, cy.noz[0], 'r').x === 600 && C.update(cy.id, { noz: [Object.assign({}, cy.noz[0], C.onFace(cy, cy.noz[0], 'top'))] }).e.noz[0].z === 2000);
 }
 
+// moving placed equipment: a pipe running along the move follows, others stay and are reported, never below the floor
+{
+  PD.load({ pipes: [{ a: [-0.35, 0.4, 0], b: [-2, 0.4, 0], n: 4 }], custom: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
+  const r1 = PD.eqMove(0, 'x', 0.5);
+  check('equipment moves along X and the pipe on its nozzle follows', r1.ok && r1.follow === 1 && PD.model.equip[0].p[0] === 0.5 && PD.model.pipes[0].a[0] === 0.15 && PD.model.pipes[0].b[0] === -2 && r1.after === r1.before, JSON.stringify([r1, PD.model.pipes[0], PD.model.equip[0].p]));
+  const r2 = PD.eqMove(0, 'x', -3);
+  check('a move that would make the followed pipe turn back is refused', r2.ok === false && PD.model.equip[0].p[0] === 0.5);
+  const r3 = PD.eqMove(0, 'z', 0.3);
+  check('a sideways move leaves the pipe and reports the lost nozzle end', r3.ok && r3.follow === 0 && r3.after < r3.before && PD.model.pipes[0].a[0] === 0.15, JSON.stringify(r3));
+  const r4 = PD.eqMove(0, 'y', -5);
+  check('equipment cannot go below the floor', r4.ok && PD.model.equip[0].p[1] === 0, JSON.stringify(PD.model.equip[0].p));
+  check('an unknown axis or equipment does nothing', PD.eqMove(0, 'q', 1) === null && PD.eqMove(5, 'x', 1) === null);
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
