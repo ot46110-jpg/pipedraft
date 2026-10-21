@@ -900,6 +900,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ]
     });
     ex.pipes.forEach(function (p) { p.fl = 1; });                    // flow follows the drawing order
+    var keepM = model; model = ex; try { ex.valves.forEach(function (v) { addValveFlanges(v); }); } finally { model = keepM; }   // the flanged valves come with their flanges, so the list is complete
     return ex;
   }
 
@@ -1561,9 +1562,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
-    hydroWarnings(); spWarnings();
+    hydroWarnings(); spWarnings(); partWarnings();
     matDirty = true;
     renderBom(); showInsp(); updateEgz();
+    $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
     $('undo').disabled = !hist.length;
   }
 
@@ -1823,6 +1825,32 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (sp) { model.lines[ln].spec = sp.id; model.pipes.forEach(function (p) { if (p.ln === ln) p.s = sp.sch; }); } else delete model.lines[ln].spec;
     spChanged(); return true;
   }
+  function resizePipe(pi, nn) {                                     // a new size for one pipe; what sits on it (valves with their flanges, flanges, parts, supports) follows
+    var p = model.pipes[pi]; if (!p) return; p.n = nn;
+    model.valves.forEach(function (vv) { if (hostOf(vv.p) !== pi) return; var had = valveFaceFlanges(vv).length > 0; dropValveFlanges(vv); vv.n = nn; if (had) addValveFlanges(vv); });
+    ['flanges', 'items', 'supports'].forEach(function (g) { model[g].forEach(function (x) { if (hostOf(x.p) === pi) x.n = nn; }); });
+  }
+  function partWarnings() {                                         // things that make the bill of materials wrong without looking wrong on screen
+    var tg1 = assignTags(), n = 0;
+    model.valves.forEach(function (v, i) {
+      var hi = hostOf(v.p); if (hi < 0) return;
+      if (model.pipes[hi].n !== v.n) warns.push('Valve ' + tg1.valves[i] + ' is ' + sz(v.n) + ' but sits on ' + sz(model.pipes[hi].n) + ' pipe (pipe ' + (hi + 1) + '). Select the pipe and set the size again.');
+      var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e);
+      if ((t === 'flg' || t === 'wafer') && !valveFaceFlanges(v).length) warns.push('Flanged valve ' + tg1.valves[i] + ' has no flanges against it, so the list has no flanges, gaskets or bolts. Select it and use Add flanges.');
+    });
+    ['items', 'flanges'].forEach(function (g) { model[g].forEach(function (x) { var hi = hostOf(x.p); if (hi >= 0 && model.pipes[hi].n !== x.n && n++ < 6) warns.push((g === 'items' ? 'An inline part' : 'A flange') + ' is ' + sz(x.n) + ' but sits on ' + sz(model.pipes[hi].n) + ' pipe (pipe ' + (hi + 1) + ').'); }); });
+    var P = model.pipes, found = 0;                                 // pipes lying on top of each other are counted twice
+    for (var i = 0; i < P.length && found < 6; i++) for (var j = i + 1; j < P.length && found < 6; j++) {
+      var a = P[i].a, b = P[i].b, c = P[j].a, d = P[j].b, ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], L = Math.hypot(ux, uy, uz); if (L < 1e-6) continue;
+      ux /= L; uy /= L; uz /= L;
+      var s0 = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy + (c[2] - a[2]) * uz, s1 = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy + (d[2] - a[2]) * uz;
+      var dc = Math.hypot(c[0] - a[0] - ux * s0, c[1] - a[1] - uy * s0, c[2] - a[2] - uz * s0), dd = Math.hypot(d[0] - a[0] - ux * s1, d[1] - a[1] - uy * s1, d[2] - a[2] - uz * s1);
+      if (dc > 0.002 || dd > 0.002) continue;
+      var ov = Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1));
+      if (ov > 0.01) { found++; warns.push('Pipes ' + (i + 1) + ' and ' + (j + 1) + ' lie on top of each other for ' + Math.round(ov * 1000) + ' mm, so that length is counted twice. Delete one of them.'); }
+    }
+    Object.keys(lines).forEach(function (k) { if (lines[k].qty < -0.0005) warns.push('The list has a negative quantity for "' + lines[k].desc + '": a part is longer than its pipe.'); });
+  }
   function spWarnings() {                                           // pipes and valves that break the class of their line
     var seen = {};
     model.pipes.forEach(function (p, i) {
@@ -1924,7 +1952,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var rows = bomRows(), h = '<h2>Bill of materials</h2><p class="empty" style="margin:0 0 8px;font-size:12px">' + esc(std().name) + '. Standards and materials are typical for this set, so confirm them against your piping class. Dimensions are unverified: check them against the standards before ordering.</p>';
     if (!rows.length) h += '<p class="empty">Nothing drawn yet. Pick Pipe and tap the grid to start a run.</p>';
     else h += '<table>' + rows.map(function (r) { return '<tr><td>' + esc(r[0]) + (r[2] ? '<div class="std">' + esc(r[2]) + '</div>' : '') + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
-    if (warns.length) h += '<h2 style="margin-top:14px;color:var(--danger)">Check</h2><ul style="margin:0;padding-left:18px;font-size:12.5px">' + warns.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+    if (warns.length) h += '<h2 style="margin-top:14px;color:var(--danger)">Check</h2><ul style="margin:0;padding-left:18px;font-size:12.5px">' + warns.map(function (w) { var m = /\b[Pp]ipes? ([0-9]+)/.exec(w); return '<li' + (m ? ' data-pipe="' + (m[1] - 1) + '" style="cursor:pointer" title="Tap to select this pipe"' : '') + '>' + esc(w) + '</li>'; }).join('') + '</ul>';
     h += '<div class="actions"><button id="copy"' + (rows.length ? '' : ' disabled') + '>Copy as text</button></div>';
     $('bom').innerHTML = h;
     var cp = $('copy');
@@ -2141,6 +2169,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var k = key(mm3(z.p));
     return model.pipes.some(function (q) { return key(q.a) === k || key(q.b) === k; });
   }
+  function adoptFrom(pt) {                                          // start of a run on a pipe end: continue as that pipe, so the size and line do not change by accident
+    var k = key(pt), p = null; model.pipes.forEach(function (q) { if (!p && (key(q.a) === k || key(q.b) === k)) p = q; });
+    if (!p || (p.n === curN && (p.s || 40) === curS && p.ln === curL)) return;
+    curN = p.n; curS = p.s || 40; curL = p.ln; $('nps').value = String(curN); $('sched').value = String(curS); $('ln').value = curL;
+    toast('Run continues as ' + sz(curN) + ', SCH ' + curS + ', line ' + curL);
+  }
   function startAtNozzle(z) {                                       // first pipe leaves along the nozzle axis, same size as the nozzle
     var end = mm3(z.p.clone().addScaledVector(z.d, 0.3));
     curN = z.n; $('nps').value = String(z.n);
@@ -2282,7 +2316,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           var st = ss ? ss.pt : startPoint(e); if (!st) return;
           var before = JSON.stringify(model);
           if (splitAt(st)) { hist.push(before); changed(); }
-          cursor = st; elev = st[1]; updateUi();
+          cursor = st; elev = st[1]; adoptFrom(st); updateUi();
         }
       } else if (ss && key(ss.pt) !== key(cursor)) {
         pushHist(); routeTo(cursor, ss.pt, ss.noz); changed();
@@ -2500,12 +2534,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // Typed values use the CAD axes in millimetres: X and Y are horizontal, Z is up. The scene itself has Y up, so CAD Y is scene Z.
   function cadOf(p) { return [p[0], p[2], p[1]]; }
   function sceneOf(c) { return [c[0], c[2], c[1]]; }
-  function numField(id) { var v = parseFloat(String($(id).value).replace(',', '.')); return isFinite(v) ? v : null; }
+  function parseNum(s) {                                            // a typed number: digits, one decimal separator, + and - between terms, optional mm; anything else is refused
+    var t = String(s == null ? '' : s).trim().toLowerCase().replace(/\s*mm$/, '').replace(/\s+/g, '');
+    if (t === '') return null;
+    if (/^[+-]?[0-9]{1,3}(,[0-9]{3})+(\.[0-9]+)?$/.test(t)) t = t.replace(/,/g, '');   // 1,500 is fifteen hundred
+    else t = t.replace(',', '.');
+    if (!/^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([+-]([0-9]+\.?[0-9]*|\.[0-9]+))*$/.test(t)) return null;
+    var sum = 0; t.replace(/[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)/g, function (m) { sum += parseFloat(m); return m; });
+    return isFinite(sum) ? sum : null;
+  }
+  function numField(id) { return parseNum($(id).value); }
   function mmText(m) { return String(+(m * 1000).toFixed(1)); }
   function addTyped() {                                             // an exact length along the aimed or locked axis
     if (!cursor) return;
     var val = numField('lenIn');
-    if (val == null || val === 0) { toast('Type a length in mm'); return; }
+    if (val == null || val === 0) { toast('Type a length in mm, for example 1500 or 1200+300'); return; }
+    if (Math.abs(val) < 50) { toast('A pipe shorter than 50 mm is not drawn'); return; }
     var dir = null;
     if (axisMode !== 'auto') { var ai = { x: 0, y: 1, z: 2 }[axisMode]; dir = AXV[ai].clone(); if (lastAim && lastAim.axis === ai) dir.multiplyScalar(lastAim.sign); }
     else if (lastAim) dir = lastAim.dir.clone().multiplyScalar(lastAim.sign);
@@ -2777,7 +2821,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     h += '<div class="row">' + (sel.kind === 'fit' ? '<button id="i-del">Remove fitting</button>' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
     el.innerHTML = h; el.hidden = false;
     function edit(fn) { return function () { pushHist(); fn(this.value); changed(); }; }
-    if ($('i-n')) $('i-n').onchange = edit(function (v) { it.n = +v; });
+    if ($('i-n')) $('i-n').onchange = edit(function (v) {
+      if (sel.kind === 'pipe') resizePipe(sel.i, +v); else it.n = +v;
+    });
     if ($('i-s')) $('i-s').onchange = edit(function (v) { it.s = +v; });
     if ($('i-ln')) $('i-ln').onchange = edit(function (v) { it.ln = safeLn(v) || 'L-001'; });
     if ($('i-k')) $('i-k').onchange = edit(function (v) { var had = valveFaceFlanges(it).length > 0; dropValveFlanges(it); it.k = v; if (had) addValveFlanges(it); });
@@ -2816,6 +2862,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- exports ----------
+  function fname(kind, ext) {                                       // project_drawing_kind_revN_date.ext, so files in the Files app tell themselves apart
+    var T0 = model.title || {}, clean = function (s) { return String(s == null ? '' : s).trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''); };
+    var parts = [clean(T0.project) || 'pipedraft']; if (clean(T0.drawing)) parts.push(clean(T0.drawing)); if (kind) parts.push(kind);
+    parts.push('rev' + (clean(T0.rev) || '0')); parts.push(new Date().toISOString().slice(0, 10));
+    return parts.join('_') + '.' + ext;
+  }
   function saveBlob(name, blob) {
     try {
       var f = new File([blob], name, { type: blob.type });
@@ -4134,6 +4186,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     hist.push(JSON.stringify(model));
     model = normalize(JSON.parse(redoStack.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
   };
+  $('bom').addEventListener('click', function (e) {                // a warning that names a pipe: select it and bring the view to it
+    var li = e.target.closest ? e.target.closest('li[data-pipe]') : null; if (!li) return;
+    var pi = +li.getAttribute('data-pipe'), p = model.pipes[pi]; if (!p) return;
+    setTool('sel'); sel = { kind: 'pipe', i: pi }; target.set((p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2); rebuild();
+  });
   $('bomBtn').onclick = function () { var b = $('bom'); b.hidden = !b.hidden; $('bomBtn').setAttribute('aria-pressed', String(!b.hidden)); $('more').hidden = true; };
   if (typeof MutationObserver !== 'undefined') new MutationObserver(function () { $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden)); }).observe($('more'), { attributes: true, attributeFilter: ['hidden'] });   // the button follows the menu however it was closed
   $('moreBtn').onclick = function () { $('more').hidden = !$('more').hidden; $('pset').hidden = true; $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden)); };
@@ -4332,8 +4389,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('fabBtn').onclick = function () { $('more').hidden = true; showFab(); };
   $('llBtn').onclick = function () { $('more').hidden = true; $('llBody').innerHTML = lineListHtml(); $('ll').hidden = false; };
   $('ll-close').onclick = function () { $('ll').hidden = true; };
-  $('f-bomln').onclick = function () { saveBlob('pipedraft-bom-by-line.csv', new Blob([bomByLineCsv()], { type: 'text/csv' })); };
-  $('ll-csv').onclick = $('f-ll').onclick = function () { saveBlob('pipedraft-linelist.csv', new Blob([lineCsv()], { type: 'text/csv' })); };
+  $('f-bomln').onclick = function () { saveBlob(fname('bom-by-line', 'csv'), new Blob([bomByLineCsv()], { type: 'text/csv' })); };
+  $('ll-csv').onclick = $('f-ll').onclick = function () { saveBlob(fname('line-list', 'csv'), new Blob([lineCsv()], { type: 'text/csv' })); };
   function llPaint() { $('llBody').innerHTML = lineListHtml(); }
   $('llBody').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
@@ -4357,8 +4414,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var trw = t.closest ? t.closest('tr') : null; if (trw && trw.cells && trw.cells[1]) trw.cells[1].textContent = lineDesignation(ln);   // the Designation column follows the fluid code and class
   });
   $('fab-close').onclick = function () { $('fab').hidden = true; };
-  $('fab-csv').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
-  $('f-fab').onclick = function () { saveBlob('pipedraft-cutlist.csv', new Blob([fabCsv()], { type: 'text/csv' })); };
+  $('fab-csv').onclick = function () { saveBlob(fname('cut-list', 'csv'), new Blob([fabCsv()], { type: 'text/csv' })); };
+  $('f-fab').onclick = function () { saveBlob(fname('cut-list', 'csv'), new Blob([fabCsv()], { type: 'text/csv' })); };
   $('fabBody').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-wk]') : null; if (!b) return;
     var k = b.getAttribute('data-wk'); if (model.field[k]) delete model.field[k]; else model.field[k] = 1;
@@ -4375,7 +4432,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('legendBtn').onclick = function () { showSheet('Piping symbols', legendSvg(), 'pipedraft-symbols.svg'); };
   $('iso-close').onclick = function () { $('iso').hidden = true; };
   $('iso-save').onclick = function () { if (isoCur) saveBlob(isoName, new Blob([isoCur], { type: 'image/svg+xml' })); else toast('Nothing to save'); };
-  $('f-save').onclick = function () { saveBlob('pipedraft.json', new Blob([JSON.stringify({ app: 'pipedraft', version: 2, model: model }, null, 1)], { type: 'application/json' })); };
+  $('f-save').onclick = function () { try { localStorage.setItem('pipedraft.lastExport', String(Date.now())); } catch (e) {} saveBlob(fname('project', 'json'), new Blob([JSON.stringify({ app: 'pipedraft', version: 2, model: model }, null, 1)], { type: 'application/json' })); };
   $('f-open').onclick = function () { $('openf').click(); };
   $('f-bk').onclick = function () { $('more').hidden = true; $('bkBody').innerHTML = backupsHtml(); $('bk').hidden = false; };
   $('bk-close').onclick = function () { $('bk').hidden = true; };
@@ -4396,9 +4453,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     };
     rd.readAsText(f); this.value = '';
   };
-  $('f-csv').onclick = function () { saveBlob('pipedraft-bom.csv', new Blob([csv()], { type: 'text/csv' })); };
-  $('f-dxf').onclick = function () { saveBlob('pipedraft.dxf', new Blob([dxf()], { type: 'application/dxf' })); };
-  $('f-png').onclick = function () { renderer.render(scene, camera); cv.toBlob(function (b) { if (b) saveBlob('pipedraft.png', b); }); };
+  $('f-csv').onclick = function () { saveBlob(fname('bom', 'csv'), new Blob([csv()], { type: 'text/csv' })); };
+  $('f-dxf').onclick = function () { saveBlob(fname('drawing', 'dxf'), new Blob([dxf()], { type: 'application/dxf' })); };
+  $('f-png').onclick = function () { renderer.render(scene, camera); cv.toBlob(function (b) { if (b) saveBlob(fname('view', 'png'), b); }); };
   $('f-clear').onclick = function () {
     var b = $('f-clear');
     if (b.dataset.arm !== '1') {
@@ -4713,6 +4770,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     spec: { tpl: SP_TPL, add: spAdd, update: spUpdate, del: spDelete, assign: spAssign, of: spOf, html: specHtml, desig: lineDesignation, lineList: lineList },
+    addValveFlanges: addValveFlanges, fname: fname, parseNum: parseNum, resizePipe: resizePipe,
     selectEq: function (i) { setTool('sel'); sel = { kind: 'equip', i: i }; rebuild(); return egzMeshes.length; },
     egz: function () { return { m: egzMeshes, cam: camera }; },
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
@@ -4732,6 +4790,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     try { toast('The saved project could not be opened. A copy was kept aside and a blank project started.'); } catch (e3) {}
   }
   updateUi(); resize();
+  setTimeout(function () {                                          // browsers can clear a site's data: remind about a copy in Files now and then
+    try {
+      var last = Number(localStorage.getItem('pipedraft.lastExport')) || 0;
+      if (!sample && model.pipes.length > 3 && Date.now() - last > 3 * 864e5) toast('Keep a copy outside Safari: ⋯, File, Save project');
+    } catch (e) {}
+  }, 6000);
   (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>

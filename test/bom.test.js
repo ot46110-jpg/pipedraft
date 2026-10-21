@@ -25,7 +25,7 @@ const has = s => rows().includes(s);
 
 // Example layout shown on first open.
 check('the example layout has no clashes', PD.clashes().length === 0, JSON.stringify(PD.clashes().map(c => c.text)));
-check('example BOM', ['Pipe, NPS 4 SCH 40, BE | 8.27 m', 'Pipe, NPS 3 SCH 40, BE | 0.75 m', 'Elbow 90° LR BW, NPS 4 SCH 40 | 2', 'Reducer concentric BW, NPS 4×3 SCH 40 | 1', 'Tee equal BW, NPS 4 SCH 40 | 1', 'Gate valve flanged 150#, NPS 4 | 2'].every(has), rows());
+check('example BOM', ['Pipe, NPS 4 SCH 40, BE | 8.15 m', 'Weld-neck flange 150# BW, NPS 4 SCH 40 | 4', 'Pipe, NPS 3 SCH 40, BE | 0.75 m', 'Elbow 90° LR BW, NPS 4 SCH 40 | 2', 'Reducer concentric BW, NPS 4×3 SCH 40 | 1', 'Tee equal BW, NPS 4 SCH 40 | 1', 'Gate valve flanged 150#, NPS 4 | 2'].every(has), rows());
 check('example has no warnings', PD.warns().length === 0, PD.warns().join('\n'));
 
 // Branch from the middle of a pipe makes a tee.
@@ -384,7 +384,7 @@ check('three-way valve has a side port you can connect to', port && near(arr(por
 PD.model.valves[0].rot = 1; PD.rebuild();
 check('turning the port moves it around the pipe', Math.abs(PD.nozzles().find(z => z.e === -1).d.y - 1) < 1e-6);
 PD.startAtNozzle(PD.nozzles().find(z => z.e === -1)); PD.rebuild();
-check('a pipe starts on the port along its axis, with P&ID still working', PD.model.pipes.length === 2 && near(PD.model.pipes[1].a, arr(PD.nozzles().find(z => z.e === -1))) && /^<svg/.test(PD.pid()) && PD.warns().length === 0, PD.warns().join());
+check('a pipe starts on the port along its axis, with P&ID still working', PD.model.pipes.length === 2 && near(PD.model.pipes[1].a, arr(PD.nozzles().find(z => z.e === -1))) && /^<svg/.test(PD.pid()) && PD.warns().filter(w => !/has no flanges/.test(w)).length === 0, PD.warns().join());
 PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [], items: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, t: 'nipple' }] });
 check('pipe nipple', has('Pipe nipple, 150 mm, PBE, NPS 4 | 1'), rows());
 
@@ -1342,6 +1342,25 @@ check('a size outside the list is snapped to the nearest listed size and the mod
     PD.load({ pipes: [{ a: [0, 0.5, 0], b: [2, 0.5, 0], n: 4, ln: 'L-1' }, { a: [2, 0.5, 0], b: [2, 0.5, 2], n: 4, ln: 'L-2' }] });
     return PD.iso('L-1').includes('CONT. L-2');
   })());
+}
+
+// the audit items: strict numbers, resizing a pipe with its parts, BOM integrity warnings, file names
+{
+  const pn = PD.parseNum;
+  check('typed numbers: 1,500 is 1500, 1200+300 is 1500, feet and inches are refused, mm is allowed', pn('1,500') === 1500 && pn('1200+300') === 1500 && pn('1500 - 200') === 1300 && pn("4'6\"") === null && pn('12 mm') === 12 && pn('1,5') === 1.5 && pn('abc') === null && pn('') === null && pn('-300') === -300 && pn('1.5.2') === null);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+  const vv = PD.model.valves[0]; PD.addValveFlanges && PD.addValveFlanges(vv);
+  check('a flanged valve with no flanges is reported', PD.warns().some(w => /has no flanges against it/.test(w)), JSON.stringify(PD.warns()));
+  PD.resizePipe(0, 6);
+  check('resizing a pipe resizes the valve on it and the BOM has no negative row', PD.model.valves[0].n === 6 && PD.model.flanges.every(f => f.n === 6) && PD.rows().every(r => !/^-/.test(r[1])) && !PD.warns().some(w => /sits on/.test(w)), JSON.stringify(PD.warns()));
+  PD.model.valves[0].n = 4; PD.rebuild();
+  check('a valve of another size than its pipe is reported', PD.warns().some(w => /Valve .* is NPS 4 but sits on NPS 6/.test(w)), JSON.stringify(PD.warns()));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [1, 0, 0], b: [2, 0, 0], n: 4 }] });
+  check('pipes lying on top of each other are reported', PD.warns().some(w => /Pipes 1 and 2 lie on top of each other for 1000 mm/.test(w)), JSON.stringify(PD.warns()));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [3, 0, 0], b: [5, 0, 0], n: 4 }, { a: [0, 0, 1], b: [3, 0, 1], n: 4 }] });
+  check('pipes end to end or side by side are not reported as overlapping', !PD.warns().some(w => /on top of each other/.test(w)), JSON.stringify(PD.warns()));
+  PD.model.title = { project: 'Plant A / Unit 2', drawing: 'ISO-101', rev: 'B' };
+  check('file names come from the project, drawing, kind, revision and date', /^Plant-A-Unit-2_ISO-101_bom_revB_[0-9]{4}-[0-9]{2}-[0-9]{2}.csv$/.test(PD.fname('bom', 'csv')), PD.fname('bom', 'csv'));
 }
 
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
