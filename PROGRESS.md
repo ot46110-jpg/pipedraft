@@ -64,3 +64,5 @@
 - รอบ audit (21 ต.ค.): ปรับขนาดท่อพาวาล์ว/หน้าแปลน/ชิ้นส่วนบนท่อไปด้วย, รันใหม่ที่เริ่มจากปลายท่อสืบทอดขนาด/schedule/line, พิมพ์ตัวเลขเข้ม (1,500 / 1200+300 / ปฏิเสธ 4'6"), ท่อสั้นกว่า 50 มม. ไม่วาด, เตือน: วาล์วหน้าแปลนไม่มีหน้าแปลน / ขนาดไม่ตรงท่อ / ท่อซ้อนกัน / BOM ติดลบ, ตัวอย่างเริ่มต้นมีหน้าแปลนครบ, ปุ่ม BOM แสดงจำนวนคำเตือน + แตะคำเตือนที่ระบุท่อเพื่อเลือก, ชื่อไฟล์ส่งออกจาก project/drawing/rev/วันที่, เตือนให้เก็บสำเนานอก Safari.
 
 - Pipe inspector: Size of the whole run + Apply schedule and line to the whole run (runPipes = same-size pipes through elbows, stops at tee/nozzle/size change); Line list: rename line number; valve/inline part/support/instrument: เลือกใน Select แล้วลากลูกศรเหลืองเลื่อนตามท่อ (valve พาหน้าแปลนไปด้วย).
+
+- ส่งออก: DXF มี $INSUNITS(มม.)/layer ต่อ line/TEXT tag; PDF ทั้งหมดทุกไลน์ในไฟล์เดียว + เลือก A3/A4; Weld gap ใน Project settings หักจาก cut length; หน้า How to draw (⋯ → Project, เปิดเองครั้งแรก).

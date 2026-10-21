@@ -1386,5 +1386,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('a valve on a short pipe is not given arrows to move along', (() => { PD.load({ pipes: [{ a: [0, 0, 0], b: [0.1, 0, 0], n: 4 }], valves: [{ p: [0.05, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] }); return PD.alongMove('valve', 0, 0.02) === null; })());
 }
 
+// DXF, weld gap, multi-page PDF
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'L-1' }, { a: [0, 0, 1], b: [3, 0, 1], n: 4, ln: 'L 2/b' }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
+  const dx = PD.dxf();
+  check('the DXF sets millimetre units, has a layer per line number and tags as text', dx.includes('$INSUNITS') && dx.includes('PIPE_L-1') && dx.includes('PIPE_L_2_b') && dx.split(String.fromCharCode(10)).includes('TEXT') && dx.includes('GV-1') && dx.trim().endsWith('EOF'), dx.slice(0, 200));
+  const len0 = PD.fab().pieces.map(p => p.len);
+  PD.model.spec.gap = '2'; PD.rebuild();
+  const len1 = PD.fab().pieces.map(p => p.len);
+  check('a weld gap is taken off both ends of every cut piece', len0.length === len1.length && len1.every((l, i) => Math.abs(l - (len0[i] - 0.004)) < 1e-9), JSON.stringify([len0, len1]));
+  PD.model.spec.gap = '0'; PD.rebuild();
+  const jpg = (n) => new Uint8Array(n).fill(7);
+  const pdf = PD.buildPdf([{ jpg: jpg(50), iw: 2400, ih: 1700 }, { jpg: jpg(60), iw: 2400, ih: 1700 }, { jpg: jpg(70), iw: 2400, ih: 1700 }], 'a4');
+  const txt = Buffer.from(pdf).toString('latin1');
+  const offs = [...txt.matchAll(/([0-9]{10}) 00000 n /g)].map(m => +m[1]);
+  check('a three page PDF is well formed: page count, A4 size, every xref offset points at its object', txt.startsWith('%PDF-1.4') && txt.includes('/Count 3') && txt.includes('/MediaBox [0 0 841.89 595.28]') && offs.length === 11 && offs.every((o, i) => txt.slice(o).startsWith((i + 1) + ' 0 obj')) && txt.trim().endsWith('%%EOF') && txt.includes('/Size 12 '), offs.join(','));
+  check('the old single page call still works', Buffer.from(PD.buildPdf(jpg(40), 2400, 1700)).toString('latin1').includes('/Count 1'));
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
