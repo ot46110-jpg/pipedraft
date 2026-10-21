@@ -1217,6 +1217,17 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const faces = ['top', 'bot', 'l', 'r', 'f', 'b'].map(f => C.onFace(bx, bx.noz[0], f));
   check('place-on-face puts the nozzle on the box surface pointing out', JSON.stringify(faces.map(f => [f.x, f.y, f.z, f.dir])) === JSON.stringify([[0, 0, 800, '+Z'], [0, 0, 0, '-Z'], [-500, 0, 400, '-X'], [500, 0, 400, '+X'], [0, -300, 400, '-Y'], [0, 300, 400, '+Y']]), JSON.stringify(faces));
   const cy = C.add({ kind: 'equipment', name: 'FaceC', shape: 'cyl', dia: 1200, h: 2000, noz: [{ x: 0, y: 0, z: 500, dir: '+X', n: 4 }] }).e;
+  const pm = C.tpl.filter(t => t[0] === 'pump')[0][2];
+  const pe = C.add(Object.assign({ kind: 'equipment', name: 'Drawn' }, JSON.parse(JSON.stringify(pm)))).e;
+  check('drawn shapes are kept, hidden outline is kept', pe.parts.length === 3 && pe.hide === true && pe.parts[2].col === 3);
+  const pu = C.update(pe.id, { parts: pe.parts.concat([{ t: 'cyl', x: '10', y: 0, z: 0, w: 200, d: 999, h: 400, col: -1 }, { t: 'sph', x: 0, y: 0, z: 0, w: 300, d: 5, h: 5 }, { t: 'cyly', x: 0, y: 0, z: 0, w: 200, d: 500, h: 7 }]) });
+  check('shape sizes are made consistent for their type', pu.e && pu.e.parts[3].d === 200 && pu.e.parts[4].h === 300 && pu.e.parts[4].d === 300 && pu.e.parts[5].h === 200, JSON.stringify(pu.e && pu.e.parts.slice(3)));
+  check('a shape with a bad size or position is refused in the panel', C.update(pe.id, { parts: [{ t: 'box', x: 0, y: 0, z: 0, w: 5, d: 100, h: 100 }] }).err && C.update(pe.id, { parts: [{ t: 'box', x: 'a', y: 0, z: 0, w: 100, d: 100, h: 100 }] }).err && C.update(pe.id, { parts: new Array(13).fill({ t: 'box', x: 0, y: 0, z: 0, w: 100, d: 100, h: 100 }) }).err);
+  const pi = C.imp(JSON.stringify({ custom: [{ id: 'zz1', kind: 'equipment', name: 'F', shape: 'box', w: 1000, d: 1000, h: 1000, noz: [], parts: [null, 5, { t: 'bad', w: 'x', x: 1e12 }, { t: 'sph', w: 400, x: 0, y: 0, z: 0 }].concat(new Array(30).fill({ t: 'box', w: 100, d: 100, h: 100, x: 0, y: 0, z: 0 })) }] }));
+  const pz = PD.model.custom.filter(q => q.id === 'zz1')[0];
+  check('a file with broken shapes is cleaned and capped at 12', pi === 1 && pz && pz.parts.length === 12 && pz.parts[0].t === 'box' && pz.parts[0].x === 20000, JSON.stringify(pz && pz.parts.slice(0, 2)));
+  PD.model.equip.push({ k: 'cu:' + pe.id, p: [0, 0, 0], r: 0 }); PD.rebuild(); C.del(pe.id);
+  check('a placed copy keeps its drawn shapes after the entry is deleted', PD.model.equip[0].cu.parts.length === 6);
   check('place-on-face on a cylinder uses the radius and the update validates', C.onFace(cy, cy.noz[0], 'r').x === 600 && C.update(cy.id, { noz: [Object.assign({}, cy.noz[0], C.onFace(cy, cy.noz[0], 'top'))] }).e.noz[0].z === 2000);
 }
 

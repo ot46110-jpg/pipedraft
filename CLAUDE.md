@@ -89,3 +89,5 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Keyboard: P pipe, V valve, D delete, N navigate, Esc or Enter finish run, arrow up and down for vertical pipe, Cmd+Z undo.
 - Not verified on a real iPad: pen aim-and-lift, palm rejection, standalone full screen.
 - Status, what is done and what is next: see PROGRESS.md.
+
+- Custom equipment `parts[]` (eqPartClean/eqPartMesh) are 3D only; clash, iso outline and nozzle clamp still use the main box/cyl envelope. `hide` hides the envelope mesh.
