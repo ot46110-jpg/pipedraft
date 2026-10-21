@@ -91,3 +91,5 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Status, what is done and what is next: see PROGRESS.md.
 
 - Custom equipment `parts[]` (eqPartClean/eqPartMesh) are drawn in 3D and on the iso sheet; clash and nozzle clamp still use the main box/cyl envelope. `hide` hides the envelope mesh.
+
+- model.pspecs[] = piping classes (spValidate/spAssign/spWarnings); model.lines[ln].spec = class id; one-line subset sets model.onlyLine so stdOf uses that line class. Only SCH 40/80 and class 150 dimensions exist.

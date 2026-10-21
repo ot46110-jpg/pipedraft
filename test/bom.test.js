@@ -1252,5 +1252,35 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('an unknown axis or equipment does nothing', PD.eqMove(0, 'q', 1) === null && PD.eqMove(5, 'x', 1) === null);
 }
 
+// piping classes: assigned to a line, they set the schedule, the designation, the BOM text of a one-line sheet and warnings
+{
+  const S = PD.spec;
+  PD.load({ pipes: [{ a: [0, 0.5, 0], b: [3, 0.5, 0], n: 4, s: 80, ln: 'L-001' }, { a: [0, 0.5, 2], b: [3, 0.5, 2], n: 4, s: 40, ln: 'L-002' }], valves: [], custom: [], equip: [] });
+  const a1 = S.add('cs150'), g1 = S.add('galv');
+  check('a class is added from a template with its fields', a1.e && a1.e.code === 'A1' && a1.e.sch === 40 && a1.e.maxN === 12 && PD.model.pspecs.length === 2);
+  check('a bad class is refused', S.add({ name: '' }).err && S.update(a1.e.id, { minN: 6, maxN: 2 }).err && S.update(a1.e.id, { minN: 5 }).err);
+  S.assign('L-001', a1.e.id);
+  check('assigning a class sets the schedule of that line and its designation', PD.model.pipes[0].s === 40 && PD.model.pipes[1].s === 40 && S.desig('L-001').endsWith('-L-001-A1'), S.desig('L-001'));
+  PD.model.pipes[0].s = 80; PD.rebuild();
+  check('a pipe in another schedule than its class is reported', PD.warns().some(w => /SCH 80 pipe but class Carbon steel 150#/.test(w)), JSON.stringify(PD.warns()));
+  S.assign('L-002', g1.e.id);
+  check('a pipe above the size range of its class is reported', PD.warns().some(w => /Line L-002 has .* pipe but class Galvanised steel, threaded covers/.test(w)), JSON.stringify(PD.warns()));
+  PD.model.valves.push({ p: [1.5, 0.5, 2], d: [1, 0, 0], n: 4, s: 40, k: 'butterfly' }); PD.rebuild();
+  check('a valve the class does not allow is reported', PD.warns().some(w => /not allowed by class Galvanised/.test(w)), JSON.stringify(PD.warns()));
+  const pc = PD.model.pipes.length; PD.addPipe([5, 0.5, 0], [6, 0.5, 0], 4, 80, 'L-001'); PD.rebuild();
+  check('a new pipe on a line with a class takes the class schedule', PD.model.pipes[pc].s === 40);
+  check('a deleted class unlinks its lines', S.del(g1.e.id) && !PD.model.lines['L-002'].spec && PD.model.pspecs.length === 1);
+  const bl2 = PD.bomByLine();
+  check('the BOM of a line with a class carries the class materials, other lines the standard ones', bl2.split(String.fromCharCode(10)).some(r => r.startsWith('"L-001"') && r.includes('Pipe,') && r.includes('ASTM A106 Gr.B, ASME B36.10M')) && bl2.split(String.fromCharCode(10)).some(r => r.startsWith('"L-002"') && r.includes('Pipe,')), bl2.slice(0, 500));
+  const html = S.html();
+  check('the class editor lists the class and the line list offers it', html.includes('Carbon steel 150#') && html.includes('Piping classes (1)'));
+  const L0 = PD.lineList(); check('the line list row carries the class id', L0.find(r => r.ln === 'L-001').spec === a1.e.id);
+  const rt = PD.model; PD.load(JSON.parse(JSON.stringify(rt)));
+  check('classes survive a save and load, junk is dropped', PD.model.pspecs.length === 1 && PD.model.pspecs[0].id === a1.e.id);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [1, 0, 0], n: 4 }], pspecs: [null, 5, { name: '=cmd', code: 'a b!', sch: 7, minN: 99, maxN: 'x', noValve: ['gate', 'nope', 'gate'] }].concat(new Array(30).fill({ name: 'X' })) });
+  const p0 = PD.model.pspecs[0];
+  check('classes from a file are cleaned and capped', PD.model.pspecs.length === 20 && p0.name === 'cmd' && p0.code === 'AB' && p0.sch === 40 && p0.minN === 0.5 && p0.maxN === 12 && p0.noValve.length === 1, JSON.stringify(p0));
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

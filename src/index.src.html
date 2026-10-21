@@ -74,6 +74,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .prows small { display: block; font: 400 10.5px var(--font-data); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cu-noz.selrow { box-shadow: inset 3px 0 0 #f0b429; padding-left: 6px; }
 .cu-noz b[data-cusel] { cursor: pointer; }
+.chk { display: inline-flex; gap: 5px; align-items: center; min-height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; font: 400 12px var(--font-ui); }
 .pnew { border-style: dashed; color: var(--dim); }
 .pnote { margin: 2px 4px 0; font: 400 11.5px/1.35 var(--font-ui); color: var(--dim); }
 .cu-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
@@ -763,7 +764,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], custom: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], custom: [], pspecs: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -785,6 +786,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.fluid = FLUIDS[m.fluid] ? m.fluid : 'water20'; o.lines = m.lines || {};
     o.fit = m.fit || {}; o.field = m.field || {}; o.title = m.title || {}; o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, m.spec || {});
+    (Array.isArray(m.pspecs) ? m.pspecs : []).forEach(function (r) {   // piping classes; a bad one is dropped, a missing or repeated id gets a new one
+      var v = spValidate(r, false); if (!v.e || o.pspecs.length >= SP_MAX) return;
+      v.e.id = typeof r.id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(r.id) && !o.pspecs.some(function (x) { return x.id === r.id; }) ? r.id : spFresh(o.pspecs);
+      o.pspecs.push(v.e);
+    });
     (Array.isArray(m.custom) ? m.custom : []).forEach(function (r) {   // the custom parts library; a bad entry is dropped, a missing or repeated id gets a new one
       var e = cuClean(r); if (!e || o.custom.length >= CU_MAX) return;
       if (!e.id || o.custom.some(function (x) { return x.id === e.id; })) e.id = cuFresh(o.custom);
@@ -1518,7 +1524,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
-    hydroWarnings();
+    hydroWarnings(); spWarnings();
     matDirty = true;
     renderBom(); showInsp(); updateEgz();
     $('undo').disabled = !hist.length;
@@ -1729,12 +1735,74 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- line list ----------
+  // ---------- piping classes ----------
+  // A class (spec) names the material of each kind of part, the schedule, the size range and the valves not allowed. It is assigned to a line number.
+  // Dimensions still come from the project standard; the strings are typical values to confirm against your own class.
+  var SP_MAX = 20;
+  var SP_TPL = {
+    cs150: { name: 'Carbon steel 150#', code: 'A1', pipe: 'ASTM A106 Gr.B, ASME B36.10M', fit: 'ASTM A234 WPB, ASME B16.9', flg: 'ASTM A105, ASME B16.5 class 150 RF', gasket: 'Spiral wound, ASME B16.20', bolt: 'ASTM A193 B7 / A194 2H', valve: 'ASTM A216 WCB, class 150', sch: 40, minN: 0.5, maxN: 12, noValve: [] },
+    ss316: { name: 'Stainless 316L 150#', code: 'S1', pipe: 'ASTM A312 TP316L', fit: 'ASTM A403 WP316L', flg: 'ASTM A182 F316L, class 150 RF', gasket: 'Spiral wound 316L / PTFE', bolt: 'ASTM A193 B8M / A194 8M', valve: 'ASTM A351 CF8M, class 150', sch: 40, minN: 0.5, maxN: 12, noValve: [] },
+    galv: { name: 'Galvanised steel, threaded', code: 'G1', pipe: 'ASTM A53 Gr.B galvanised, SCH 40', fit: 'ASTM A197 malleable iron, threaded, galvanised', flg: 'Not used, threaded joints', gasket: 'Not used', bolt: 'Not used', valve: 'Bronze, threaded, class 125', sch: 40, minN: 0.5, maxN: 2, noValve: ['butterfly', 'knife'] }
+  };
+  function spTxt(v) { return String(v == null ? '' : v).trim().replace(/^[=+@\t\r]+/, '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 60); }
+  function spFresh(extra) { var id; do { id = 'p' + Math.floor(Math.random() * 1e9).toString(36); } while ((model.pspecs || []).concat(extra || []).some(function (e) { return e.id === id; })); return id; }
+  function spValidate(f, strict) {                                  // raw fields -> { e } or { err }; strict (the panel) refuses, lenient (files) cleans
+    if (!f || typeof f !== 'object') return { err: 'Not a class' };
+    var e = { name: spTxt(f.name).slice(0, 40) };
+    if (!e.name) return { err: 'Give the class a name' };
+    e.code = String(f.code == null ? '' : f.code).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
+    ['pipe', 'fit', 'flg', 'gasket', 'bolt', 'valve'].forEach(function (k) { e[k] = spTxt(f[k]); });
+    e.sch = Number(f.sch) === 80 ? 80 : 40;
+    var lo = cuNum(f.minN), hi = cuNum(f.maxN);
+    if (NPS_LIST.indexOf(lo) < 0) { if (strict && isFinite(lo)) return { err: 'Smallest size must be a listed size' }; lo = NPS_LIST[0]; }
+    if (NPS_LIST.indexOf(hi) < 0) { if (strict && isFinite(hi)) return { err: 'Largest size must be a listed size' }; hi = NPS_LIST[NPS_LIST.length - 1]; }
+    if (lo > hi) { if (strict) return { err: 'The smallest size is above the largest' }; var t = lo; lo = hi; hi = t; }
+    e.minN = lo; e.maxN = hi;
+    e.noValve = (Array.isArray(f.noValve) ? f.noValve : []).filter(function (k, i, a) { return VALVE_NAME[k] && a.indexOf(k) === i; });
+    return { e: e };
+  }
+  function spOf(ln) { var d = model.lines[ln], id = d && d.spec; return id ? (model.pspecs || []).filter(function (x) { return x.id === id; })[0] || null : null; }
+  function spChanged() { save(); rebuild(); updateUi(); }
+  function spAdd(f) {
+    if (typeof f === 'string') f = SP_TPL[f] || { name: 'New class', code: 'X1', sch: 40, minN: 0.5, maxN: 12 };
+    var v = spValidate(f, true); if (!v.e) return v;
+    if (model.pspecs.length >= SP_MAX) return { err: 'At most ' + SP_MAX + ' classes' };
+    v.e.id = spFresh(); pushHist(); model.pspecs.push(v.e); spChanged(); return v;
+  }
+  function spUpdate(id, f) {
+    var e = model.pspecs.filter(function (x) { return x.id === id; })[0]; if (!e) return { err: 'That class no longer exists' };
+    var v = spValidate(Object.assign({}, e, f), true); if (!v.e) return v;
+    pushHist(); Object.assign(e, v.e); spChanged(); return { e: e };
+  }
+  function spDelete(id) {                                           // lines that used it keep their typed class text but lose the link
+    var i = model.pspecs.map(function (x) { return x.id; }).indexOf(id); if (i < 0) return false;
+    pushHist(); model.pspecs.splice(i, 1); Object.keys(model.lines).forEach(function (k) { if (model.lines[k].spec === id) delete model.lines[k].spec; }); spChanged(); return true;
+  }
+  function spAssign(ln, id) {                                       // put a class on a line number: its pipes take the class schedule
+    var sp = id ? model.pspecs.filter(function (x) { return x.id === id; })[0] : null; if (id && !sp) return false;
+    pushHist(); model.lines[ln] = model.lines[ln] || {};
+    if (sp) { model.lines[ln].spec = sp.id; model.pipes.forEach(function (p) { if (p.ln === ln) p.s = sp.sch; }); } else delete model.lines[ln].spec;
+    spChanged(); return true;
+  }
+  function spWarnings() {                                           // pipes and valves that break the class of their line
+    var seen = {};
+    model.pipes.forEach(function (p, i) {
+      var sp = spOf(p.ln); if (!sp) return;
+      if ((p.n < sp.minN || p.n > sp.maxN) && !seen[p.ln + 's' + p.n]) { seen[p.ln + 's' + p.n] = 1; warns.push('Line ' + p.ln + ' has ' + sz(p.n) + ' pipe but class ' + sp.name + ' covers ' + sz(sp.minN) + ' to ' + sz(sp.maxN) + '.'); }
+      if (p.s !== sp.sch && !seen[p.ln + 'c' + p.s]) { seen[p.ln + 'c' + p.s] = 1; warns.push('Line ' + p.ln + ' has SCH ' + p.s + ' pipe but class ' + sp.name + ' uses SCH ' + sp.sch + '.'); }
+    });
+    model.valves.forEach(function (v, vi) {
+      var i = hostOf(v.p); if (i < 0) return; var sp = spOf(model.pipes[i].ln);
+      if (sp && sp.noValve.indexOf(v.k) >= 0) warns.push((VALVE_NAME[v.k] || v.k) + ' on line ' + model.pipes[i].ln + ' is not allowed by class ' + sp.name + '.');
+    });
+  }
   var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['code', 'Fluid code', 'e.g. CW'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none'], ['from', 'From', 'e.g. Tank T-101'], ['to', 'To', 'e.g. Pump P-101']];
   function lineDesignation(ln, nSel) {                              // size"-fluid code-line number-class, e.g. 2"-P-1001-A1A (empty parts are left out)
     var n = nSel, d = model.lines[ln] || {};
     if (n == null) model.pipes.forEach(function (p) { if (p.ln === ln && (n == null || p.n > n)) n = p.n; });
     var sizeTxt = n == null ? '' : ((model.spec || {}).sizeMode || 'NPS') === 'NPS' ? nl(n) + '"' : szs(n);
-    return [sizeTxt, d.code, ln, d.cls || std().cls].filter(Boolean).join('-');
+    var spd = spOf(ln);
+    return [sizeTxt, d.code, ln, d.cls || (spd && spd.code) || std().cls].filter(Boolean).join('-');
   }
   function lineList() {                                             // one row per line number: what is drawn, plus the data typed for it
     var f = fabrication(), L = {};
@@ -1747,15 +1815,30 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     f.pieces.forEach(function (pc) { if (L[pc.ln]) L[pc.ln].pieces++; });
     return Object.keys(L).sort().map(function (k) {
       var d = model.lines[k] || {}, r = L[k];
-      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
+      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', spec: d.spec || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
     });
   }
+  var spOpen = null;
+  function specHtml() {
+    var h = '<details' + (spOpen ? ' open' : '') + ' id="spbox"><summary>Piping classes (' + model.pspecs.length + ')</summary><p class="empty">A class sets the material text in the bill of materials of a line, its schedule and size range, and warns about valves it does not allow. Sizes and flange dimensions still follow the project standard. The texts are typical: confirm them against your own class.</p>';
+    h += model.pspecs.map(function (s) {
+      var id = esc(s.id), f = function (k, label, ml) { return '<label class="field">' + label + '<input type="text" data-spf="' + k + '" data-id="' + id + '" value="' + esc(s[k]) + '" maxlength="' + (ml || 60) + '" autocomplete="off"></label>'; };
+      var szs2 = function (k) { return NPS_LIST.map(function (n) { return '<option value="' + n + '"' + (s[k] === n ? ' selected' : '') + '>' + esc(sz(n)) + '</option>'; }).join(''); };
+      return '<div class="cu-card"><div class="row">' + f('name', 'Name', 40) + f('code', 'Code in line number', 8) + '<label class="field">Schedule<select data-spf="sch" data-id="' + id + '"><option value="40"' + (s.sch === 40 ? ' selected' : '') + '>SCH 40</option><option value="80"' + (s.sch === 80 ? ' selected' : '') + '>SCH 80</option></select></label>'
+        + '<label class="field">Smallest size<select data-spf="minN" data-id="' + id + '">' + szs2('minN') + '</select></label>'
+        + '<label class="field">Largest size<select data-spf="maxN" data-id="' + id + '">' + szs2('maxN') + '</select></label></div>'
+        + '<div class="row">' + f('pipe', 'Pipe') + f('fit', 'Fittings') + f('flg', 'Flanges') + f('gasket', 'Gasket') + f('bolt', 'Bolts') + f('valve', 'Valves') + '</div>'
+        + '<div class="meta">Valves not allowed in this class:</div><div class="row">' + Object.keys(VALVE_NAME).map(function (k) { return '<label class="chk"><input type="checkbox" data-spv="' + esc(k) + '" data-id="' + id + '"' + (s.noValve.indexOf(k) >= 0 ? ' checked' : '') + '> ' + esc(VALVE_NAME[k].replace(' valve', '')) + '</label>'; }).join('') + '</div>'
+        + '<div class="row"><button data-spdel="' + id + '">Delete class</button></div></div>';
+    }).join('');
+    return h + '<div class="row"><button data-spnew="cs150">+ Carbon steel 150#</button><button data-spnew="ss316">+ Stainless 316L 150#</button><button data-spnew="galv">+ Galvanised threaded</button><button data-spnew="">+ Blank</button></div></details>';
+  }
   function lineListHtml() {
-    var rows = lineList(); if (!rows.length) return '<p class="empty">No pipe yet.</p>';
-    return '<p class="empty">Service, class, pressure, temperature and insulation are typed by you and appear in the title block of that line\'s isometric sheet. Class defaults to ' + esc(std().cls) + '. The other columns come from the drawing.</p>'
-      + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Designation</th><th>Size</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
+    var rows = lineList(); if (!rows.length) return specHtml() + '<p class="empty">No pipe yet.</p>';
+    return specHtml() + '<p class="empty">Service, class, pressure, temperature and insulation are typed by you and appear in the title block of that line\'s isometric sheet. Class defaults to ' + esc(std().cls) + '. The other columns come from the drawing.</p>'
+      + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Designation</th><th>Size</th><th>Piping class</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
       + rows.map(function (r) {
-        return '<tr><td>' + esc(r.ln) + '</td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[2]) + '"></td>'; }).join('')
+        return '<tr><td>' + esc(r.ln) + '</td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td><td><select data-llspec="' + esc(r.ln) + '"><option value="">None</option>' + model.pspecs.map(function (s) { return '<option value="' + esc(s.id) + '"' + (r.spec === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[2]) + '"></td>'; }).join('')
           + '<td>' + (r.q || '–') + '</td><td>' + r.len.toFixed(2) + '</td><td>' + r.valves + '</td><td>' + r.welds + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -1781,7 +1864,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- BOM ----------
   function stdOf(l) {                                              // the standard and material a BOM row is made to
-    var s = std(), c = l.cat;
+    var s = std(), c = l.cat, sp = model.onlyLine != null ? spOf(model.onlyLine) : null;   // a one-line sheet is made to the class of that line
+    if (sp) s = Object.assign({}, s, { pipe: sp.pipe || s.pipe, fit: sp.fit || s.fit, flg: sp.flg || s.flg, gasket: sp.gasket || s.gasket, bolt: sp.bolt || s.bolt, valve: sp.valve || s.valve });
     if (l.note) return l.note;                                      // a custom part carries its own brand, model and weight
     if (c === CAT.pipe) return l.desc.indexOf('Pipe,') === 0 ? s.pipe : '';
     if ([CAT.elbow, CAT.reducer, CAT.tee, CAT.olet, CAT.cross, CAT.cap].indexOf(c) >= 0) return s.fit;
@@ -1873,7 +1957,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return did;
   }
   function addPipe(a, b, n, s, ln, fl) {
-    model.pipes.push({ a: a, b: b, n: n, s: s || 40, ln: ln || 'L-001', fl: fl == null ? curFlow : fl });
+    var sps = spOf(ln || 'L-001');                                  // a line with a class draws in its schedule
+    model.pipes.push({ a: a, b: b, n: n, s: sps ? sps.sch : s || 40, ln: ln || 'L-001', fl: fl == null ? curFlow : fl });
     splitAt(b); splitAt(a);
   }
 
@@ -3371,7 +3456,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // The isometric sheet for everything, or for one line number, and the view that reads best.
   var isoCtx = { ln: '', rot: 0, tidy: true, style: 'sym' }, isoOpts = { ln: '', view: 'auto', style: 'sym' };
   function subsetFor(ln) {                                          // a copy of the model with one line's pipes and what sits on them
-    var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {};
+    var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {}; m.onlyLine = ln;
     m.pipes = []; model.pipes.forEach(function (p, i) { if (p.ln === ln) { keepP[i] = 1; m.pipes.push(JSON.parse(JSON.stringify(p))); ends[key(p.a)] = 1; ends[key(p.b)] = 1; } });
     function onLine(pt) { var h2 = hostOf(pt); return h2 >= 0 && keepP[h2]; }
     m.valves = []; model.valves.forEach(function (v, i) { if (onLine(v.p)) { vmap[i] = m.valves.length; m.valves.push(JSON.parse(JSON.stringify(v))); } });
@@ -4101,8 +4186,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('ll-close').onclick = function () { $('ll').hidden = true; };
   $('f-bomln').onclick = function () { saveBlob('pipedraft-bom-by-line.csv', new Blob([bomByLineCsv()], { type: 'text/csv' })); };
   $('ll-csv').onclick = $('f-ll').onclick = function () { saveBlob('pipedraft-linelist.csv', new Blob([lineCsv()], { type: 'text/csv' })); };
+  function llPaint() { $('llBody').innerHTML = lineListHtml(); }
+  $('llBody').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+    if (b.hasAttribute('data-spnew')) { spOpen = true; var r = spAdd(b.getAttribute('data-spnew') || 'x'); if (r.err) toast(r.err); llPaint(); }
+    else if (b.hasAttribute('data-spdel')) { spOpen = true; spDelete(b.getAttribute('data-spdel')); llPaint(); }
+  });
   $('llBody').addEventListener('change', function (e) {
-    var t = e.target, f = t && t.getAttribute ? t.getAttribute('data-ll') : null, ln = t && t.getAttribute ? t.getAttribute('data-ln') : null; if (!f || ln == null) return;
+    var t = e.target, sf = t && t.getAttribute ? t.getAttribute('data-spf') : null, sv = t && t.getAttribute ? t.getAttribute('data-spv') : null, sa = t && t.getAttribute ? t.getAttribute('data-llspec') : null;
+    if (sa != null) { var bx = document.getElementById('spbox'); spOpen = !!(bx && bx.open); spAssign(sa, t.value); llPaint(); return; }
+    if (sf || sv) {
+      spOpen = true; var id = t.getAttribute('data-id'), q = model.pspecs.filter(function (x) { return x.id === id; })[0]; if (!q) return;
+      var up = {}; if (sf) up[sf] = t.value; else up.noValve = t.checked ? q.noValve.concat([sv]) : q.noValve.filter(function (k) { return k !== sv; });
+      var r2 = spUpdate(id, up); if (r2.err) toast(r2.err); llPaint(); return;
+    }
+    t = e.target; f = t && t.getAttribute ? t.getAttribute('data-ll') : null, ln = t && t.getAttribute ? t.getAttribute('data-ln') : null; if (!f || ln == null) return;
     model.lines[ln] = model.lines[ln] || {}; var v = String(t.value).trim(); if (v) model.lines[ln][f] = v; else delete model.lines[ln][f];
     save();
   });
@@ -4457,6 +4555,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    spec: { tpl: SP_TPL, add: spAdd, update: spUpdate, del: spDelete, assign: spAssign, of: spOf, html: specHtml, desig: lineDesignation, lineList: lineList },
     selectEq: function (i) { setTool('sel'); sel = { kind: 'equip', i: i }; rebuild(); return egzMeshes.length; },
     egz: function () { return { m: egzMeshes, cam: camera }; },
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
