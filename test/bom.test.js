@@ -399,7 +399,7 @@ check('no P&ID bubbles on the iso sheet', !isoP.includes('r="14"') && !isoP.incl
 check('item balloons point at the material list', (isoP.match(/r="9.5"/g) || []).length >= 8 && isoP.includes('>' + rowsN + '</text>'), String((isoP.match(/r="9.5"/g) || []).length));
 check('dimension lines run along the pipe with the centreline length', (isoP.match(/class="dim"/g) || []).length >= 3 && isoP.includes('>4150<'), (isoP.match(/class="dim"/g) || []).length + '');
 check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
-check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#dde3e6"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
+check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#e8edef"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
 check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y (N)<') && isoP.includes('>Z<'));
 check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('symbol the isometric sheet draws') && PD.legend().includes('M-10,-5 L10,5 L10,-5 L-10,5Z'));
@@ -723,8 +723,8 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   const sv = PD.iso('L-002', 'auto', true);
   const nW = (sv.match(/>W\d+<\/text><text x="[\d.]+" y="[\d.]+" font-size="9" fill="#[0-9A-Fa-f]+">(Butt|Socket|Fillet) weld/g) || []).length;
   check('the weld list on a one-line sheet counts only that line', nW > 0 && nW === PD.fab().welds.filter(w => w.ln === 'L-002').length, nW + ' vs ' + PD.fab().welds.filter(w => w.ln === 'L-002').length);
-  const xs = [...sv.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="7.5" fill="#555">(CLASS \/ MATERIAL|INSULATION)</g)].map(m => +m[1]);
-  check('both title block rows fill the width (last cells start at 80% and 84%)', xs.length === 2 && Math.abs(xs[0] - (12 + 1176 * 0.80 + 6)) < 1 && Math.abs(xs[1] - (12 + 1176 * 0.84 + 6)) < 1, xs.join(','));
+  const xs = [...sv.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="7.5" fill="#555">(CLASS \/ MATERIAL|SCALE)</g)].map(m => +m[1]);
+  check('both title block rows fill the width (last cells start at 80% and 95%)', xs.length === 2 && Math.abs(xs[0] - (12 + 1176 * 0.80 + 6)) < 1 && Math.abs(xs[1] - (12 + 1176 * 0.95 + 6)) < 1, xs.join(','));
   const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
   PD.load(old);
   const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
