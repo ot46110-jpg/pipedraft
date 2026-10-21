@@ -69,6 +69,8 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .psec.closed .prows { display: none; }
 .prows { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
 .prows small { display: block; font: 400 10.5px var(--font-data); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cu-noz.selrow { box-shadow: inset 3px 0 0 #f0b429; padding-left: 6px; }
+.cu-noz b[data-cusel] { cursor: pointer; }
 .pnew { border-style: dashed; color: var(--dim); }
 .pnote { margin: 2px 4px 0; font: 400 11.5px/1.35 var(--font-ui); color: var(--dim); }
 .cu-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
@@ -662,26 +664,26 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var c = Math.round(Number(p.col)); o.col = c >= 0 && c < EQ_COL.length ? c : -1;
     return { p: o };
   }
-  function eqPartMesh(p, bodyCol) {                                 // scene metres; the part's x, y, z is the middle of its footprint, z its underside
+  function eqPartMesh(p, bodyCol, pi) {                                 // scene metres; the part's x, y, z is the middle of its footprint, z its underside
     var s = 0.001, m = mat(p.col >= 0 ? EQ_COL[p.col] : bodyCol, 0.6), g, me;
     if (p.t === 'box') g = new T.BoxGeometry(p.w * s, p.h * s, p.d * s);
     else if (p.t === 'sph') g = new T.SphereGeometry(p.w * s / 2, 24, 16);
     else g = new T.CylinderGeometry((p.t === 'cylx' ? p.d : p.w) * s / 2, (p.t === 'cylx' ? p.d : p.w) * s / 2, (p.t === 'cyl' ? p.h : p.t === 'cylx' ? p.w : p.d) * s, 28);
     me = new T.Mesh(g, m);
     if (p.t === 'cylx') me.rotation.z = Math.PI / 2; else if (p.t === 'cyly') me.rotation.x = Math.PI / 2;
-    me.position.set(p.x * s, (p.z + p.h / 2) * s, p.y * s);
+    me.position.set(p.x * s, (p.z + p.h / 2) * s, p.y * s); me.userData.pi = pi;
     return me;
   }
   function eqMakeDef(c) {                                           // an entry as an EQUIP-style def: scene metres, nozzle p/d in the equipment's frame
     var box = c.shape !== 'cyl', W = (box ? c.w : c.dia) / 1000, D = (box ? c.d : c.dia) / 1000, H = c.h / 1000, a = [c.brand, c.model].filter(Boolean).join(' ');
     return {
-      name: c.name + (a ? ', ' + a : ''), short: c.name, custom: true, shape: box ? 'box' : 'cyl', W: W, D: D, H: H, col: EQ_COL[c.col | 0], prefix: c.prefix, lib: false,
+      name: c.name + (a ? ', ' + a : ''), short: c.name, custom: true, shape: box ? 'box' : 'cyl', W: W, D: D, H: H, col: EQ_COL[c.col | 0], prefix: c.prefix, lib: false, parts: c.parts || [], hide: !!c.hide,
       note: a + (c.wt > 0 ? (a ? ', ' : '') + c.wt + ' kg each' : ''),
       noz: c.noz.map(function (z) { return { p: [z.x / 1000, z.z / 1000, z.y / 1000], d: EQ_DIRS[z.dir].slice(), n: z.n }; }),
       build: function (g) {
         var m = mat(this.col, 0.6), body = new T.Mesh(box ? new T.BoxGeometry(W, H, D) : new T.CylinderGeometry(W / 2, W / 2, H, 32), m), col = this.col;
         body.position.y = H / 2; if (!c.hide) g.add(body);
-        (c.parts || []).forEach(function (p) { g.add(eqPartMesh(p, col)); });
+        (c.parts || []).forEach(function (p, pi) { g.add(eqPartMesh(p, col, pi)); });
       }
     };
   }
@@ -2894,13 +2896,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       function W3(x, y, z) { return A(new T.Vector3(x, y, z).applyAxisAngle(UP, rot).add(base)); }
       var cd = eqDef(e.k);
       if (cd && cd.custom) {
+        var xp = []; cd.parts.forEach(function (p) { [-1, 1].forEach(function (a) { [-1, 1].forEach(function (b) { [0, 1].forEach(function (cz) { xp.push(W3((p.x + a * p.w / 2) / 1000, (p.z + cz * p.h) / 1000, (p.y + b * p.d / 2) / 1000)); }); }); }); });
         if (cd.shape === 'cyl') {
           var cr = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(cd.W / 2 * Math.cos(i / 28 * 2 * Math.PI), y, cd.W / 2 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
           var c0 = cr(0), c1 = cr(cd.H);
-          return { kind: 'vessel', r0: c0, r1: c1, pts: c0.concat(c1), c: W3(0, cd.H / 2, 0) };
+          return { kind: 'vessel', r0: c0, r1: c1, pts: c0.concat(c1, xp), c: W3(0, cd.H / 2, 0) };
         }
         var bc = [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(function (q) { return W3(q[0] * cd.W / 2, q[1] * cd.H, q[2] * cd.D / 2); });
-        return { kind: 'pump', cs: bc, pts: bc, c: W3(0, cd.H / 2, 0) };
+        return { kind: 'pump', cs: bc, pts: bc.concat(xp), c: W3(0, cd.H / 2, 0) };
       }
       if (e.k === 'vessel') {
         var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(0.6 * Math.cos(i / 28 * 2 * Math.PI), y, 0.6 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
@@ -3026,8 +3029,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     function eqPicture(e, ei) {
       var W3 = eqW3(e), prims = [], cd = eqDef(e.k);
       if (cd && cd.custom) {                                        // user equipment: one box or one cylinder
-        if (cd.shape === 'cyl') prims.push(cylPrim(W3, 'y', 0, cd.H / 2, 0, cd.W / 2, cd.H));
-        else prims.push(boxPrim(W3, -cd.W / 2, cd.W / 2, 0, cd.H, -cd.D / 2, cd.D / 2));
+        if (!cd.hide) {
+          if (cd.shape === 'cyl') prims.push(cylPrim(W3, 'y', 0, cd.H / 2, 0, cd.W / 2, cd.H));
+          else prims.push(boxPrim(W3, -cd.W / 2, cd.W / 2, 0, cd.H, -cd.D / 2, cd.D / 2));
+        }
+        cd.parts.forEach(function (p) {                             // the shapes the user drew (mm to metres, scene y is up)
+          var x = p.x / 1000, y = p.y / 1000, z = p.z / 1000, w = p.w / 1000, d = p.d / 1000, hh = p.h / 1000;
+          if (p.t === 'box') prims.push(boxPrim(W3, x - w / 2, x + w / 2, z, z + hh, y - d / 2, y + d / 2));
+          else if (p.t === 'cyl') prims.push(cylPrim(W3, 'y', x, z + hh / 2, y, w / 2, hh));
+          else if (p.t === 'cylx') prims.push(cylPrim(W3, 'x', x, z + hh / 2, y, d / 2, w));
+          else if (p.t === 'cyly') prims.push(cylPrim(W3, 'z', x, z + hh / 2, y, w / 2, d));
+          else { prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, true)); prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, false)); }
+        });
       } else if (e.k === 'vessel') {
         prims.push(cylPrim(W3, 'y', 0, 1.2, 0, 0.6, 2.4));
         prims.push(domePrim(W3, 0, 2.4, 0, 0.6, 0.18, true));
@@ -4114,7 +4127,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           + '<button data-cua="img" data-id="' + id + '">' + (e.img ? 'Change picture' : 'Choose picture') + '</button>' + (e.img ? '<button data-cua="noimg" data-id="' + id + '">Remove picture</button>' : '') + '</div>';
         if (e.kind === 'equipment') {
           var cyl = e.shape === 'cyl', dirs = Object.keys(EQ_DIRS);
-          s += '<div data-cuprev="' + id + '" style="margin-top:10px"></div><div class="meta">Drag the picture sideways to turn it. Orange stubs are the nozzles.</div>';
+          s += '<div data-cuprev="' + id + '" style="margin-top:10px"></div><div class="row" style="align-items:center"><button data-cua="mode" data-m="xy" aria-pressed="' + (cuPrevMode === 'xy') + '">Drag a shape across</button><button data-cua="mode" data-m="z" aria-pressed="' + (cuPrevMode === 'z') + '">Drag a shape up / down</button></div><div class="meta">Touch a shape in the picture and drag it. Touch empty space and drag to turn the picture. Orange stubs are the nozzles.</div>';
           s += '<div class="row" style="margin-top:10px">' + f('name', 'Name', e.name, ' maxlength="40"') + f('brand', 'Brand', e.brand, ' maxlength="40"') + f('model', 'Model', e.model, ' maxlength="40"') + '</div>'
             + '<div class="row"><label class="field">Outline<select data-cuf="shape" data-id="' + id + '">' + [['box', 'Box'], ['cyl', 'Vertical cylinder']].map(function (o) { return '<option value="' + o[0] + '"' + (e.shape === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>'
             + (cyl ? f('dia', 'Diameter, mm', e.dia, ' inputmode="decimal"') : f('w', 'Width X, mm', e.w, ' inputmode="decimal"') + f('d', 'Depth Y, mm', e.d, ' inputmode="decimal"')) + f('h', 'Height Z, mm', e.h, ' inputmode="decimal"')
@@ -4135,7 +4148,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           e.parts.forEach(function (p, pi) {
             var pf = function (k, label) { return '<label class="field">' + label + '<input type="text" data-cupt="' + pi + '" data-cupk="' + k + '" data-id="' + id + '" value="' + esc(p[k]) + '" inputmode="decimal" autocomplete="off"></label>'; };
             var sizes = p.t === 'box' ? pf('w', 'Width X') + pf('d', 'Depth Y') + pf('h', 'Height Z') : p.t === 'cyl' ? pf('w', 'Diameter') + pf('h', 'Height') : p.t === 'cylx' ? pf('w', 'Length X') + pf('d', 'Diameter') : p.t === 'cyly' ? pf('d', 'Length Y') + pf('w', 'Diameter') : pf('w', 'Diameter');
-            s += '<div class="cu-noz"><b>S' + (pi + 1) + '</b><label class="field">Shape<select data-cupt="' + pi + '" data-cupk="t" data-id="' + id + '">' + PT_KEYS.map(function (k, ki) { return '<option value="' + k + '"' + (p.t === k ? ' selected' : '') + '>' + PT_NAMES[ki] + '</option>'; }).join('') + '</select></label>'
+            s += '<div class="cu-noz' + (cuPrevSel === pi && cuPrevId === e.id ? ' selrow' : '') + '" data-cusel="' + pi + '"><b data-cusel="' + pi + '" role="button">S' + (pi + 1) + '</b><label class="field">Shape<select data-cupt="' + pi + '" data-cupk="t" data-id="' + id + '">' + PT_KEYS.map(function (k, ki) { return '<option value="' + k + '"' + (p.t === k ? ' selected' : '') + '>' + PT_NAMES[ki] + '</option>'; }).join('') + '</select></label>'
               + sizes + pf('x', 'X mm') + pf('y', 'Y mm') + pf('z', 'Z mm')
               + '<label class="field">Colour<select data-cupt="' + pi + '" data-cupk="col" data-id="' + id + '"><option value="-1"' + (p.col < 0 ? ' selected' : '') + '>Same</option>' + EQ_COLN.map(function (nm, ci) { return '<option value="' + ci + '"' + (p.col === ci ? ' selected' : '') + '>' + nm + '</option>'; }).join('') + '</select></label>'
               + '<button data-cua="prem" data-id="' + id + '" data-i="' + pi + '">Remove</button></div>';
@@ -4152,32 +4165,70 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function showCu() { $('more').hidden = true; $('cu').hidden = false; cuPaint(); }
   // live 3D preview of the equipment being drawn: one small renderer, reused, dragged sideways to turn
-  var cuPrevR = null, cuPrevYaw = 0.7, cuPrevId = null;
+  var cuPrevR = null, cuPrevYaw = 0.7, cuPrevSel = -1, cuPrevTmp = null, cuPrevMode = 'xy', cuPrevCam = null, cuPrevG = null, cuPrevId = null;
   function cuPaint() { $('cuBody').innerHTML = cuHtml(); cuPrevDraw(true); }
+  function cuPrevPick(ev) {                                         // pointer to a ray through the preview
+    var el = cuPrevR.domElement, rc = el.getBoundingClientRect(), rg = new T.Raycaster();
+    rg.setFromCamera(new T.Vector2((ev.clientX - rc.left) / rc.width * 2 - 1, -((ev.clientY - rc.top) / rc.height * 2 - 1)), cuPrevCam);
+    return rg;
+  }
+  function cuPrevSetup() {
+    cuPrevR = new T.WebGLRenderer({ antialias: true, alpha: true }); cuPrevR.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); cuPrevR.setSize(320, 230);
+    var el = cuPrevR.domElement, x0 = null, drag = null;
+    el.style.cssText = 'position:static;inset:auto;display:block;width:100%;max-width:420px;height:auto;touch-action:none;border:1px solid var(--line);border-radius:8px;background:var(--panel)';
+    el.addEventListener('pointerdown', function (ev) {
+      try { el.setPointerCapture(ev.pointerId); } catch (z) {}
+      var e = cuGet(cuPrevId), rg = cuPrevCam && cuPrevG && e ? cuPrevPick(ev) : null, hit = null;
+      if (rg) hit = rg.intersectObjects(cuPrevG.children.filter(function (o) { return o.userData.pi != null; }), false)[0];
+      if (hit) {
+        var pi = hit.object.userData.pi, p = e.parts[pi], s = 0.001, ctr = new T.Vector3(p.x * s, (p.z + p.h / 2) * s, p.y * s), pl;
+        if (cuPrevMode === 'z') { var hz = cuPrevCam.position.clone().sub(ctr); hz.y = 0; pl = new T.Plane(hz.normalize(), -hz.dot(ctr)); }
+        else pl = new T.Plane(new T.Vector3(0, 1, 0), -ctr.y);
+        var at = new T.Vector3(); rg.ray.intersectPlane(pl, at);
+        drag = { pi: pi, pl: pl, at: at, o: { x: p.x, y: p.y, z: p.z }, moved: false }; cuPrevTmp = e.parts.map(function (q) { return Object.assign({}, q); });
+        if (cuPrevSel !== pi) { cuPrevSel = pi; cuMarkRows(); } cuPrevDraw();
+      } else x0 = ev.clientX;
+    });
+    el.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var p = cuPrevTmp[drag.pi], pt = new T.Vector3(); if (!cuPrevPick(ev).ray.intersectPlane(drag.pl, pt)) return;
+        var sn = function (v) { return Math.max(-EQ_MAX, Math.min(EQ_MAX, Math.round(v / 10) * 10)); };
+        if (cuPrevMode === 'z') p.z = sn(drag.o.z + (pt.y - drag.at.y) * 1000);
+        else { p.x = sn(drag.o.x + (pt.x - drag.at.x) * 1000); p.y = sn(drag.o.y + (pt.z - drag.at.z) * 1000); }
+        drag.moved = true;
+        ['x', 'y', 'z'].forEach(function (k) { var inp = $('cuBody').querySelector('[data-cupt="' + drag.pi + '"][data-cupk="' + k + '"]'); if (inp) inp.value = p[k]; });
+        cuPrevDraw();
+      } else if (x0 != null) { cuPrevYaw += (ev.clientX - x0) * 0.012; x0 = ev.clientX; cuPrevDraw(); }
+    });
+    var up = function () {
+      x0 = null;
+      if (drag) { var d = drag, tmp = cuPrevTmp; drag = null; cuPrevTmp = null; if (d.moved) { var r = cuUpdate(cuPrevId, { parts: tmp }); if (r.err) toast(r.err); } cuPaint(); }
+    };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  }
+  function cuMarkRows() { try { $('cuBody').querySelectorAll('[data-cusel]').forEach(function (r) { r.classList.toggle('selrow', +r.getAttribute('data-cusel') === cuPrevSel); }); } catch (x) {} }
   function cuPrevDraw(attach) {
     try {
       var ph = $('cuBody').querySelector('[data-cuprev]'); if (!ph) return;
-      var id = ph.getAttribute('data-cuprev'), d = CEQ['cu:' + id]; if (!d) return;
-      if (!cuPrevR) {
-        cuPrevR = new T.WebGLRenderer({ antialias: true, alpha: true }); cuPrevR.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); cuPrevR.setSize(320, 230);
-        var el = cuPrevR.domElement, x0 = null; el.style.cssText = 'position:static;inset:auto;display:block;width:100%;max-width:420px;height:auto;touch-action:none;border:1px solid var(--line);border-radius:8px;background:var(--panel)';
-        el.addEventListener('pointerdown', function (ev) { x0 = ev.clientX; try { el.setPointerCapture(ev.pointerId); } catch (z) {} });
-        el.addEventListener('pointermove', function (ev) { if (x0 == null) return; cuPrevYaw += (ev.clientX - x0) * 0.012; x0 = ev.clientX; cuPrevDraw(); });
-        el.addEventListener('pointerup', function () { x0 = null; }); el.addEventListener('pointercancel', function () { x0 = null; });
-      }
+      var id = ph.getAttribute('data-cuprev'), e = cuGet(id), d = e && CEQ['cu:' + id]; if (!d) return;
+      if (id !== cuPrevId) { cuPrevId = id; cuPrevSel = -1; cuMarkRows(); }
+      if (cuPrevTmp) d = eqMakeDef(Object.assign({}, e, { parts: cuPrevTmp }));
+      if (!cuPrevR) cuPrevSetup();
       if (attach && cuPrevR.domElement.parentNode !== ph) ph.appendChild(cuPrevR.domElement);
-      var sc = new T.Scene(), g = new T.Group(), disp = [];
+      var sc = new T.Scene(), g = new T.Group();
       sc.add(new T.AmbientLight(0xffffff, 0.7)); var sn = new T.DirectionalLight(0xffffff, 0.8); sn.position.set(5, 9, 6); sc.add(sn);
       d.build(g); sc.add(g);
+      g.children.forEach(function (o) { if (o.userData.pi === cuPrevSel && o.material && o.material.emissive) o.material.emissive.setHex(0x6b5200); });   // the chosen shape glows
       d.noz.forEach(function (z) {                                  // each nozzle as a short orange stub pointing out
         var dir = new T.Vector3(z.d[0], z.d[1], z.d[2]), st = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.2, 12), new T.MeshBasicMaterial({ color: 0xf08a24 }));
         st.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir); st.position.set(z.p[0], z.p[1], z.p[2]).addScaledVector(dir, 0.1); sc.add(st);
       });
       var bb = new T.Box3().setFromObject(g), c = bb.getCenter(new T.Vector3()), r = Math.max(0.5, bb.getSize(new T.Vector3()).length() / 2);
       var cam = new T.PerspectiveCamera(35, 320 / 230, 0.05, 200), dist = r * 2.9;
-      cam.position.set(c.x + Math.sin(cuPrevYaw) * dist * 0.85, c.y + dist * 0.5, c.z + Math.cos(cuPrevYaw) * dist * 0.85); cam.lookAt(c);
+      cam.position.set(c.x + Math.sin(cuPrevYaw) * dist * 0.85, c.y + dist * 0.5, c.z + Math.cos(cuPrevYaw) * dist * 0.85); cam.lookAt(c); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+      cuPrevCam = cam; cuPrevG = g;
       cuPrevR.render(sc, cam);
-      sc.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+      sc.traverse(function (o) { if (o.geometry && o !== g) o.geometry.dispose(); if (o.material) o.material.dispose(); });   // the picked group's meshes are rebuilt on every draw
     } catch (x) {}
   }
   $('cuBtn').onclick = showCu;
@@ -4190,9 +4241,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     cuTpl = 'eq'; cuPaint();
   };
   $('cuBody').addEventListener('click', function (e) {
+    var sl = e.target.closest ? e.target.closest('b[data-cusel]') : null;   // tap S1, S2 ... to choose that shape (it glows in the picture)
+    if (sl) { cuPrevSel = +sl.getAttribute('data-cusel'); cuMarkRows(); cuPrevDraw(); return; }
     var b = e.target.closest ? e.target.closest('button[data-cua]') : null; if (!b) return;
     var a = b.getAttribute('data-cua'), id = b.getAttribute('data-id');
-    if (a === 'tplx') { cuTpl = ''; cuPaint(); }
+    if (a === 'mode') { cuPrevMode = b.getAttribute('data-m') === 'z' ? 'z' : 'xy'; cuPaint(); }
+    else if (a === 'tplx') { cuTpl = ''; cuPaint(); }
     else if (a === 'tpl') {
       var tp = EQ_TPL.filter(function (t) { return t[0] === b.getAttribute('data-t'); })[0]; if (!tp) return;
       var rt = cuAdd(Object.assign({ kind: 'equipment', name: 'New equipment' }, JSON.parse(JSON.stringify(tp[2]))));

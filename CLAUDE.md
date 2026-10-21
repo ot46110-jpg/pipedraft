@@ -90,4 +90,4 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Not verified on a real iPad: pen aim-and-lift, palm rejection, standalone full screen.
 - Status, what is done and what is next: see PROGRESS.md.
 
-- Custom equipment `parts[]` (eqPartClean/eqPartMesh) are 3D only; clash, iso outline and nozzle clamp still use the main box/cyl envelope. `hide` hides the envelope mesh.
+- Custom equipment `parts[]` (eqPartClean/eqPartMesh) are drawn in 3D and on the iso sheet; clash and nozzle clamp still use the main box/cyl envelope. `hide` hides the envelope mesh.

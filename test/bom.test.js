@@ -1226,6 +1226,13 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const pi = C.imp(JSON.stringify({ custom: [{ id: 'zz1', kind: 'equipment', name: 'F', shape: 'box', w: 1000, d: 1000, h: 1000, noz: [], parts: [null, 5, { t: 'bad', w: 'x', x: 1e12 }, { t: 'sph', w: 400, x: 0, y: 0, z: 0 }].concat(new Array(30).fill({ t: 'box', w: 100, d: 100, h: 100, x: 0, y: 0, z: 0 })) }] }));
   const pz = PD.model.custom.filter(q => q.id === 'zz1')[0];
   check('a file with broken shapes is cleaned and capped at 12', pi === 1 && pz && pz.parts.length === 12 && pz.parts[0].t === 'box' && pz.parts[0].x === 20000, JSON.stringify(pz && pz.parts.slice(0, 2)));
+  const ps2 = C.add(Object.assign({ kind: 'equipment', name: 'IsoDrawn' }, JSON.parse(JSON.stringify(pm)))).e;
+  C.update(ps2.id, { parts: ps2.parts.concat([{ t: 'sph', x: 0, y: 0, z: 800, w: 300 }, { t: 'cyly', x: 0, y: 0, z: 0, w: 200, d: 400 }, { t: 'cyl', x: 0, y: 0, z: 0, w: 200, h: 400 }]) });
+  PD.load({ pipes: [{ a: [2, 0.4, 0], b: [4, 0.4, 0], n: 4 }], custom: PD.model.custom, equip: [{ k: 'cu:' + ps2.id, p: [0, 0, 0], r: 0 }] });
+  const isoD = PD.iso(); const polyD = (isoD.match(/<polygon/g) || []).length;
+  C.update(ps2.id, { parts: [] }); C.update(ps2.id, { hide: '' }); PD.rebuild(); const polyN = (PD.iso().match(/<polygon/g) || []).length;
+  check('the iso sheet draws every shape the user drew', polyD > polyN + 8 && isoD.includes('<svg'), polyD + ' vs ' + polyN);
+  PD.load({ pipes: [], custom: PD.model.custom, equip: [] });
   PD.model.equip.push({ k: 'cu:' + pe.id, p: [0, 0, 0], r: 0 }); PD.rebuild(); C.del(pe.id);
   check('a placed copy keeps its drawn shapes after the entry is deleted', PD.model.equip[0].cu.parts.length === 6);
   check('place-on-face on a cylinder uses the radius and the update validates', C.onFace(cy, cy.noz[0], 'r').x === 600 && C.update(cy.id, { noz: [Object.assign({}, cy.noz[0], C.onFace(cy, cy.noz[0], 'top'))] }).e.noz[0].z === 2000);
