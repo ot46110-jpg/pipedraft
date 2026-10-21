@@ -1209,6 +1209,15 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const sx = C.add({ kind: 'equipment', name: 'Stray', shape: 'box', w: 1000, d: 800, h: 1000, noz: [] }); PD.model.equip.push({ k: 'cu:' + sx.e.id, p: [0, 0, 0], r: 0 }); PD.rebuild(); C.del(sx.e.id);
   C.imp(JSON.stringify({ custom: [{ id: sx.e.id, kind: 'inline', name: 'Inl', len: 200 }] })); PD.rebuild();
   check('an inline import does not take the id of a placed equipment copy', PD.model.custom.length === 1 && PD.model.custom[0].id !== sx.e.id && PD.tags().equip[0] === 'EQ-1', JSON.stringify(PD.tags().equip));
+  // easy-start: every template is accepted as is, and "place on a face" gives a nozzle that validates and points out of that face
+  PD.load({ pipes: [], custom: [], equip: [] });
+  const tplOk = C.tpl.every(t => { const r = C.add(Object.assign({ kind: 'equipment', name: 'T ' + t[0] }, JSON.parse(JSON.stringify(t[2])))); return r.e && r.e.noz.length === t[2].noz.length; });
+  check('every start-from template makes a valid equipment entry', tplOk && C.tpl.length === 4);
+  const bx = C.add({ kind: 'equipment', name: 'Face', shape: 'box', w: 1000, d: 600, h: 800, noz: [{ x: 0, y: 0, z: 400, dir: '+X', n: 4 }] }).e;
+  const faces = ['top', 'bot', 'l', 'r', 'f', 'b'].map(f => C.onFace(bx, bx.noz[0], f));
+  check('place-on-face puts the nozzle on the box surface pointing out', JSON.stringify(faces.map(f => [f.x, f.y, f.z, f.dir])) === JSON.stringify([[0, 0, 800, '+Z'], [0, 0, 0, '-Z'], [-500, 0, 400, '-X'], [500, 0, 400, '+X'], [0, -300, 400, '-Y'], [0, 300, 400, '+Y']]), JSON.stringify(faces));
+  const cy = C.add({ kind: 'equipment', name: 'FaceC', shape: 'cyl', dia: 1200, h: 2000, noz: [{ x: 0, y: 0, z: 500, dir: '+X', n: 4 }] }).e;
+  check('place-on-face on a cylinder uses the radius and the update validates', C.onFace(cy, cy.noz[0], 'r').x === 600 && C.update(cy.id, { noz: [Object.assign({}, cy.noz[0], C.onFace(cy, cy.noz[0], 'top'))] }).e.noz[0].z === 2000);
 }
 
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }

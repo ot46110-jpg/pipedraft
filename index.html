@@ -69,6 +69,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .psec.closed .prows { display: none; }
 .prows { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
 .prows small { display: block; font: 400 10.5px var(--font-data); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pnew { border-style: dashed; color: var(--dim); }
 .pnote { margin: 2px 4px 0; font: 400 11.5px/1.35 var(--font-ui); color: var(--dim); }
 .cu-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
 .cu-card .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -3648,7 +3649,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('parts').innerHTML = '<div id="plist">' + PART_KEYS.map(function (c) {
       return '<div class="psec" data-sec="' + c + '"><button class="phead" data-head="' + c + '" aria-expanded="true">' + PARTS[c].label + '</button><div class="prows">'
         + PARTS[c].items.map(function (it) { return '<button data-cat="' + c + '" data-chip="' + esc(it[0]) + '" aria-pressed="false">' + it[1] + '</button>'; }).join('')
-        + (c === 'custom' && !PARTS[c].items.length ? '<p class="pnote">None yet. Add your own under the ⋯ menu, Project, Custom parts.</p>' : '') + '</div></div>';
+        + (c === 'equip' || c === 'custom' ? '<button class="pnew" data-newcu="' + (c === 'equip' ? 'eq' : 'in') + '">+ New</button>' : '')
+        + (c === 'custom' && !PARTS[c].items.length ?'<p class="pnote">None yet. Add your own under the ⋯ menu, Project, Custom parts.</p>' : '') + '</div></div>';
     }).join('') + '</div>';
   }
   function syncParts() {                                            // only classes change, so the scroll position stays put
@@ -3676,6 +3678,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   $('parts').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+    if (b.dataset.newcu) {                                          // "+ New" in Parts: straight into the Custom parts panel
+      if (b.dataset.newcu === 'in') { var r0 = cuAdd({ name: 'New part', len: 200, prefix: 'CU' }); if (r0.e) cuOpen = r0.e.id; else toast(r0.err); cuTpl = ''; }
+      else cuTpl = 'eq';
+      showCu(); return;
+    }
     if (b.dataset.head) { var c = b.dataset.head, was = !!partOpen[c]; PART_KEYS.forEach(function (k) { partOpen[k] = false; }); partOpen[c] = !was; syncParts(); }   // one section open at a time
     else if (b.dataset.chip && b.dataset.cat === 'custom') {        // a custom part is an inline item whose type is cu:id
       if (tool !== 'item') setTool('item'); setPart('item', b.dataset.chip); lastPart = 'custom'; PART_KEYS.forEach(function (k) { partOpen[k] = k === 'custom'; }); syncParts();
@@ -4032,9 +4039,23 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   };
 
   // ---------- custom parts panel (⋯ → Project → Custom parts) ----------
-  var cuOpen = null, cuArm = null, cuImgFor = null;
+  var cuOpen = null, cuArm = null, cuImgFor = null, cuTpl = '';
+  var EQ_TPL = [                                                    // starting points for new equipment (mm, same frame as the nozzle table)
+    ['box', 'Empty box', { shape: 'box', w: 1000, d: 800, h: 1200, col: 0, prefix: 'EQ', noz: [{ x: 500, y: 0, z: 600, dir: '+X', n: 4 }] }],
+    ['cyl', 'Empty cylinder', { shape: 'cyl', dia: 1000, h: 1500, col: 0, prefix: 'EQ', noz: [{ x: 0, y: 0, z: 1500, dir: '+Z', n: 4 }] }],
+    ['pump', 'Like the pump', { shape: 'box', w: 1500, d: 550, h: 800, col: 0, prefix: 'P', noz: [{ x: -750, y: 0, z: 400, dir: '-X', n: 4 }, { x: -300, y: 0, z: 800, dir: '+Z', n: 3 }] }],
+    ['vessel', 'Like the vessel', { shape: 'cyl', dia: 1200, h: 2400, col: 0, prefix: 'V', noz: [{ x: 0, y: 0, z: 2400, dir: '+Z', n: 4 }, { x: 600, y: 0, z: 1800, dir: '+X', n: 4 }, { x: 0, y: 600, z: 400, dir: '+Y', n: 4 }] }]
+  ];
+  var NZ_FACES = [['top', 'Top'], ['bot', 'Bottom'], ['l', 'Left (-X)'], ['r', 'Right (+X)'], ['f', 'Front (-Y)'], ['b', 'Back (+Y)']];
+  function nozOnFace(e, z, face) {                                  // move a nozzle to the middle of a face of the equipment, pointing out of it
+    var cyl = e.shape === 'cyl', hx = Math.round((cyl ? e.dia : e.w) / 2), hy = Math.round((cyl ? e.dia : e.d) / 2), mid = Math.round(e.h / 2);
+    var zs = Math.max(0, Math.min(e.h, Number(z.z) || 0)) || mid;
+    return { top: { x: 0, y: 0, z: e.h, dir: '+Z' }, bot: { x: 0, y: 0, z: 0, dir: '-Z' }, l: { x: -hx, y: 0, z: zs, dir: '-X' }, r: { x: hx, y: 0, z: zs, dir: '+X' }, f: { x: 0, y: -hy, z: zs, dir: '-Y' }, b: { x: 0, y: hy, z: zs, dir: '+Y' } }[face];
+  }
   function cuHtml() {
-    var h = '<p class="empty" style="margin:0 0 10px;font-size:12px">Your own parts, saved with the project. Inline parts go in Parts, Custom (length is face to face, mm). Equipment goes in Parts, Equipment: a box or cylinder with nozzles (mm from the middle of the base, X and Y horizontal, Z up). Editing a part updates every copy in the drawing.</p>';
+    var tpl = cuTpl ? '<div class="cu-card"><b>New equipment: start from</b><div class="row">' + EQ_TPL.map(function (t) { return '<button data-cua="tpl" data-t="' + t[0] + '">' + t[1] + '</button>'; }).join('')
+      + model.custom.filter(function (q) { return q.kind === 'equipment'; }).map(function (q) { return '<button data-cua="dup" data-id="' + esc(q.id) + '">Copy of ' + esc(q.name) + '</button>'; }).join('') + '<button data-cua="tplx">Cancel</button></div></div>' : '';
+    var h = tpl + '<p class="empty" style="margin:0 0 10px;font-size:12px">Your own parts, saved with the project. Inline parts go in Parts, Custom (length is face to face, mm). Equipment goes in Parts, Equipment: a box or cylinder with nozzles (mm from the middle of the base, X and Y horizontal, Z up). Editing a part updates every copy in the drawing.</p>';
     if (!model.custom.length) return h + '<p class="empty">No custom parts yet. Tap Add inline part or Add equipment.</p>';
     return h + model.custom.map(function (e) {
       var n = cuCount(e.id), open = cuOpen === e.id, id = esc(e.id), sub = [e.brand, e.model].filter(Boolean).join(' ');
@@ -4059,7 +4080,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             + '<div class="meta" style="margin-top:6px">Nozzles (' + e.noz.length + ' of ' + EQ_NOZ + '): offset from the middle of the base, direction points out of the equipment.</div>';
           e.noz.forEach(function (z, zi) {
             var nf = function (k, label) { return '<label class="field">' + label + '<input type="text" data-cunz="' + zi + '" data-cunk="' + k + '" data-id="' + id + '" value="' + esc(z[k]) + '" inputmode="decimal" autocomplete="off"></label>'; };
-            s += '<div class="cu-noz"><b>N' + (zi + 1) + '</b>' + nf('x', 'X mm') + nf('y', 'Y mm') + nf('z', 'Z mm')
+            s += '<div class="cu-noz"><b>N' + (zi + 1) + '</b>'
+              + '<label class="field">Place on<select data-cunz="' + zi + '" data-cunk="face" data-id="' + id + '"><option value="">Pick a face…</option>' + NZ_FACES.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('') + '</select></label>'
+              + nf('x', 'X mm') + nf('y', 'Y mm') + nf('z', 'Z mm')
               + '<label class="field">Direction<select data-cunz="' + zi + '" data-cunk="dir" data-id="' + id + '">' + dirs.map(function (d) { return '<option value="' + d + '"' + (z.dir === d ? ' selected' : '') + '>' + d + '</option>'; }).join('') + '</select></label>'
               + '<label class="field">Size<select data-cunz="' + zi + '" data-cunk="n" data-id="' + id + '">' + NPS_LIST.map(function (nn) { return '<option value="' + nn + '"' + (z.n === nn ? ' selected' : '') + '>' + esc(sz(nn)) + '</option>'; }).join('') + '</select></label>'
               + '<button data-cua="nrem" data-id="' + id + '" data-i="' + zi + '">Remove</button></div>';
@@ -4081,14 +4104,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); } else toast(r.err);
   };
   $('cu-addeq').onclick = function () {
-    var r = cuAdd({ kind: 'equipment', name: 'New equipment', shape: 'box', w: 1000, d: 800, h: 1200, col: 0, prefix: 'EQ', noz: [{ x: 500, y: 0, z: 600, dir: '+X', n: 4 }] });
-    if (r.e) { cuOpen = r.e.id; $('cuBody').innerHTML = cuHtml(); } else toast(r.err);
+    cuTpl = 'eq'; $('cuBody').innerHTML = cuHtml();
   };
   $('cuBody').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-cua]') : null; if (!b) return;
     var a = b.getAttribute('data-cua'), id = b.getAttribute('data-id');
-    if (a === 'edit') { cuOpen = cuOpen === id ? null : id; cuArm = null; $('cuBody').innerHTML = cuHtml(); }
-    else if (a === 'dup') { var c = cuDup(id); if (c) { cuOpen = c.id; cuChanged(); toast('Duplicated. Change the brand or model.'); } }
+    if (a === 'tplx') { cuTpl = ''; $('cuBody').innerHTML = cuHtml(); }
+    else if (a === 'tpl') {
+      var tp = EQ_TPL.filter(function (t) { return t[0] === b.getAttribute('data-t'); })[0]; if (!tp) return;
+      var rt = cuAdd(Object.assign({ kind: 'equipment', name: 'New equipment' }, JSON.parse(JSON.stringify(tp[2]))));
+      cuTpl = ''; if (rt.e) { cuOpen = rt.e.id; $('cuBody').innerHTML = cuHtml(); } else toast(rt.err);
+    }
+    else if (a === 'edit') { cuOpen = cuOpen === id ? null : id; cuArm = null; $('cuBody').innerHTML = cuHtml(); }
+    else if (a === 'dup') { cuTpl = ''; var c = cuDup(id); if (c) { cuOpen = c.id; cuChanged(); toast('Duplicated. Change the brand or model.'); } }
     else if (a === 'del') {
       if (cuArm !== id) { cuArm = id; $('cuBody').innerHTML = cuHtml(); setTimeout(function () { if (cuArm === id) { cuArm = null; if (!$('cu').hidden) $('cuBody').innerHTML = cuHtml(); } }, 4000); return; }
       cuArm = null; var n = cuDelete(id); if (cuOpen === id) cuOpen = null; cuChanged(); toast(n > 0 ? 'Deleted. ' + n + ' placed ' + (n === 1 ? 'copy keeps' : 'copies keep') + ' its name and length.' : 'Deleted');
@@ -4107,7 +4135,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!k && t && t.getAttribute && t.getAttribute('data-cunz') != null) {   // one nozzle field: rewrite that nozzle and validate the whole entry
       var q = cuGet(t.getAttribute('data-id')); if (!q || q.kind !== 'equipment') return;
       var nz = q.noz.map(function (z) { return Object.assign({}, z); }), zi = +t.getAttribute('data-cunz'), nk = t.getAttribute('data-cunk');
-      if (!nz[zi]) return; nz[zi][nk] = t.value;
+      if (!nz[zi]) return;
+      if (nk === 'face') { if (!t.value) return; Object.assign(nz[zi], nozOnFace(q, nz[zi], t.value)); } else nz[zi][nk] = t.value;
       var r3 = cuUpdate(q.id, { noz: nz }); if (r3.err) toast(r3.err); $('cuBody').innerHTML = cuHtml();
       return;
     }
@@ -4153,7 +4182,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
     group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
-    custom: { eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
+    custom: { tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
