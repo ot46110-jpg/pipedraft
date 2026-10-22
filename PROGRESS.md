@@ -81,3 +81,4 @@
 - Rotate mode: a dial from anywhere on the screen, angle shown in the quick bar.
 - Inspector is a chip until opened; panels fade while dragging.
 - Quick bar docked at the bottom centre.
+- Flanged valve is one part on the iso: no weld marks at it (option to show), four flange bars, flanges cast on the valve in 3D.

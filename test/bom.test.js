@@ -1610,5 +1610,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// A flanged valve is one part with its flanges: no weld marks at it on the iso, four flange bars
+{
+  const btn = id => ctx.document.getElementById(id);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'A' }, { a: [4, 0, 0], b: [4, 0, 2], n: 4, ln: 'A' }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+  PD.addValveFlanges(PD.model.valves[0]);
+  const f = PD.fab();
+  const vw = f.welds.filter(w => w.atValve), ow = f.welds.filter(w => !w.atValve);
+  check('the welds of the flanges fitted to a valve are flagged and numbered after the others', vw.length === 2 && ow.length >= 1 && Math.min(...vw.map(w => w.no)) > Math.max(...ow.map(w => w.no)), JSON.stringify(f.welds.map(w => [w.no, !!w.atValve])));
+  btn('iso-vw').onclick && 0;
+  let svg = PD.iso();
+  check('the iso marks only the other welds, no number at the flanged valve', ow.every(w => svg.includes('>W' + w.no + '<')) && vw.every(w => !svg.includes('>W' + w.no + '<')), '');
+  PD.isoOpts.valveWelds = true; svg = PD.iso(); PD.isoOpts.valveWelds = false;
+  check('with the option on the valve flange welds are marked again', vw.every(w => svg.includes('>W' + w.no + '<')));
+  check('the cut list sheet still lists every weld', f.welds.length === vw.length + ow.length && PD.fabCsv().includes('W' + vw[0].no + ','));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

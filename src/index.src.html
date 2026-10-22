@@ -351,6 +351,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <div class="pop" id="isoOptPop" hidden>
             <button id="iso-tidy" aria-pressed="true">Auto layout</button>
             <button id="iso-coords" aria-pressed="false">Coordinates</button>
+            <button id="iso-vw" aria-pressed="false">Welds at valve flanges</button>
             <button id="iso-style" aria-pressed="false">Symbols</button>
             <button id="iso-info" aria-pressed="false">Title block</button>
             <button id="iso-paper" aria-label="Paper size">Paper A3</button>
@@ -1434,6 +1435,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var c1 = new T.Mesh(new T.CylinderGeometry(R, 0, L / 2, 20), bm); c1.position.y = -L / 4; g.add(c1);
         var c2 = new T.Mesh(new T.CylinderGeometry(0, R, L / 2, 20), bm); c2.position.y = L / 4; g.add(c2);
       }
+      if (endType(kind, v.n, v.e) === 'flg' && FL[v.n]) {              // the flanges cast on a flanged valve, so a valve between pipe flanges shows four
+        var vft = FL[v.n][1], vfr = FL[v.n][0] / 2;
+        [1, -1].forEach(function (sg) { var vf = new T.Mesh(new T.CylinderGeometry(vfr, vfr, vft, 28), bm); vf.position.y = sg * (L / 2 - vft / 2); g.add(vf); });
+      }
       var port = null;
       if (kind === 'threeway') {                                     // the side port is a connection point, like an equipment nozzle
         var vd = V(v.d).normalize(), qv = new T.Quaternion().setFromUnitVectors(UP, vd);
@@ -1690,6 +1695,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var nb = side === 'a' ? pc.from : pc.to, t = side === 'a' ? pc.t0 : pc.t1, pos = side === 'a' ? pc.pa : pc.pb;
         if (nb) {
           var kind = elEnd(nb), w = mkWeld(kind, nb.n, pos, ln, i + '@' + key(pos));
+          if (nb.what === 'flange' && model.flanges[nb.idx] && model.flanges[nb.idx].m) w.atValve = true;   // the flange fitted to a flanged valve: the valve and its flanges are one part on the drawing
           var half = (nb.t < t ? 'b' : 'a'), node = nb.what[0].toUpperCase() + nb.idx + (nb.what === 'flange' ? half : '');
           link(w, pc.id, node); return;
         }
@@ -1731,6 +1737,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     pieces.forEach(function (pc) { var r = find(pc.id); if (!sp[r]) { sp[r] = { id: 'S' + String(order.length + 1).padStart(2, '0'), pieces: [], ln: pc.ln, len: 0, welds: 0 }; order.push(r); } pc.spool = sp[r].id; sp[r].pieces.push(pc); sp[r].len += pc.len; });
     var count = {};
     pieces.forEach(function (pc) { count[pc.spool] = (count[pc.spool] || 0) + 1; pc.label = pc.spool + '-' + count[pc.spool]; });
+    welds.sort(function (x, y) { return (x.atValve ? 1 : 0) - (y.atValve ? 1 : 0); });   // the welds at flanged valves come last, so the numbers on the drawing run without gaps
     welds.forEach(function (w, i) { w.no = i + 1; });
     return { pieces: pieces, welds: welds, joints: joints, spools: order.map(function (r) { return sp[r]; }) };
   }
@@ -3334,7 +3341,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
     var T1 = model.title || {}, revHist = [1, 2, 3].filter(function (k) { return T1['h' + k + 'rev'] || T1['h' + k + 'desc'] || T1['h' + k + 'date']; }), revH = 30 + 13 * (1 + revHist.length);
-    var TB = 110, cutRows = fabrication().pieces, weldRows = fabrication().welds, cutH = cutRows.length || weldRows.length ? Math.max(cutRows.length, weldRows.length) * 11 + 60 : 0;   // the two lists stand side by side
+    var TB = 110, cutRows = fabrication().pieces, weldRows = fabrication().welds.filter(function (w) { return !w.atValve || isoCtx.valveWelds; }), cutH = cutRows.length || weldRows.length ? Math.max(cutRows.length, weldRows.length) * 11 + 60 : 0;   // the two lists stand side by side
     var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100 + revH), Wd = W - MAT;
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
@@ -3574,6 +3581,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Butt welds at fittings.
     var fabI = fabrication();
     fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
+      if (w.atValve && !isoCtx.valveWelds) return;                  // a flanged valve is drawn as one part with its flanges
       var q = sp(w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
       function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
       body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
@@ -3700,7 +3708,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       body += isoSym(kk, v.p, v.d, clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248);
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
-    model.flanges.forEach(function (f, i) { body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), f.p, f.d, 20); balloon(compDesc.flange[i], f.p); });
+    model.flanges.forEach(function (f, i) {
+      body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), f.p, f.d, 20); balloon(compDesc.flange[i], f.p);
+      if (f.m) body += isoSym('fl-end', mm3(V(f.p).addScaledVector(V(f.d), 5 / sc)), f.d, 20);   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
+    });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, clampPx(itemLen(it.t, it.n), 34, 70)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
       var up = q0.t === 'hanger' || q0.t === 'spring';
@@ -3885,7 +3896,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!model.pipes.length) return null;
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
-    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true;
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.valveWelds = isoOpts.valveWelds === true;
     if (!ln) return isoCore(rot);
     var sel0 = sel; model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; sel = sel0; rebuild(); }
@@ -4913,7 +4924,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
-    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true));
+    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
     $('isoInfo').innerHTML = isoInfoHtml();
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
@@ -4967,6 +4978,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-style').onclick = function () { isoOpts.style = isoOpts.style === 'pic' ? 'sym' : 'pic'; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
+  $('iso-vw').onclick = function () { isoOpts.valveWelds = isoOpts.valveWelds !== true; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {
     if (!isoCur) { toast('Nothing to save'); return; }
