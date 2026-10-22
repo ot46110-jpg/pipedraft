@@ -1505,5 +1505,33 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// Sliding a pipe sideways and moving hand-picked pipes with arrows
+{
+  const btn = id => ctx.document.getElementById(id);
+  const U = () => PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [2, 0, 0], b: [2, 0, 2], n: 4, ln: 'A' }, { a: [2, 0, 2], b: [4, 0, 2], n: 4, ln: 'A' }], valves: [{ p: [2, 0, 1], d: [0, 0, 1], n: 4, s: 40, k: 'gate' }] });
+  U(); btn('t-sel').onclick();
+  const n = PD.selectPart('pipe', 1);
+  check('a selected pipe gets move arrows for the two sideways axes only', n === 4, n);
+  check('sliding along the pipe itself is not offered', PD.pen.slideStart(1, 'z') === null);
+  const st = PD.pen.slideStart(1, 'x');
+  check('a slide finds the two pipes that run along the move and nothing broken', st && st.nb.length === 2 && st.broken === 0 && st.its.length === 1, JSON.stringify(st && { nb: st.nb.length, br: st.broken, its: st.its.length }));
+  const ok = PD.pen.slideTo(st, 1);
+  check('the pipe, its valve and the stretched neighbours follow', ok && PD.model.pipes[1].a[0] === 3 && PD.model.pipes[1].b[0] === 3 && PD.model.pipes[0].b[0] === 3 && PD.model.pipes[2].a[0] === 3 && PD.model.valves[0].p[0] === 3 && PD.model.pipes[0].a[0] === 0, JSON.stringify(PD.model.pipes.map(p => [p.a[0], p.b[0]])));
+  check('a slide that would make a neighbour shorter than 50 mm or turn it back is refused', PD.pen.slideTo(st, -2.1) === false && PD.model.pipes[1].a[0] === 3);
+  check('the slid pipe leaves no bad joint', !PD.warns().some(w => /bad|come apart|does not fit/i.test(w)), JSON.stringify(PD.warns()));
+  U(); btn('t-sel').onclick(); PD.selectPart('pipe', 0);
+  const stb = PD.pen.slideStart(0, 'y');
+  check('sliding the first pipe sideways breaks its joint with the pipe that does not run along the move', stb && stb.broken === 1 && stb.nb.length === 0, JSON.stringify(stb && stb.broken));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }] }); btn('t-sel').onclick();
+  PD.pen.box({ x0: 0, x1: 5000, y0: 0, y1: 5000 });
+  check('hand-picked pipes show move arrows in all three directions', PD.egz().m.length === 6, PD.egz().m.length);
+  check('moving them starts and refuses when tied to equipment', PD.pen.moveStart('x') && PD.pen.moveStart('x').msel === true);
+  U(); btn('t-sel').onclick(); PD.selectPart('pipe', 1); PD.pen.quick('q-run');
+  check('Run selects the whole run', Object.keys(PD.pen.msel()).length === 3, Object.keys(PD.pen.msel()).join());
+  PD.pen.quick('q-x');
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

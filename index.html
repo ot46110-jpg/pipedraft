@@ -374,7 +374,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. Iso, Top, Front, Right and Fit are at the top.</li>
           <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
-          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z) and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
+          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z) and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list.</li>
           <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
@@ -2179,9 +2179,70 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     st.fls.forEach(function (f) { if (model.flanges[f.i]) model.flanges[f.i].p = mm3(V(f.orig).addScaledVector(st.A, d)); });
     return true;
   }
+  function pipeSlideStart(i, ax) {                                  // slide one pipe sideways: pipes that run along the move stretch, what sits on the pipe goes with it, other joints come apart
+    var p = model.pipes[i]; if (!p || !EAX[ax]) return null;
+    var A = V(EAX[ax]), d = V(p.b).sub(V(p.a)); if (d.length() < 1e-6) return null; d.normalize();
+    if (Math.abs(d.dot(A)) > 0.999) return null;
+    var ka = key(p.a), kb = key(p.b);
+    if (nozzleAt(ka) || nozzleAt(kb)) { toast('This pipe is tied to equipment. Move the equipment instead.'); return null; }
+    var nb = [], broken = 0, hosts = hostMap(), its = [], caps = [];
+    model.pipes.forEach(function (q, j) {
+      if (j === i) return;
+      ['a', 'b'].forEach(function (w) {
+        var k = key(q[w]); if (k !== ka && k !== kb) return;
+        var o = w === 'a' ? q.b : q.a, qd = V(o).sub(V(q[w])); if (qd.length() < 1e-6) return; qd.normalize();
+        if (Math.abs(qd.dot(A)) > 0.999) nb.push({ pi: j, w: w, orig: q[w].slice(), other: o.slice() }); else broken++;
+      });
+    });
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { model[g].forEach(function (it, k) { if (it.eq == null && hosts[g + ':' + k] === i) its.push({ g: g, k: k, orig: it.p.slice() }); }); });
+    model.caps.forEach(function (c, k) { if (key(c) === ka || key(c) === kb) caps.push({ k: k, orig: c.slice(0, 3) }); });
+    return { slide: true, kind: 'pipe', i: i, A: A, ax: ax, a0: p.a.slice(), b0: p.b.slice(), ka: ka, kb: kb, nb: nb, broken: broken, its: its, caps: caps, before: 0, off: partsOffPipe() };
+  }
+  function slideTo(st, delta) {                                     // the pipe at its start + delta metres along the axis; false when that is not allowed
+    var p = model.pipes[st.i]; if (!p || !isFinite(delta)) return false;
+    delta = Math.max(-1000, Math.min(1000, delta));
+    var D = st.A.clone().multiplyScalar(delta), na = mm3(V(st.a0).add(D)), nb2 = mm3(V(st.b0).add(D));
+    if (na[1] < -1e-9 || nb2[1] < -1e-9) return false;
+    var ok = true;
+    st.nb.forEach(function (s0) { var np = V(s0.orig).add(D); if (!model.pipes[s0.pi] || np.distanceTo(V(s0.other)) < 0.05 || V(s0.other).sub(np).dot(V(s0.other).sub(V(s0.orig))) <= 0) ok = false; });
+    if (!ok) return false;
+    p.a = na; p.b = nb2;
+    st.nb.forEach(function (s0) { model.pipes[s0.pi][s0.w] = mm3(V(s0.orig).add(D)); });
+    st.its.forEach(function (s0) { var it = model[s0.g][s0.k]; if (it) it.p = mm3(V(s0.orig).add(D)); });
+    st.caps.forEach(function (s0) { var c = model.caps[s0.k]; if (c) { var q = mm3(V(s0.orig).add(D)); c[0] = q[0]; c[1] = q[1]; c[2] = q[2]; } });
+    return true;
+  }
+  function mselMoveStart(ax) {                                      // the hand-picked pipes move together once the arrow is released
+    var g = mselGroup(); if (!g || !EAX[ax]) return null;
+    if (g.eq) { toast('A selected pipe is tied to equipment. Move the equipment first.'); return null; }
+    return { msel: true, kind: 'msel', i: -1, A: V(EAX[ax]), ax: ax, before: 0, off: 0 };
+  }
+  function slideSpec() {                                            // where the move arrows go for the pipe or the pipes picked by hand
+    if (tool !== 'sel') return null;
+    if (mselCount()) {
+      var g = mselGroup(); if (!g || g.eq) return null;
+      var pts = groupPoints(g), c = [0, 0, 0]; pts.forEach(function (pt) { c[0] += pt[0]; c[1] += pt[1]; c[2] += pt[2]; });
+      return { kind: 'msel', pos: [c[0] / pts.length, c[1] / pts.length, c[2] / pts.length], axes: ['x', 'y', 'z'] };
+    }
+    var p = sel && sel.kind === 'pipe' ? model.pipes[sel.i] : null; if (!p) return null;
+    var d = V(p.b).sub(V(p.a)); if (d.length() < 1e-6) return null; d.normalize();
+    return { kind: 'pipe', pos: [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2], axes: ['x', 'y', 'z'].filter(function (ax) { return Math.abs(d.dot(V(EAX[ax]))) < 0.999; }) };
+  }
   function updateEgz() {                                            // arrows on the selected equipment, kept the same size on screen by the render loop
     while (egz.children.length) { var c = egz.children[0]; egz.remove(c); c.geometry.dispose(); c.material.dispose(); }
     egzMeshes = [];
+    var sl = slideSpec();
+    if (sl) {                                                       // sideways arrows on a selected pipe, or on the pipes picked by hand
+      egz.position.set(sl.pos[0], sl.pos[1], sl.pos[2]);
+      sl.axes.forEach(function (ax) {
+        var A = V(EAX[ax]), q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), A);
+        [[new T.CylinderGeometry(0.035, 0.035, 0.7, 8), 0.65], [new T.ConeGeometry(0.1, 0.28, 14), 1.14]].forEach(function (g) {
+          var m = new T.Mesh(g[0], new T.MeshBasicMaterial({ color: ECOL[ax], depthTest: false, transparent: true })); m.renderOrder = 20; m.quaternion.copy(q); m.position.copy(A).multiplyScalar(g[1]);
+          m.userData.egz = ax; egz.add(m); egzMeshes.push(m);
+        });
+      });
+      egz.visible = egzMeshes.length > 0; return;
+    }
     var e = tool === 'sel' && sel && sel.kind === 'equip' ? model.equip[sel.i] : null;
     if (!e) {
       var pe = tool === 'sel' && sel && LISTS[sel.kind] && sel.kind !== 'pipe' && sel.kind !== 'flange' && sel.kind !== 'equip' ? alongStart(sel.kind, sel.i) : null;
@@ -2209,11 +2270,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     egz.visible = true;
   }
   function egzDown(e) {                                             // true when the touch grabbed an arrow
-    if (!egz.visible || tool !== 'sel' || !sel || sel.kind === 'pipe' || !LISTS[sel.kind]) return false;
+    if (!egz.visible || tool !== 'sel') return false;
+    var slide = slideSpec();
+    if (!slide && (!sel || sel.kind === 'pipe' || !LISTS[sel.kind])) return false;
     setRay(e); egz.updateMatrixWorld(true);
     var hit = ray.intersectObjects(egzMeshes, false)[0]; if (!hit) return false;
     if (egzDrag) return false;                                      // a second finger never replaces a drag that is running
-    var ax = hit.object.userData.egz, st = ax === 'along' ? alongStart(sel.kind, sel.i) : sel.kind === 'equip' ? eqMoveStart(sel.i, ax) : null; if (!st) return false;
+    var ax = hit.object.userData.egz, st = slide ? (slide.kind === 'msel' ? mselMoveStart(ax) : pipeSlideStart(sel.i, ax)) : ax === 'along' ? alongStart(sel.kind, sel.i) : sel.kind === 'equip' ? eqMoveStart(sel.i, ax) : null; if (!st) return false;
     var v = camera.position.clone().sub(hit.point); v.addScaledVector(st.A, -v.dot(st.A)); if (v.lengthSq() < 1e-8) return false;
     egzDrag = { st: st, id: e.pointerId, pl: new T.Plane().setFromNormalAndCoplanarPoint(v.normalize(), hit.point), at: hit.point.clone(), moved: false, last: 0 };
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
@@ -2221,16 +2284,28 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function egzMove(e) {
     var g = egzDrag;
-    if (tool !== 'sel' || !sel || sel.kind !== g.st.kind || sel.i !== g.st.i) { egzEnd(); return; }   // the selection changed under the finger
+    if (tool !== 'sel' || (g.st.msel ? !mselCount() : (!sel || sel.kind !== g.st.kind || sel.i !== g.st.i))) { egzEnd(); return; }   // the selection changed under the finger
     setRay(e); var pt = new T.Vector3(); if (!ray.ray.intersectPlane(g.pl, pt)) return;
     var snapM = g.st.along ? 0.01 : EGSNAP, dl = Math.round(pt.sub(g.at).dot(g.st.A) / snapM) * snapM;
     if (dl === g.last) return;
+    if (g.st.msel) { g.last = dl; g.moved = dl !== 0; setPos('Move ' + Math.round(dl * 1000) + ' mm along ' + { x: 'X', z: 'Y', y: 'Z' }[g.st.ax] + ', lift the Pencil to apply'); return; }
     var first = !g.moved; if (first) pushHist();
-    if ((g.st.along ? alongTo(g.st, dl) : eqMoveTo(g.st, dl))) { g.moved = true; g.last = dl; if (!egzRaf) egzRaf = requestAnimationFrame(function () { egzRaf = 0; if (egzDrag) rebuild(); }); } else if (first) hist.pop();   // a refused first step leaves no history entry
+    if ((g.st.along ? alongTo(g.st, dl) : g.st.slide ? slideTo(g.st, dl) : eqMoveTo(g.st, dl))) { g.moved = true; g.last = dl; if (!egzRaf) egzRaf = requestAnimationFrame(function () { egzRaf = 0; if (egzDrag) rebuild(); }); } else if (first) hist.pop();   // a refused first step leaves no history entry
   }
   function egzEnd() {
     var g = egzDrag; egzDrag = null; if (!g || !g.moved) return;
+    if (g.st.msel) {                                                // the hand-picked pipes: one move, one undo step
+      var mg = mselGroup(), dm = g.last * 1000, sh = mg && mg.shared;
+      if (mg && !mg.eq && applyGroupG(mg, shiftTf(g.st.ax === 'x' ? dm : 0, g.st.ax === 'z' ? dm : 0, g.st.ax === 'y' ? dm : 0), 0, 'Moved') && sh) toast(sh + ' joint' + (sh === 1 ? '' : 's') + ' to unselected pipes came apart. Undo if that was not intended.');
+      return;
+    }
+    if (g.st.slide && !g.st.broken) { var mp = {}, dd = g.st.A.clone().multiplyScalar(g.last); mp[g.st.ka] = key(mm3(V(g.st.a0).add(dd))); mp[g.st.kb] = key(mm3(V(g.st.b0).add(dd))); rekey(mp); }
     changed(); if (g.st.along) return;
+    if (g.st.slide) {
+      if (g.st.broken) toast(g.st.broken + ' joint' + (g.st.broken === 1 ? '' : 's') + ' with pipes that do not run along the move came apart. Undo, or draw a pipe to close the gap.');
+      var offs = partsOffPipe() - g.st.off; if (offs > 0) toast(offs + ' part' + (offs === 1 ? ' is' : 's are') + ' no longer on a pipe after this move.');
+      return;
+    }
     var off = partsOffPipe() - g.st.off; if (off > 0) toast(off + ' part' + (off === 1 ? ' is' : 's are') + ' (valve, support or fitting) no longer on a pipe after this move. Move ' + (off === 1 ? 'it' : 'them') + ' back or undo.');
     var after = eqNozEnds(g.st.i); if (after < g.st.before) toast((g.st.before - after) + ' pipe end' + (g.st.before - after === 1 ? ' is' : 's are') + ' no longer on a nozzle. Only pipes running along the move follow the equipment.');
   }
@@ -4261,7 +4336,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = b('q-multi', 'Multi', 'Add or remove parts', multiMode) + b('q-del', 'Delete', 'Delete the selection') + b('q-x', '✕', 'Clear the selection');
     } else {
       a = anchorOf(sel.kind, sel.i);
-      h = (sel.kind === 'pipe' ? b('q-dn', '−', 'Smaller size') + b('q-up', '+', 'Larger size') + b('q-valve', 'Valve', 'Add a valve') : '')
+      h = (sel.kind === 'pipe' ? b('q-dn', '−', 'Smaller size') + b('q-up', '+', 'Larger size') + b('q-valve', 'Valve', 'Add a valve') + b('q-run', 'Run', 'Select the whole run') : '')
         + (MK[sel.kind] ? b('q-multi', 'Multi', 'Select several parts', multiMode) : '')
         + b('q-del', sel.kind === 'fit' ? 'Remove' : 'Delete', 'Delete') + b('q-x', '✕', 'Done');
     }
@@ -4275,6 +4350,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     else if (id === 'q-multi') setMulti(!multiMode);
     else if (id === 'q-del') { if (mselCount()) deleteMsel(); else if (sel) removeItem(sel.kind, sel.i); }
     else if (id === 'q-valve') setTool('valve');
+    else if (id === 'q-run' && sel && sel.kind === 'pipe') { var rp = runPipes(sel.i); msel = {}; rp.forEach(function (k) { msel['pipe:' + k] = 1; }); sel = null; rebuild(); updateUi(); toast(rp.length + ' pipe' + (rp.length === 1 ? '' : 's') + ' in the run. Drag an arrow to move them.'); }
     else if ((id === 'q-dn' || id === 'q-up') && sel && sel.kind === 'pipe' && model.pipes[sel.i]) {
       var at = NPS_LIST.indexOf(model.pipes[sel.i].n), nn = NPS_LIST[at + (id === 'q-up' ? 1 : -1)];
       if (nn == null) { toast(id === 'q-up' ? 'Largest size' : 'Smallest size'); return; }
@@ -5211,7 +5287,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

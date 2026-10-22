@@ -74,3 +74,4 @@
 - Select: end handles on a pipe (drag to stretch), Pencil box select, Multi, selection panel (move, copy, size, line, delete), quick bar next to the selection, nearest-part picking with tap-again cycling.
 - Pipe tool: midpoint and alignment snaps with coloured marker, dots on free ends, ⌫ takes back the last pipe, bigger Finish run.
 - Not verified on a real iPad: Pencil drag handles and box select, handle hit sizes (26 px Pencil, 34 finger), quick bar position near screen edges.
+- Slide a pipe sideways with arrows, move hand-picked pipes with arrows, Run button. Not verified on a real iPad.
