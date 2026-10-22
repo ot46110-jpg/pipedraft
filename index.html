@@ -137,7 +137,7 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #vc-scene { position: absolute; left: 0; top: 0; width: 112px; height: 112px; perspective: 340px; }
 #vc-in { position: absolute; left: 20px; top: 20px; width: 72px; height: 72px; transform-style: preserve-3d; }
 .vf { position: absolute; width: 72px; height: 72px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dim); background: var(--panel2, var(--panel)); background: color-mix(in srgb, var(--panel) 88%, var(--fg)); color: var(--fg); font: 600 10px var(--font-data); letter-spacing: .08em; backface-visibility: hidden; -webkit-backface-visibility: hidden; cursor: pointer; }
-.vf:hover { background: var(--accent); color: var(--accent-fg); }
+@media (hover: hover) { .vf:hover { background: var(--accent); color: var(--accent-fg); } }   /* on the iPad a tapped face would stay lit */
 .vf[data-face="front"] { transform: translateZ(36px); }
 .vf[data-face="back"] { transform: rotateY(180deg) translateZ(36px); }
 .vf[data-face="right"] { transform: rotateY(90deg) translateZ(36px); }
@@ -2027,7 +2027,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   function bomByLineCsv() {                                         // the material list of each line number on its own, rows tagged with the line designation
-    var q = csvq, names = {}, rows = [], orig = model, sel0 = sel;
+    var q = csvq, names = {}, rows = [], orig = model, sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode;
     model.pipes.forEach(function (p) { names[p.ln] = 1; });
     var order = Object.keys(names).sort(), desig = {};
     order.forEach(function (ln) { desig[ln] = lineDesignation(ln); });
@@ -2038,7 +2038,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         model = subs[k]; rebuild();   // same swap as a one-line iso sheet; subsetFor reads nozList, so rebuild the whole model first or line 2 sees line 1's equipment; nothing from rebuild() is kept past this block
         bomRows().forEach(function (r) { rows.push([q(ln), q(desig[ln]), q(r[0]), q(r[1]), q(r[2])].join(',')); });
       });
-    } finally { model = orig; sel = sel0; rebuild(); }         // showInsp() drops a selection that is missing in the subset, so put it back
+    } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }         // showInsp() drops a selection that is missing in the subset (renderMulti prunes msel, updateRing clears Rotate mode), so put it back
     return 'Line,Designation,Description,Quantity,Standard / material\n' + rows.join('\n') + (rows.length ? '\n' : '');
   }
 
@@ -2330,7 +2330,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ((g.st.along ? alongTo(g.st, dl) : g.st.slide ? slideTo(g.st, dl) : eqMoveTo(g.st, dl))) { g.moved = true; g.last = dl; if (!egzRaf) egzRaf = requestAnimationFrame(function () { egzRaf = 0; if (egzDrag) rebuild(); }); } else if (first) hist.pop();   // a refused first step leaves no history entry
   }
   function egzEnd() {
-    var g = egzDrag; egzDrag = null; if (!g || !g.moved) return;
+    var g = egzDrag; egzDrag = null; dragUi(false); if (!g || !g.moved) return;
     if (g.st.msel) {                                                // the hand-picked pipes: one move, one undo step
       var mg = mselGroup(), dm = g.last * 1000, sh = mg && mg.shared;
       if (mg && !mg.eq && applyGroupG(mg, shiftTf(g.st.ax === 'x' ? dm : 0, g.st.ax === 'z' ? dm : 0, g.st.ax === 'y' ? dm : 0), 0, 'Moved') && sh) toast(sh + ' joint' + (sh === 1 ? '' : 's') + ' to unselected pipes came apart. Undo if that was not intended.');
@@ -3919,8 +3919,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
     isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.valveWelds = isoOpts.valveWelds === true;
     if (!ln) return isoCore(rot);
-    var sel0 = sel; model = subsetFor(ln); rebuild();
-    try { svg = isoCore(rot); } finally { model = orig; sel = sel0; rebuild(); }
+    var sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode; model = subsetFor(ln); rebuild();
+    try { svg = isoCore(rot); } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }
     return svg;
   }
   function legendSvg() {                                            // every symbol, for reference
@@ -4260,7 +4260,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     return true;
   }
-  function hdlCancel() { rotDrag = null; hdlDrag = null; marker.visible = false; ghostLine.visible = false; }
+  function hdlCancel() { rotDrag = null; hdlDrag = null; dragUi(false); marker.visible = false; ghostLine.visible = false; }
   function hdlMove(e) {
     var g = hdlDrag; if (tool !== 'sel' || !sel || sel.kind !== 'pipe' || sel.i !== g.i || !model.pipes[g.i]) { hdlCancel(); return; }
     setRay(e);
@@ -4404,7 +4404,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + (MK[sel.kind] ? b('q-multi', 'Multi', 'Select several parts', multiMode) : '')
         + b('q-del', sel.kind === 'fit' ? 'Remove' : 'Delete', 'Delete') + b('q-x', '✕', 'Done');
     }
-    var sig = (mc ? 'M' + mc + multiMode : sel.kind + sel.i + multiMode + (rotInfo ? 'r' + rotMode : ''));
+    var sig = (mc ? 'M' + mc + multiMode : sel.kind + sel.i + multiMode + (rotInfo ? 'r' + rotMode + Math.round(rotInfo.deg * 10) : ''));   // the angle is part of the signature, so a typed angle or an undo refreshes the label
     if (sig !== qSig) { q.innerHTML = h; qSig = sig; }
     qAnchor = a; q.hidden = !a; qLast = '';
   }
@@ -4469,8 +4469,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function segUndo() {
     if (!cursor) return;
     var p = model.pipes[model.pipes.length - 1];
-    if (!p || key(p.b) !== key(cursor) || !hist.length) { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); toast('Run ended'); return; }
-    var added = model.pipes.slice(JSON.parse(hist[hist.length - 1]).pipes.length), back = p.a.slice();
+    var top = hist.length ? JSON.parse(hist[hist.length - 1]) : null;
+    var onlyPipes = top && top.pipes.length < model.pipes.length && ['valves', 'flanges', 'items', 'supports', 'instr', 'equip', 'caps'].every(function (g) { return (top[g] || []).length === model[g].length; });   // the last history step must be that pipe, not a valve or cap put on since
+    if (!p || key(p.b) !== key(cursor) || !onlyPipes) { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); toast('Run ended'); return; }
+    var added = model.pipes.slice(top.pipes.length), back = p.a.slice();
     var bs = {}; added.forEach(function (q) { bs[key(q.b)] = 1; });
     var starts = added.filter(function (q) { return !bs[key(q.a)]; });
     if (starts.length === 1) back = starts[0].a.slice();
@@ -4544,7 +4546,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return true;
   }
   function rotMove(e) {
-    var g = rotDrag; if (!rotInfo || tool !== 'sel' || !sel) { rotDrag = null; return; }
+    var g = rotDrag; if (!rotInfo || tool !== 'sel' || !sel) { rotDrag = null; dragUi(false); return; }
     var a = rotAngle(e); if (!a) return;
     if (g.rel && !rotFacing()) return;
     var raw = g.rel ? g.deg0 + (a.deg - g.base) : a.deg;           // Rotate mode turns by how far the pointer went round, from anywhere
@@ -4555,7 +4557,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     g.moved = true; g.last = deg; setPos('Angle ' + deg + '°'); var ao = $('q-ang'); if (ao) ao.textContent = deg + '°';
     if (!rotRaf) rotRaf = requestAnimationFrame(function () { rotRaf = 0; if (rotDrag) rebuild(); });
   }
-  function rotEnd() { var g = rotDrag; rotDrag = null; if (g && g.moved) changed(); }
+  function rotEnd() { var g = rotDrag; rotDrag = null; dragUi(false); if (g && g.moved) changed(); }
 
   // ---------- view cube: click a face, an edge or a corner to look from there, drag it to orbit ----------
   var VC_FACES = {                                                  // normal and the two sides of each face in scene axes (y is up)
@@ -4628,12 +4630,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
+    if (hdlDrag || egzDrag || rotDrag) return;                     // a second finger never tap-selects or orbits under a handle, arrow or ring drag that is running
     if (e.pointerType === 'pen' && !fingerSaved && fingerPlace) { setFinger(false); toast('Pencil found: it places points and fingers move the view. Change that in the pipe settings, Input.'); }
     if (hdlDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                      // an end handle of the selected pipe
     if (rotMode && rotDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }           // Rotate mode: a dial anywhere on the screen
     if (egzDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                      // an arrow of the selected equipment
     if (rotDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                                        // the rotation ring of a valve or equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
+    if (e.pointerType === 'pen' && tool !== 'nav' && nPtr) { ptrs = {}; nPtr = 0; multi = false; pinch = null; }   // a palm that was already resting when the Pencil came down: drop it, or the Pencil would count as a second finger and never place
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     if (e.pointerType === 'pen' && tool === 'sel' && nPtr === 0) band = { x: e.clientX, y: e.clientY };   // a Pencil drag on empty space makes a box
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
@@ -4661,11 +4665,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       pinch = s;
     }
   });
+  function dragRevert() { if (hist.length) { model = normalize(JSON.parse(hist.pop())); save(); } rebuild(); updateUi(); }   // a cancelled drag put its first step on the history: take it back
   function end(e) {
-    if (rotDrag || hdlDrag || egzDrag) dragUi(false);
-    if (rotDrag && rotDrag.id === e.pointerId) { rotEnd(); return; }
-    if (hdlDrag && hdlDrag.id === e.pointerId) { hdlEnd(); return; }
-    if (egzDrag && egzDrag.id === e.pointerId) { egzEnd(); return; }
+    var cancel = e.type === 'pointercancel';                       // the system took the touch away (palm, gesture): a drag is abandoned, not applied
+    if (rotDrag && rotDrag.id === e.pointerId) { var rg = rotDrag; if (cancel && rg.moved) { rotDrag = null; dragUi(false); dragRevert(); } else rotEnd(); return; }
+    if (hdlDrag && hdlDrag.id === e.pointerId) { if (cancel) hdlCancel(); else hdlEnd(); return; }
+    if (egzDrag && egzDrag.id === e.pointerId) { var eg = egzDrag; if (cancel && eg.moved && !eg.st.msel) { egzDrag = null; dragUi(false); dragRevert(); } else if (cancel) { egzDrag = null; dragUi(false); } else egzEnd(); return; }
     if (!ptrs[e.pointerId]) return;
     if (e.pointerType === 'pen') lastPen = performance.now();
     var pen = e.pointerType === 'pen' && tool !== 'nav';
@@ -4811,7 +4816,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (tool !== 'pipe' && tool !== 'equip' && tool !== 'measure') { ghostLine.visible = marker.visible = false; }
   }
   RAIL.forEach(function (t) { $('t-' + t).onclick = function () { setTool(t); }; });
-  $('t-parts').onclick = function () { var opening = !PARTS[tool]; partsMin = false; setTool(opening ? lastPart : 'nav'); if (opening) scrollParts(lastPart); };
+  $('t-parts').onclick = function () { if (PARTS[tool] && partsMin) { partsMin = false; syncParts(); scrollParts(tool); return; }   // folded to its chip: the rail button opens it again
+    var opening = !PARTS[tool]; partsMin = false; setTool(opening ? lastPart : 'nav'); if (opening) scrollParts(lastPart); };
   $('psum').onclick = function () { $('pset').hidden = !$('pset').hidden; $('more').hidden = true; };
   $('more').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null;
@@ -5495,7 +5501,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { cube: { dir: vcDir, go: function (d) { viewDir(d, true); return [theta, phi]; }, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); return [theta, phi]; }, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

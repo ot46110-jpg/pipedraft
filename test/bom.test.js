@@ -1646,5 +1646,91 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   a = C.go(C.dir('front', 0.9, 0.1)); check('a corner click gives an iso-like view', a[1] > 0.6 && a[1] < 1.2 && a[0] > 0.5 && a[0] < 1.0, a.join());
 }
 
+// Audit: drags, selections and sheets
+{
+  let dragging = false; ctx.document.body = { classList: { toggle(c, on) { if (c === 'dragging') dragging = !!on; }, add() {}, remove() {} } };
+  const btn = id => ctx.document.getElementById(id);
+  const ev = (type, kind, id, x, y) => ({ type, pointerType: kind, pointerId: id, clientX: x, clientY: y });
+  const P2 = () => PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }, { a: [2, 0, 0], b: [2, 0, 2], n: 4 }] });
+  const grab = (kind, id) => { P2(); btn('t-sel').onclick(); PD.selectPart('pipe', 0); const s = PD.project([0, 0, 0]); L.cv.pointerdown(ev('pointerdown', kind, id, s.x, s.y)); const t = PD.project([-1, 0, 0]); L.cv.pointermove(ev('pointermove', kind, id, t.x, t.y)); return t; };
+  let id = 5000, t = grab('mouse', id);
+  check('a handle drag fades the panels', dragging === true);
+  btn('t-pipe').onclick(); L.cv.pointerup(ev('pointerup', 'mouse', id, t.x, t.y));
+  check('changing tool mid drag does not leave the panels faded and dead', dragging === false);
+  id++; t = grab('mouse', id); btn('undo').onclick(); L.cv.pointerup(ev('pointerup', 'mouse', id, t.x, t.y));
+  check('Undo mid drag does not leave the panels faded', dragging === false);
+  id++; t = grab('mouse', id); PD.selectPart('pipe', 1); L.cv.pointermove(ev('pointermove', 'mouse', id, t.x + 5, t.y)); L.cv.pointerup(ev('pointerup', 'mouse', id, t.x, t.y));
+  check('a drag whose selection changed ends cleanly', dragging === false);
+  // second finger during a drag
+  globalThis.__perf = (globalThis.__perf || 0) + 1000; id++; t = grab('mouse', id); const far = PD.project([5, 0, 5]); const f = ev('pointerdown', 'touch', 6001, far.x, far.y);
+  L.cv.pointerdown(f); L.cv.pointerup(Object.assign({}, f, { type: 'pointerup' }));
+  L.cv.pointermove(ev('pointermove', 'mouse', id, t.x - 20, t.y)); L.cv.pointerup(ev('pointerup', 'mouse', id, t.x - 20, t.y));
+  check('a second finger tapping during an end handle drag neither ends it nor changes the selection', PD.model.pipes[0].a[0] < -0.5, JSON.stringify(PD.model.pipes[0]));
+  // cancel
+  id++; t = grab('pen', id); L.cv.pointercancel(ev('pointercancel', 'pen', id, t.x, t.y));
+  check('pointercancel on a handle drag stretches nothing', PD.model.pipes[0].a[0] === 0, JSON.stringify(PD.model.pipes[0]));
+  // multi selection survives a one-line sheet
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [5, 0, 0], b: [7, 0, 0], n: 4, ln: 'B' }, { a: [5, 0, 3], b: [7, 0, 3], n: 4, ln: 'B' }] }); btn('t-sel').onclick();
+  PD.pen.box({ x0: 0, x1: 5000, y0: 0, y1: 5000 });
+  const m0 = Object.keys(PD.pen.msel()).length; PD.iso('A'); PD.bomByLine();
+  check('building a one-line sheet keeps the hand-picked selection', m0 === 3 && Object.keys(PD.pen.msel()).length === 3, m0 + ' ' + Object.keys(PD.pen.msel()).join());
+  PD.load({ pipes: [] });
+}
+
+// Audit: taking back a pipe after another tool changed the drawing
+{
+  globalThis.__perf = (globalThis.__perf || 0) + 1000;
+  const btn = id => ctx.document.getElementById(id);
+  PD.load({ pipes: [] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  for (let i = 0; i < 6; i++) btn('down').onclick();
+  tapOn([0, 0, 0]); tapOn([4, 0, 0]); tapOn([4, 0, 2]);
+  btn('t-valve').onclick && 0;
+  L.parts.click({ target: { closest: () => ({ dataset: { chip: 'gate', cat: 'valve' } }) } });
+  tapOn([2, 0, 0]);
+  const nv = PD.model.valves.length, np = PD.model.pipes.length;
+  btn('t-pipe').onclick();
+  PD.pen.segUndo();
+  check('Take back never undoes a valve placed in between', PD.model.valves.length === nv && (PD.model.pipes.length === np - 1 || PD.cursor() === null), nv + ' valves ' + PD.model.valves.length + ', pipes ' + np + '>' + PD.model.pipes.length + ' ' + JSON.stringify(PD.cursor()));
+  PD.load({ pipes: [] });
+}
+
+// Audit: Parts in the rail opens a folded list
+{
+  const btn = id => ctx.document.getElementById(id);
+  btn('t-nav').onclick(); btn('t-parts').onclick();
+  L.parts.click({ target: { closest: () => ({ dataset: { chip: 'ball', cat: 'valve' } }) } });
+  check('choosing a part folds the list', PD.pen.partsMin() && PD.pen.tool() === 'valve');
+  btn('t-parts').onclick();
+  check('Parts in the rail unfolds a folded list and keeps the part armed', !PD.pen.partsMin() && PD.pen.tool() === 'valve' && btn('parts').hidden === false, PD.pen.tool());
+  btn('t-parts').onclick();
+  check('and a second tap closes Parts', PD.pen.tool() === 'nav');
+  btn('t-nav').onclick();
+}
+
+// Audit: the quick bar angle follows a typed angle
+{
+  const btn = id => ctx.document.getElementById(id);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+  btn('t-sel').onclick(); PD.selectPart('valve', 0);
+  btn('i-hwn').value = '40'; btn('i-hwn').onchange();
+  check('a typed handwheel angle shows in the quick bar', /40°/.test(PD.pen.qbar().html), PD.pen.qbar().html);
+  btn('i-hwn').value = '75'; btn('i-hwn').onchange();
+  check('and again after a second change', /75°/.test(PD.pen.qbar().html) && !/40°/.test(PD.pen.qbar().html), PD.pen.qbar().html);
+  PD.load({ pipes: [] });
+}
+
+// Audit: a palm already resting when the Pencil comes down
+{
+  const btn = id => ctx.document.getElementById(id);
+  globalThis.__perf = (globalThis.__perf || 0) + 1000;
+  PD.pen.setFinger(false); PD.load({ pipes: [] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  L.cv.pointerdown({ type: 'pointerdown', pointerType: 'touch', pointerId: 9101, clientX: 100, clientY: 500 });
+  L.cv.pointerdown({ type: 'pointerdown', pointerType: 'pen', pointerId: 9102, clientX: 420, clientY: 330 });
+  L.cv.pointerup({ type: 'pointerup', pointerType: 'pen', pointerId: 9102, clientX: 420, clientY: 330 });
+  check('the Pencil places a point even with a palm already resting on the screen', !!PD.cursor());
+  L.cv.pointerup({ type: 'pointerup', pointerType: 'touch', pointerId: 9101, clientX: 100, clientY: 500 });
+  PD.pen.setFinger(true); btn('finish').onclick(); PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
