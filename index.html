@@ -123,6 +123,12 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #more details[open] > summary::after { content: '▾'; }
 #more details > button { margin-bottom: 4px; }
 /* isometric sheet */
+#qbar { z-index: 5; padding: 4px; gap: 4px; transform: translate(-50%, 0); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+#qbar[hidden] { display: none; }
+#qbar button { min-height: 44px; min-width: 44px; padding: 0 12px; border-color: transparent; }
+#rband { position: fixed; border: 1.5px dashed var(--accent); background: rgba(255,178,31,.08); pointer-events: none; z-index: 7; }
+#rband[hidden] { display: none; }
+#finish { font-weight: 600; min-width: 104px; }
 #iso { inset: 12px var(--gutter-r) 12px var(--gutter-l); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: none; }
 #iso header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #iso header h2 { margin: 0 auto 0 0; }
@@ -211,6 +217,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <button id="t-del" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>Delete</button>
     </nav>
     <div id="parts" class="sheet" hidden></div>
+    <div id="qbar" class="float" hidden></div>
+    <div id="rband" hidden></div>
     <div id="ctx" class="float">
       <div data-for="pipe">
         <button id="psum" aria-label="Pipe settings">NPS 4</button>
@@ -223,6 +231,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         </div>
         <input type="text" id="lenIn" inputmode="text" placeholder="mm" aria-label="Exact length in millimetres" autocomplete="off">
         <button id="lenAdd" aria-label="Add a pipe of the typed length">Add</button>
+        <button id="segUndo" aria-label="Take back the last pipe">⌫</button>
         <button id="finish">Finish run</button>
       </div>
       <div data-for="valve">
@@ -246,6 +255,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <label class="field">Line number<input type="text" id="ln" value="L-001" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <label class="field">Flow on new pipe<select id="flow"><option value="1" selected>Along drawing direction</option><option value="0">Not set</option></select></label>
         <label class="field">Grid snap<select id="snap"><option value="0.05">50 mm</option><option value="0.1" selected>100 mm</option><option value="0.25">250 mm</option></select></label>
+        <label class="field">Input<select id="fing"><option value="1">Finger and Pencil place</option><option value="0">Pencil places, finger moves the view</option></select></label>
         <label class="field">Turns<select id="ang"><option value="0" selected>90° only</option><option value="1">90° and 45°</option></select></label>
       </div>
     </div>
@@ -362,9 +372,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div id="helpBody">
         <ul>
           <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. Iso, Top, Front, Right and Fit are at the top.</li>
-          <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift. Finish run ends the line.</li>
+          <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
-          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z) and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run.</li>
+          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z) and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list.</li>
           <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
@@ -808,7 +818,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- state ----------
   var model = blank(), hist = [];
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
-  var cursor = null, elev = 0, sample = true, sel = null, mA = null, showDims = false, orthoOn = false;
+  var cursor = null, elev = 0, sample = true, sel = null, msel = {}, multiMode = false, pickCyc = null, mA = null, showDims = false, orthoOn = false;
 
   function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, title: {}, levels: [], custom: [], pspecs: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
@@ -910,7 +920,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function adoptModel(m) {                                          // swap in a project; when it cannot be drawn the old one stays and nothing is saved
     var old = model; takeBackup(true); pushHist();
     try { model = normalize(m); rebuild(); } catch (x) { model = old; hist.pop(); try { rebuild(); } catch (y) {} return false; }
-    cursor = null; sel = null; changed(); fit(); return true;
+    cursor = null; sel = null; msel = {}; changed(); fit(); return true;
   }
   function restoreBackup(i) {
     var b = readBackups()[i]; if (!b) return false;
@@ -1587,8 +1597,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (total > 0.001) add('stock', 'Pipe stock, ' + STOCK + ' m lengths (estimate)', Math.ceil(total / STOCK), 'pc');
     if (weight > 0.05) add('weight', 'Pipe weight, steel, empty', weight, 'kg');
 
-    if (sel) world.traverse(function (o) {
-      if (o.userData && o.userData.kind === sel.kind && o.userData.i === sel.i && o.material && o.material.emissive) o.material.emissive.setHex(0x664400);
+    if (sel || mselCount()) world.traverse(function (o) {
+      var u = o.userData; if (!u || !u.kind || !o.material || !o.material.emissive) return;
+      if ((sel && u.kind === sel.kind && u.i === sel.i) || msel[u.kind + ':' + u.i]) o.material.emissive.setHex(0x664400);
     });
     Object.keys(jointInfo).forEach(function (k) {                   // a pump suction reducer is flat on top so air does not collect
       var j = jointInfo[k]; if (j.type !== 'reducer' || !j.ecc || j.flatEff !== 'bottom') return;
@@ -1604,7 +1615,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     })();
     hydroWarnings(); spWarnings(); partWarnings();
     matDirty = true;
-    renderBom(); showInsp(); updateEgz();
+    renderBom(); showInsp(); updateEgz(); updateHdl(); buildQbar(); updateEndDots();
     $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
     $('undo').disabled = !hist.length;
   }
@@ -2246,12 +2257,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function screenSnap(e) {                                          // pipe end or nozzle near the tap on screen, at any height
     var r = cv.getBoundingClientRect(), best = null, bd = e.pointerType === 'mouse' ? 20 : 34;
-    function test(pt, noz) {
+    function test(pt, noz, kind, pen) {
       var v = V(pt).project(camera); if (v.z > 1) return;
-      var d = Math.hypot((v.x + 1) / 2 * r.width + r.left - e.clientX, (1 - v.y) / 2 * r.height + r.top - e.clientY);
-      if (d < bd) { bd = d; best = { pt: pt, noz: noz || null }; }
+      var d = Math.hypot((v.x + 1) / 2 * r.width + r.left - e.clientX, (1 - v.y) / 2 * r.height + r.top - e.clientY) + (pen || 0);
+      if (d < bd) { bd = d; best = { pt: pt, noz: noz || null, kind: kind || (noz ? 'noz' : 'end') }; }
     }
     model.pipes.forEach(function (q) { test(q.a); test(q.b); });
+    model.pipes.forEach(function (q) { var m = V(q.a).add(V(q.b)).multiplyScalar(0.5); if (V(q.a).distanceTo(V(q.b)) >= 0.3) test(mm3(m), null, 'mid', 10); });
     nozList.forEach(function (z) { test(mm3(z.p), z); });
     return best;
   }
@@ -2325,10 +2337,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (den < 1e-6) return null;
     var t = clamp((b * dv.dot(w) - a.dot(w)) / den, -60, 60), len = rs(Math.abs(t));
     if (len < snap * 0.99) return null;
-    var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len));
+    var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len)), align = false;
+    if (pick.i < 3 && model.pipes.length < 500) {                   // line up with an end already in the drawing (same elevation, same X or Y) when it is within half a grid step
+      var ai = [0, 2, 1][pick.i], c0 = c.getComponent(ai), bestv = null, bd2 = Math.max(0.011, snap * 0.45);
+      model.pipes.forEach(function (pp) { [pp.a, pp.b].forEach(function (pt) { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } }); });
+      if (bestv != null) { q[ai] = bestv; align = true; }
+    }
     if (q[1] < -1e-9) return null;                                  // nothing below the floor
     lastAim = { axis: pick.i, dir: a.clone(), sign: sg };
-    return { q: q, axis: pick.i, dir: a };
+    return { q: q, axis: pick.i, dir: a, align: align };
   }
   function showGuide(am) {
     if (!am || !cursor) { guideLine.visible = false; return; }
@@ -2551,12 +2568,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         mA = null;
       }
     } else if (tool === 'sel') {
-      hit = pickMeshes(e)[0];
-      sel = hit ? { kind: hit.object.userData.kind, i: hit.object.userData.i } : null;
-      rebuild();
+      var pk = pickSel(e, true);
+      if (multiMode || e.shiftKey) {                                // several parts: a tap adds or removes one
+        if (pk && MK[pk.kind]) { if (sel && MK[sel.kind] && !mselCount()) mselToggle(sel.kind, sel.i); sel = null; mselToggle(pk.kind, pk.i); }
+      } else { msel = {}; sel = pk ? { kind: pk.kind, i: pk.i } : null; }
+      rebuild(); updateUi();
     } else if (tool === 'del') {
-      hit = pickMeshes(e)[0]; if (!hit) return;
-      removeItem(hit.object.userData.kind, hit.object.userData.i);
+      var dk = pickSel(e, false); if (!dk) return;
+      removeItem(dk.kind, dk.i);
     }
   }
   var LISTS = { pipe: 'pipes', valve: 'valves', flange: 'flanges', equip: 'equip', item: 'items', instr: 'instr', support: 'supports' };
@@ -2569,7 +2588,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function removeFitting(k) {                                       // a fitting is made from the pipes meeting at a joint, so removing it removes the shortest pipe there
     var J = jointInfo[k]; if (!J) { toast('That fitting is already gone'); return; }
-    if (J.type === 'cap') { pushHist(); model.caps = model.caps.filter(function (c) { return key(c) !== k; }); sel = null; changed(); toast('End closure removed'); return; }
+    if (J.type === 'cap') { pushHist(); model.caps = model.caps.filter(function (c) { return key(c) !== k; }); sel = null; msel = {}; changed(); toast('End closure removed'); return; }
     var legs = J.legs.slice().sort(function (a, b) { return V(model.pipes[a.i].a).distanceTo(V(model.pipes[a.i].b)) - V(model.pipes[b.i].a).distanceTo(V(model.pipes[b.i].b)); });
     var pi = legs[0].i; if (pi == null || !model.pipes[pi]) return;
     pushHist();
@@ -2582,18 +2601,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.pipes.splice(pi, 1);
     var ends = {}; model.pipes.forEach(function (q) { ends[key(q.a)] = 1; ends[key(q.b)] = 1; });
     model.caps = model.caps.filter(function (c) { return ends[key(c)]; });
-    sel = null; changed(); toast('Removed pipe ' + pn + ', the shortest at this fitting. Undo brings it back.');
+    sel = null; msel = {}; changed(); toast('Removed pipe ' + pn + ', the shortest at this fitting. Undo brings it back.');
   }
   function removeItem(kind, i) {
     if (kind === 'fit') { removeFitting(i); return; }
     if (!LISTS[kind]) { toast('Nothing to delete there'); return; }
-    pushHist(); dropItem(kind, i); sel = null; changed();
+    pushHist(); dropItem(kind, i); sel = null; msel = {}; changed();
   }
 
   var lastPos = '';
   function setPos(s) { if (s !== lastPos) { lastPos = s; $('pos').textContent = s; } }
-  function markSnap(on) {                                           // white and larger when the Pencil is locked onto a pipe end or nozzle
-    marker.material.color.setHex(on ? 0xffffff : 0xffb21f); marker.scale.setScalar(on ? 1.8 : 1);
+  var SNAPNAME = { end: 'End', mid: 'Midpoint', noz: 'Nozzle', align: 'Aligned' };
+  function markSnap(on, kind) {                                     // larger when the Pencil is locked on: white for an end or nozzle, blue for a midpoint, green when lined up with the drawing
+    marker.material.color.setHex(!on ? 0xffb21f : kind === 'mid' ? 0x4cc9f0 : kind === 'align' ? 0x6bd18f : 0xffffff); marker.scale.setScalar(on ? 1.8 : 1);
   }
   var pendGhost = null, ghostRaf = 0;
   function queueGhost(e) {                                          // Pencil sends up to 240 events a second, so work once per frame
@@ -2611,15 +2631,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     guideLine.visible = false;
     if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
-    var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null;
+    var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null, snapKind = null;
     if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
-    else if (ss && !(cursor && key(ss.pt) === key(cursor))) t = ss.pt;
-    else if (cursor) { var am = aim(e); t = am ? am.q : null; showGuide(am); if (am) $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); }
+    else if (ss && !(cursor && key(ss.pt) === key(cursor))) { t = ss.pt; snapKind = ss.kind; }
+    else if (cursor) { var am = aim(e); t = am ? am.q : null; if (am && am.align) snapKind = 'align'; showGuide(am); if (am) $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); }
     else t = startPoint(e);
     if (t) {
-      marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!ss && t === ss.pt);
+      marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!snapKind, snapKind);
       if (tool === 'pipe') setDrop(t, false);
-      setPos('X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
+      setPos((snapKind ? SNAPNAME[snapKind] + '  ' : '') + 'X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (cursor && tool === 'pipe' ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) + ' mm' : ''));
       if (cursor && tool === 'pipe') { ghostLine.visible = true; setLine(ghostLine, cursor, t); } else ghostLine.visible = false;
     } else { marker.visible = false; ghostLine.visible = false; if (tool === 'pipe') setDrop(cursor, false); }
   }
@@ -2737,8 +2757,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!dz) { toast('Already at that height'); return false; }
     return applyGroup(i, shiftTf(0, 0, dz), 0, 'Moved');
   }
-  function applyGroup(i, tf, copies, label) {                      // tf: {pt, dir} on arrays; copies 0 moves in place
-    var g = groupOf(i);
+  function applyGroup(i, tf, copies, label) { return applyGroupG(groupOf(i), tf, copies, label); }
+  function applyGroupG(g, tf, copies, label) {                     // tf: {pt, dir} on arrays; copies 0 moves in place
     if (g.eq) { toast('This piping is tied to equipment. Move the equipment first.'); return false; }
     var idx = Object.keys(g.set).map(Number).sort(function (a, b) { return a - b; });
     var n = copies || 1, trial = [];
@@ -2858,9 +2878,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
   function showInsp() {
     var el = $('insp');
+    if (tool === 'sel' && mselCount()) { renderMulti(el); return; }
     if (!sel || tool !== 'sel') { el.hidden = true; return; }
     var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
-    if (!it) { sel = null; el.hidden = true; return; }
+    if (!it) { sel = null; msel = {}; el.hidden = true; return; }
     var h = '';
     if (sel.kind === 'pipe') {
       var L = V(it.a).distanceTo(V(it.b));
@@ -2955,7 +2976,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ($('i-ct')) $('i-ct').onchange = edit(function (v) { model.caps.forEach(function (c) { if (key(c) === sel.i) c[3] = v; }); });
     if ($('i-rot')) $('i-rot').onclick = function () { pushHist(); it.r = ((it.r || 0) + 1) % 4; changed(); };
     if ($('i-del')) $('i-del').onclick = function () { removeItem(sel.kind, sel.i); };
-    $('i-x').onclick = function () { sel = null; rebuild(); };
+    $('i-x').onclick = function () { sel = null; msel = {}; rebuild(); };
   }
 
   // ---------- exports ----------
@@ -4061,6 +4082,271 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function showHyd() { $('hydBody').innerHTML = renderHyd(); $('hyd').hidden = false; }
 
+  // ---------- Pencil workflow: finger or Pencil, end handles, box select, multi-selection, quick bar, free-end dots ----------
+  var fingerPlace = true, fingerSaved = false, lastFingerToast = 0;
+  try { var fs0 = localStorage.getItem('pipedraft.finger'); if (fs0 === '0') { fingerPlace = false; fingerSaved = true; } else if (fs0 === '1') fingerSaved = true; } catch (x) {}
+  function setFinger(v) {                                           // true: a finger tap places like the Pencil. false: only the Pencil (and a mouse) places, fingers move the view
+    fingerPlace = v; fingerSaved = true;
+    try { localStorage.setItem('pipedraft.finger', v ? '1' : '0'); } catch (x) {}
+    var f = $('fing'); if (f) f.value = v ? '1' : '0';
+  }
+  function placing() { return tool !== 'nav' && tool !== 'sel' && !pickLevel; }
+  $('fing').value = fingerPlace ? '1' : '0';
+  $('fing').onchange = function () { setFinger(this.value === '1'); toast(fingerPlace ? 'Fingers place points too' : 'Only the Pencil places. Fingers move the view.'); };
+
+  function scrOk(pt) {                                              // screen position of a point, or null behind the camera
+    var v = V(pt).project(camera); if (v.z > 1) return null;
+    var r = cv.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top };
+  }
+
+  // End handles: with a pipe selected, drag either end along the pipe to stretch or shorten it.
+  var hdl = new T.Group(); hdl.visible = false; scene.add(hdl); var hdlDrag = null;
+  function updateHdl() {
+    while (hdl.children.length) { var c = hdl.children[0]; hdl.remove(c); c.geometry.dispose(); c.material.dispose(); }
+    var p = tool === 'sel' && sel && sel.kind === 'pipe' ? model.pipes[sel.i] : null;
+    if (!p) { hdl.visible = false; return; }
+    ['a', 'b'].forEach(function (w) {
+      var m = new T.Mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: 0.95 }));
+      m.renderOrder = 21; m.position.set(p[w][0], p[w][1], p[w][2]); hdl.add(m);
+    });
+    hdl.visible = true;
+  }
+  function hdlDown(e) {                                             // true when the touch grabbed an end handle
+    if (!hdl.visible || tool !== 'sel' || !sel || sel.kind !== 'pipe' || hdlDrag) return false;
+    var p = model.pipes[sel.i]; if (!p) return false;
+    var rad = e.pointerType === 'pen' ? 26 : e.pointerType === 'touch' ? 34 : 18, best = null, bd = rad;
+    ['a', 'b'].forEach(function (w) { var s = scrOk(p[w]); if (!s) return; var d = Math.hypot(s.x - e.clientX, s.y - e.clientY); if (d < bd) { bd = d; best = w; } });
+    if (!best) return false;
+    var other = best === 'a' ? p.b : p.a, A = V(p[best]).sub(V(other)); if (A.length() < 1e-6) return false;
+    hdlDrag = { id: e.pointerId, i: sel.i, w: best, A: A.normalize(), other: other.slice(), np: null };
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    return true;
+  }
+  function hdlCancel() { hdlDrag = null; marker.visible = false; ghostLine.visible = false; }
+  function hdlMove(e) {
+    var g = hdlDrag; if (tool !== 'sel' || !sel || sel.kind !== 'pipe' || sel.i !== g.i || !model.pipes[g.i]) { hdlCancel(); return; }
+    setRay(e);
+    var c = V(g.other), o = ray.ray.origin.clone(), dv = ray.ray.direction.clone(), w = c.clone().sub(o), a = g.A, b = a.dot(dv), den = 1 - b * b;
+    if (den < 1e-6) return;
+    var t = clamp((b * dv.dot(w) - a.dot(w)) / den, 0.05, 80), q = c.clone().addScaledVector(a, t);
+    var ax = Math.abs(a.x) > 0.999 ? 'x' : Math.abs(a.y) > 0.999 ? 'y' : Math.abs(a.z) > 0.999 ? 'z' : null;
+    if (ax) q[ax] = rs(q[ax]); else q = c.clone().addScaledVector(a, Math.max(0.05, rs(t)));   // on the grid in world coordinates, or by length on a 45° pipe
+    if (q.distanceTo(c) < 0.05 || q.clone().sub(c).dot(a) <= 0) q = c.clone().addScaledVector(a, 0.05);
+    if (q.y < -1e-9) return;
+    g.np = mm3(q);
+    marker.visible = true; marker.position.set(g.np[0], g.np[1], g.np[2]); markSnap(false);
+    ghostLine.visible = true; setLine(ghostLine, g.other, g.np);
+    setPos('L ' + Math.round(q.distanceTo(c) * 1000) + ' mm  to X ' + Math.round(g.np[0] * 1000) + '  Y ' + Math.round(g.np[2] * 1000) + '  Z ' + Math.round(g.np[1] * 1000));
+  }
+  function hdlEnd() {
+    var g = hdlDrag; hdlCancel();
+    if (!g || !g.np || !model.pipes[g.i]) return;
+    var p = model.pipes[g.i]; if (V(p[g.w]).distanceTo(V(g.np)) < 0.0015) return;
+    stretchPipe(g.i, g.w, g.np);
+  }
+
+  // Box select with the Pencil: drag on empty space in Select.
+  var band = null;
+  function bandDraw(e) {
+    var r = $('rband'), x0 = band.x, y0 = band.y, x1 = e.clientX, y1 = e.clientY;
+    if (Math.hypot(x1 - x0, y1 - y0) < 14 && r.hidden) return;
+    r.hidden = false; r.style.left = Math.min(x0, x1) + 'px'; r.style.top = Math.min(y0, y1) + 'px'; r.style.width = Math.abs(x1 - x0) + 'px'; r.style.height = Math.abs(y1 - y0) + 'px';
+  }
+  function bandEnd(e) {                                             // true when the drag was long enough to be a box
+    var b = band; band = null; $('rband').hidden = true;
+    if (!b || e.type !== 'pointerup' || Math.hypot(e.clientX - b.x, e.clientY - b.y) < 14) return false;
+    boxSelect({ x0: Math.min(b.x, e.clientX), x1: Math.max(b.x, e.clientX), y0: Math.min(b.y, e.clientY), y1: Math.max(b.y, e.clientY) });
+    return true;
+  }
+
+  // Multi-selection: pipes, valves, inline parts, supports, instruments and single flanges, moved, copied, resized or deleted together.
+  var MK = { pipe: 'pipes', valve: 'valves', item: 'items', support: 'supports', instr: 'instr', flange: 'flanges' };
+  function mselKeys() { return Object.keys(msel); }
+  function mselCount() { return mselKeys().length; }
+  function mselToggle(kind, i) { var k = kind + ':' + i; if (msel[k]) delete msel[k]; else msel[k] = 1; }
+  function setMulti(on) {
+    multiMode = on;
+    if (on && sel && MK[sel.kind] && !mselCount()) { msel = {}; mselToggle(sel.kind, sel.i); sel = null; }
+    rebuild(); updateUi();
+  }
+  function boxSelect(r) {
+    if (multiMode && sel && MK[sel.kind] && !mselCount()) mselToggle(sel.kind, sel.i);
+    if (!multiMode) msel = {};
+    sel = null;
+    function inside(pt) { var s = scrOk(pt); return !!s && s.x >= r.x0 && s.x <= r.x1 && s.y >= r.y0 && s.y <= r.y1; }
+    model.pipes.forEach(function (p, i) { if ((inside(p.a) && inside(p.b)) || inside([(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2])) msel['pipe:' + i] = 1; });
+    ['valve', 'item', 'support', 'instr', 'flange'].forEach(function (kd) { model[MK[kd]].forEach(function (it, i) { if (it.p && !(kd === 'flange' && it.m) && inside(it.p)) msel[kd + ':' + i] = 1; }); });
+    rebuild(); updateUi();
+    toast(mselCount() ? mselCount() + ' selected' : 'Nothing in the box');
+  }
+  function mselGroup() {                                            // like groupOf, but for the pipes picked by hand
+    var set = {}, any = false;
+    mselKeys().forEach(function (k) { var p = k.split(':'); if (p[0] === 'pipe' && model.pipes[+p[1]]) { set[+p[1]] = 1; any = true; } });
+    if (!any) return null;
+    var hosts = hostMap(), used = {}, outside = {}, keys = {}, items = {}, shared = 0;
+    model.pipes.forEach(function (q, j) { [q.a, q.b].forEach(function (pt) { (set[j] ? used : outside)[key(pt)] = 1; }); });
+    Object.keys(used).forEach(function (k) { if (outside[k]) shared++; else keys[k] = 1; });
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { items[g] = []; model[g].forEach(function (it, k) { if (it.eq == null && set[hosts[g + ':' + k]]) items[g].push(k); }); });
+    return { set: set, keys: keys, items: items, eq: Object.keys(used).some(nozzleAt), shared: shared };
+  }
+  function deleteMsel() {                                           // parts on a deleted pipe go with it
+    var gone = { pipes: new Set(), valves: new Set(), items: new Set(), flanges: new Set(), supports: new Set(), instr: new Set() }, pset = {}, hosts = hostMap();
+    mselKeys().forEach(function (k) { var p = k.split(':'), o = model[MK[p[0]]] && model[MK[p[0]]][+p[1]]; if (!o) return; gone[MK[p[0]]].add(o); if (p[0] === 'pipe') pset[+p[1]] = 1; });
+    ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { model[g].forEach(function (it, k) { if (it.eq == null && pset[hosts[g + ':' + k]]) gone[g].add(it); }); });
+    var n = 0; Object.keys(gone).forEach(function (g) { n += gone[g].size; });
+    if (!n) return;
+    pushHist();
+    gone.valves.forEach(function (v) { gone.valves.has(v) && valveFaceFlanges(v).forEach(function (k) { gone.flanges.add(model.flanges[k]); }); });
+    var vmap = {}, nv = [];
+    model.valves.forEach(function (v, i) { if (!gone.valves.has(v)) { vmap[i] = nv.length; nv.push(v); } });
+    model.valves = nv;
+    model.instr.forEach(function (q) { if (q.link != null) { if (vmap[q.link] != null) q.link = vmap[q.link]; else delete q.link; } });
+    ['pipes', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { model[g] = model[g].filter(function (o) { return !gone[g].has(o); }); });
+    var ends = {}; model.pipes.forEach(function (q) { ends[key(q.a)] = 1; ends[key(q.b)] = 1; });
+    model.caps = model.caps.filter(function (c) { return ends[key(c)]; });
+    msel = {}; sel = null; changed(); toast(n + ' part' + (n === 1 ? '' : 's') + ' deleted. Undo brings them back.');
+  }
+  function renderMulti(el) {
+    var ks = mselKeys().filter(function (k) { var p = k.split(':'); if (MK[p[0]] && model[MK[p[0]]][+p[1]]) return true; delete msel[k]; return false; });
+    if (!ks.length) { el.hidden = true; return; }
+    var cnt = {}, nm = { pipe: 'pipe', valve: 'valve', item: 'inline part', support: 'support', instr: 'instrument', flange: 'flange' };
+    ks.forEach(function (k) { var kd = k.split(':')[0]; cnt[kd] = (cnt[kd] || 0) + 1; });
+    var h = '<h2>Selection · ' + ks.length + '</h2><p>' + Object.keys(cnt).map(function (kd) { return cnt[kd] + ' ' + nm[kd] + (cnt[kd] === 1 ? '' : 's'); }).join(', ') + '. Tap Multi to add or remove parts, or drag a box with the Pencil.</p>';
+    if (cnt.pipe) {
+      h += '<div class="row"><label class="field">Size of the selected pipes<select id="m-n"><option value="">Change…</option>' + NPS_LIST.map(function (n) { return '<option value="' + n + '">' + esc(sz(n)) + '</option>'; }).join('') + '</select></label></div>'
+        + '<div class="row"><label class="field">Line number<input type="text" id="m-ln" placeholder="keep" maxlength="12" autocomplete="off"></label></div>'
+        + '<div class="field" style="margin-bottom:8px">Offset X · Y · Z, mm<div class="coord"><input type="text" inputmode="text" id="m-x" value="0"><input type="text" inputmode="text" id="m-y" value="0"><input type="text" inputmode="text" id="m-z" value="0"></div></div>'
+        + '<div class="row"><label class="field">Copies<input type="text" inputmode="numeric" id="m-c" value="1"></label></div>'
+        + '<div class="row"><button id="m-move">Move</button><button id="m-copy">Copy</button></div>';
+    }
+    h += '<div class="row"><button id="m-del">Delete</button><button id="m-x2">Clear</button></div>';
+    el.innerHTML = h; el.hidden = false;
+    function pipesSel() { return ks.filter(function (k) { return k.indexOf('pipe:') === 0; }).map(function (k) { return +k.split(':')[1]; }); }
+    function offs() { return [numField('m-x') || 0, numField('m-y') || 0, numField('m-z') || 0]; }
+    if ($('m-n')) $('m-n').onchange = function () { var nn = +this.value; if (!nn) return; pushHist(); pipesSel().forEach(function (k) { resizePipe(k, nn); }); changed(); toast(pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's') + ' now ' + sz(nn)); };
+    if ($('m-ln')) $('m-ln').onchange = function () { var l = safeLn(this.value); if (!l) return; pushHist(); pipesSel().forEach(function (k) { model.pipes[k].ln = l; }); changed(); toast('Line ' + l + ' on ' + pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's')); };
+    function go(copies) {
+      var g = mselGroup(); if (!g) return;
+      if (g.eq) { toast('A selected pipe is tied to equipment. Move the equipment first.'); return; }
+      var o = offs(), n = Math.max(1, Math.min(50, Math.round(numField('m-c') || 1)));
+      if (copies && !o[0] && !o[1] && !o[2]) { toast('Type an offset for the copy'); return; }
+      var before = model.pipes.length, per = Object.keys(g.set).length;
+      if (!applyGroupG(g, shiftTf(o[0], o[1], o[2]), copies ? n : 0, copies ? 'Copied' : 'Moved')) return;
+      if (copies) { msel = {}; sel = null; for (var k = model.pipes.length - per; k < model.pipes.length; k++) msel['pipe:' + k] = 1; rebuild(); updateUi(); }
+      else if (g.shared) toast(g.shared + ' joint' + (g.shared === 1 ? '' : 's') + ' to unselected pipes came apart. Undo if that was not intended.');
+    }
+    if ($('m-move')) $('m-move').onclick = function () { go(false); };
+    if ($('m-copy')) $('m-copy').onclick = function () { go(true); };
+    $('m-del').onclick = deleteMsel;
+    $('m-x2').onclick = function () { msel = {}; multiMode = false; rebuild(); updateUi(); };
+  }
+
+  // Quick bar: the few actions for the selection, next to it, so the Pencil does not travel to a side panel.
+  var qAnchor = null, qSig = '', qLast = '';
+  function anchorOf(kind, i) {
+    if (kind === 'fit') { var c = String(i).split(',').map(function (v) { return Number(v) / 1000; }); return c.length === 3 ? c : null; }
+    var L = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports }[kind], it = L && L[i];
+    if (!it) return null;
+    if (kind === 'pipe') return [(it.a[0] + it.b[0]) / 2, (it.a[1] + it.b[1]) / 2, (it.a[2] + it.b[2]) / 2];
+    return it.p ? [it.p[0], it.p[1] + (kind === 'equip' ? 1 : 0), it.p[2]] : null;
+  }
+  function buildQbar() {
+    var q = $('qbar'), mc = mselCount(), h = '', a = null;
+    function b(id, txt, label, on) { return '<button id="' + id + '" aria-label="' + label + '"' + (on != null ? ' aria-pressed="' + on + '"' : '') + '>' + txt + '</button>'; }
+    if (tool !== 'sel' || (!sel && !mc)) { q.hidden = true; qAnchor = null; qSig = ''; return; }
+    if (mc) {
+      var sx = 0, sy = 0, sz2 = 0, n = 0;
+      mselKeys().forEach(function (k) { var p = k.split(':'), an = anchorOf(p[0], +p[1]); if (an) { sx += an[0]; sy += an[1]; sz2 += an[2]; n++; } });
+      a = n ? [sx / n, sy / n, sz2 / n] : null;
+      h = b('q-multi', 'Multi', 'Add or remove parts', multiMode) + b('q-del', 'Delete', 'Delete the selection') + b('q-x', '✕', 'Clear the selection');
+    } else {
+      a = anchorOf(sel.kind, sel.i);
+      h = (sel.kind === 'pipe' ? b('q-dn', '−', 'Smaller size') + b('q-up', '+', 'Larger size') + b('q-valve', 'Valve', 'Add a valve') : '')
+        + (MK[sel.kind] ? b('q-multi', 'Multi', 'Select several parts', multiMode) : '')
+        + b('q-del', sel.kind === 'fit' ? 'Remove' : 'Delete', 'Delete') + b('q-x', '✕', 'Done');
+    }
+    var sig = (mc ? 'M' + mc + multiMode : sel.kind + sel.i + multiMode);
+    if (sig !== qSig) { q.innerHTML = h; qSig = sig; }
+    qAnchor = a; q.hidden = !a; qLast = '';
+  }
+  $('qbar').addEventListener('click', function (e) { var bt = e.target && e.target.closest ? e.target.closest('button') : null; if (bt) qbarAct(bt.id); });
+  function qbarAct(id) {
+    if (id === 'q-x') { sel = null; msel = {}; multiMode = false; rebuild(); updateUi(); }
+    else if (id === 'q-multi') setMulti(!multiMode);
+    else if (id === 'q-del') { if (mselCount()) deleteMsel(); else if (sel) removeItem(sel.kind, sel.i); }
+    else if (id === 'q-valve') setTool('valve');
+    else if ((id === 'q-dn' || id === 'q-up') && sel && sel.kind === 'pipe' && model.pipes[sel.i]) {
+      var at = NPS_LIST.indexOf(model.pipes[sel.i].n), nn = NPS_LIST[at + (id === 'q-up' ? 1 : -1)];
+      if (nn == null) { toast(id === 'q-up' ? 'Largest size' : 'Smallest size'); return; }
+      pushHist(); resizePipe(sel.i, nn); changed(); toast('Pipe ' + (sel.i + 1) + ' is ' + sz(nn));
+    }
+  }
+  function placeQbar() {                                            // runs every frame while the bar is shown: only moves it
+    var q = $('qbar'); if (q.hidden || !qAnchor) return;
+    var v = V(qAnchor).project(camera), W = cv.clientWidth, H = cv.clientHeight;
+    if (v.z > 1) { q.style.visibility = 'hidden'; return; }
+    var w = q.offsetWidth || 260, x = Math.max(w / 2 + 92, Math.min(W - w / 2 - 8, (v.x + 1) / 2 * W)), y = (1 - v.y) / 2 * H - 88;
+    if (y < 8) y += 176; y = Math.min(y, H - 60);
+    var s = Math.round(x) + ',' + Math.round(y); if (s === qLast) return; qLast = s;
+    q.style.left = Math.round(x) + 'px'; q.style.top = Math.round(y) + 'px'; q.style.visibility = 'visible';
+  }
+
+  // Free pipe ends show as dots in the Pipe tool, so a run can be continued from them.
+  var endDots = null;
+  function updateEndDots() {
+    if (endDots) { scene.remove(endDots); endDots.geometry.dispose(); endDots.material.dispose(); endDots = null; }
+    if (tool !== 'pipe' || !model.pipes.length || model.pipes.length > 800) return;
+    var use = {}, pts = {};
+    model.pipes.forEach(function (p) { [p.a, p.b].forEach(function (pt) { var k = key(pt); use[k] = (use[k] || 0) + 1; pts[k] = pt; }); });
+    model.caps.forEach(function (c) { use[key(c)] = 9; });
+    model.flanges.forEach(function (f) { if (isOne(f)) use[key(f.p)] = 9; });
+    nozList.forEach(function (z) { use[key(mm3(z.p))] = 9; });
+    var arr = []; Object.keys(use).forEach(function (k) { if (use[k] === 1) arr.push(pts[k][0], pts[k][1], pts[k][2]); });
+    if (!arr.length) return;
+    var g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(arr, 3));
+    endDots = new T.Points(g, new T.PointsMaterial({ color: 0xffb21f, size: 10, sizeAttenuation: false, depthTest: false, transparent: true, opacity: 0.9 }));
+    endDots.renderOrder = 15; scene.add(endDots);
+  }
+
+  // Picking for Select and Delete: parts near the tap win over a pipe, and parts stacked in one spot are reached by tapping again.
+  var PICK_PARTS = ['valve', 'item', 'support', 'instr', 'flange'];
+  function pickSel(e, cycle) {
+    var hit = pickMeshes(e)[0], rad = e.pointerType === 'pen' ? 26 : e.pointerType === 'touch' ? 34 : 16, c = [];
+    var hk = hit && hit.object.userData.kind, hi = hit && hit.object.userData.i;
+    PICK_PARTS.forEach(function (kd) {
+      model[MK[kd]].forEach(function (it, i) {
+        if (!it.p || (kd === 'flange' && it.m)) return;
+        var s = scrOk(it.p); if (!s) return;
+        var d = Math.hypot(s.x - e.clientX, s.y - e.clientY); if (d < rad) c.push({ kind: kd, i: i, d: d });
+      });
+    });
+    c.sort(function (a, b) { return a.d - b.d; });
+    if (hk && PICK_PARTS.indexOf(hk) >= 0 && !c.some(function (z) { return z.kind === hk && z.i === hi; })) c.unshift({ kind: hk, i: hi, d: 0 });
+    if (!c.length) return hit ? { kind: hk, i: hi } : null;
+    if (hit && PICK_PARTS.indexOf(hk) < 0 && c[0].d > rad * 0.7) return { kind: hk, i: hi };   // far from every part, on a pipe: the pipe
+    if (!cycle || c.length < 2) { pickCyc = null; return c[0]; }
+    var sg = c.map(function (z) { return z.kind + z.i; }).join('|'), now = performance.now(), idx = 0;
+    if (pickCyc && pickCyc.sig === sg && now - pickCyc.t < 5000 && Math.hypot(e.clientX - pickCyc.x, e.clientY - pickCyc.y) < 20) idx = (pickCyc.idx + 1) % c.length;
+    pickCyc = { sig: sg, idx: idx, t: now, x: e.clientX, y: e.clientY };
+    toast(c.length + ' parts here, ' + (idx + 1) + ' of ' + c.length + '. Tap again for the next.');
+    return c[idx];
+  }
+
+  // Take back the last pipe of the run in progress and carry on from its start.
+  function segUndo() {
+    if (!cursor) return;
+    var p = model.pipes[model.pipes.length - 1];
+    if (!p || key(p.b) !== key(cursor) || !hist.length) { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); toast('Run ended'); return; }
+    var added = model.pipes.slice(JSON.parse(hist[hist.length - 1]).pipes.length), back = p.a.slice();
+    var bs = {}; added.forEach(function (q) { bs[key(q.b)] = 1; });
+    var starts = added.filter(function (q) { return !bs[key(q.a)]; });
+    if (starts.length === 1) back = starts[0].a.slice();
+    redoStack.push(JSON.stringify(model)); if (redoStack.length > 30) redoStack.shift();
+    model = normalize(JSON.parse(hist.pop()));
+    cursor = back; elev = back[1]; sel = null; msel = {}; save(); rebuild(); updateUi(); toast('Last pipe taken back');
+  }
+  $('segUndo').onclick = segUndo;
+
   // ---------- input ----------
   var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
   function penNow() { return performance.now() - lastPen < 350; }
@@ -4077,9 +4363,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
+    if (e.pointerType === 'pen' && !fingerSaved && fingerPlace) { setFinger(false); toast('Pencil found: it places points and fingers move the view. Change that in the pipe settings, Input.'); }
+    if (hdlDown(e)) return;                                        // an end handle of the selected pipe
     if (egzDown(e)) return;                                        // an arrow of the selected equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    if (e.pointerType === 'pen' && tool === 'sel' && nPtr === 0) band = { x: e.clientX, y: e.clientY };   // a Pencil drag on empty space makes a box
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr++;
     if (e.pointerType === 'pen' && tool !== 'nav') ghost(e);
     if (nPtr === 1) { down = { x: e.clientX, y: e.clientY, moved: false }; multi = false; }
@@ -4087,12 +4376,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   cv.addEventListener('pointermove', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
+    if (hdlDrag && hdlDrag.id === e.pointerId) { hdlMove(e); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { egzMove(e); return; }
     var p = ptrs[e.pointerId];
     if (!p) { if (e.pointerType !== 'touch') queueGhost(e); return; }
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
     p.x = e.clientX; p.y = e.clientY;
-    if (nPtr === 1 && e.pointerType === 'pen' && tool !== 'nav') { queueGhost(e); return; }   // Pencil aims, lifting places
+    if (nPtr === 1 && e.pointerType === 'pen' && tool !== 'nav') { if (band && tool === 'sel') bandDraw(e); else queueGhost(e); return; }   // Pencil aims, lifting places
     if (nPtr === 1) {
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
       if (down.moved) { theta -= dx * 0.007; phi = Math.min(1.5, Math.max(0.1, phi - dy * 0.007)); }
@@ -4104,11 +4394,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
   });
   function end(e) {
+    if (hdlDrag && hdlDrag.id === e.pointerId) { hdlEnd(); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { egzEnd(); return; }
     if (!ptrs[e.pointerId]) return;
     if (e.pointerType === 'pen') lastPen = performance.now();
     var pen = e.pointerType === 'pen' && tool !== 'nav';
     var tap = nPtr === 1 && !multi && down && (pen || !down.moved) && e.type === 'pointerup';
+    if (band) { if (e.pointerType === 'pen' && nPtr === 1) { if (bandEnd(e)) tap = false; } else { band = null; $('rband').hidden = true; } }
+    if (tap && e.pointerType === 'touch' && !fingerPlace && placing()) {   // Pencil mode: a finger tap never places
+      tap = false;
+      if (performance.now() - lastFingerToast > 4000) { lastFingerToast = performance.now(); toast('The Pencil places. Fingers move the view. Change it in the pipe settings, Input.'); }
+    }
     delete ptrs[e.pointerId]; nPtr--;
     if (nPtr === 2) pinch = pinchState();
     if (tap) onTap(e);
@@ -4184,11 +4480,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     else if (b.dataset.chip) { var cat = b.dataset.cat; if (tool !== cat) setTool(cat); setPart(cat, b.dataset.chip); }
   });
   function setTool(t) {
-    egzDrag = null;
+    egzDrag = null; hdlCancel();
     tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
-    if (t !== 'sel') sel = null;
+    if (t !== 'sel') { sel = null; msel = {}; multiMode = false; }
     rebuild(); updateUi();
   }
   function updateUi() {
@@ -4196,7 +4492,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('t-parts').setAttribute('aria-pressed', String(!!PARTS[tool]));
     $('parts').hidden = !PARTS[tool]; if (PARTS[tool]) syncParts();
     $('psum').textContent = '' + sz(curN) + ' · SCH ' + curS + ' · ' + curL + (ang45 ? ' · 45°' : '');
-    $('axis').hidden = !cursor; $('finish').hidden = !cursor;
+    $('axis').hidden = !cursor; $('finish').hidden = !cursor; $('segUndo').hidden = !cursor;
     $('startAt').hidden = !!cursor; $('lenIn').hidden = !cursor; $('lenAdd').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
     $('finish').disabled = !cursor;
@@ -4277,15 +4573,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).onclick = function () { axisMode = a; updateUi(); }; });
   $('finish').onclick = function () { cursor = null; lastAim = null; guideLine.visible = false; updateUi(); };
   $('undo').onclick = function () {
-    egzDrag = null;                                                 // an arrow drag in progress would write into the model that undo is about to replace
+    egzDrag = null; hdlCancel();                                    // an arrow drag in progress would write into the model that undo is about to replace
     if (!hist.length) return;
     redoStack.push(JSON.stringify(model)); if (redoStack.length > 30) redoStack.shift();
-    model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
+    model = normalize(JSON.parse(hist.pop())); cursor = null; sel = null; msel = {}; save(); rebuild(); updateUi();
   };
   $('redo').onclick = function () {
-    egzDrag = null; if (!redoStack.length) return;
+    egzDrag = null; hdlCancel(); if (!redoStack.length) return;
     hist.push(JSON.stringify(model));
-    model = normalize(JSON.parse(redoStack.pop())); cursor = null; sel = null; save(); rebuild(); updateUi();
+    model = normalize(JSON.parse(redoStack.pop())); cursor = null; sel = null; msel = {}; save(); rebuild(); updateUi();
   };
   $('bom').addEventListener('click', function (e) {                // a warning that names a pipe: select it and bring the view to it
     var li = e.target.closest ? e.target.closest('li[data-pipe]') : null; if (!li) return;
@@ -4595,7 +4891,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return;
     }
     b.dataset.arm = ''; b.textContent = 'Clear everything';
-    takeBackup(true); pushHist(); model = blank(); cursor = null; sel = null; changed();
+    takeBackup(true); pushHist(); model = blank(); cursor = null; sel = null; msel = {}; changed();
   };
 
   // ---------- custom parts panel (⋯ → Project → Custom parts) ----------
@@ -4889,7 +5185,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var k = e.key.toLowerCase();
     if (e.metaKey || e.ctrlKey) { if (k === 'z' || k === 'Z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); } else if (k === 'y') { e.preventDefault(); $('redo').click(); } return; }
     var map = { b: 'branch', r: 'reduce', n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
-    if (k === 'escape' || k === 'enter') { cursor = null; sel = null; mA = null; rebuild(); updateUi(); }
+    if (k === 'backspace' && tool === 'pipe' && cursor) { e.preventDefault(); segUndo(); return; }
+    if ((k === 'backspace' || k === 'delete') && tool === 'sel' && mselCount()) { e.preventDefault(); deleteMsel(); return; }
+    if (k === 'escape' || k === 'enter') { cursor = null; sel = null; msel = {}; multiMode = false; mA = null; rebuild(); updateUi(); }
     else if (map[k]) setTool(map[k]);
     else if (k === 'x' || k === 'y' || k === 'z' || k === 'a') { axisMode = k === 'a' ? 'auto' : k; updateUi(); }
     else if (k === 'arrowup') vertical(1);
@@ -4899,7 +5197,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // Hook for the headless tests in test/.
   window.PipeDraft = {
-    load: function (m) { model = normalize(m); sel = null; rebuild(); },
+    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
@@ -4913,6 +5211,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
+    pen: { quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
@@ -4934,7 +5233,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!sample && model.pipes.length > 3 && Date.now() - last > 3 * 864e5) toast('Keep a copy outside Safari: ⋯, File, Save project');
     } catch (e) {}
   }, 6000);
-  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>
 <script>if("serviceWorker"in navigator&&location.protocol.indexOf("http")==0)navigator.serviceWorker.register("sw.js").catch(function(){})</script></body></html>

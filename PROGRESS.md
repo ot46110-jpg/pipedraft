@@ -68,3 +68,9 @@
 - ส่งออก: DXF มี $INSUNITS(มม.)/layer ต่อ line/TEXT tag; PDF ทั้งหมดทุกไลน์ในไฟล์เดียว + เลือก A3/A4; Weld gap ใน Project settings หักจาก cut length; หน้า How to draw (⋯ → Project, เปิดเองครั้งแรก).
 
 - แก้ "จุดขาวค้าง": แตะบนจุดขาว (จุดเริ่มรัน) เพื่อจบรัน/เลือกจุดใหม่; นิ้วแตะแล้วไม่ทิ้ง marker/เส้นนำไว้.
+
+## Pencil workflow (drawing and editing)
+- Pencil mode (first Pencil use): fingers move the view, the Pencil places; setting in pipe settings, Input.
+- Select: end handles on a pipe (drag to stretch), Pencil box select, Multi, selection panel (move, copy, size, line, delete), quick bar next to the selection, nearest-part picking with tap-again cycling.
+- Pipe tool: midpoint and alignment snaps with coloured marker, dots on free ends, ⌫ takes back the last pipe, bigger Finish run.
+- Not verified on a real iPad: Pencil drag handles and box select, handle hit sizes (26 px Pencil, 34 finger), quick bar position near screen edges.

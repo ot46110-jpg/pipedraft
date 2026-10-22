@@ -10,7 +10,7 @@ const L = {};                                                           // liste
 const mk = id => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector() { return null; }, setAttribute() {}, getAttribute() { return null; }, addEventListener(t, f) { (L[id] = L[id] || {})[t] = f; }, click() {},
   getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }, setPointerCapture() {}, clientHeight: 600, textContent: '', innerHTML: '', hidden: false, disabled: false, value: '4' });
 const doc = { createElement: () => ({ style: {}, width: 0, height: 0, getContext: () => ({ strokeText() {}, fillText() {}, fillRect() {}, clearRect() {}, drawImage() {} }) }), getElementById: id => els[id] || (els[id] = mk(id)), querySelectorAll: () => [], addEventListener() {} };
-const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => 0 },
+const ctx = { document: doc, window: { addEventListener() {}, innerWidth: 1000, devicePixelRatio: 1 }, navigator: { storage: { persist() {} } }, performance: { now: () => globalThis.__perf || 0 },
   localStorage: { getItem(k) { return k in memStore ? memStore[k] : null; }, setItem(k, v) { if (memFull) throw new Error('quota'); memStore[k] = String(v); } }, ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout, clearTimeout, console, Math, Promise };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'vendor/three.min.js'), 'utf8'), ctx);
@@ -1413,6 +1413,96 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('a first tap starts a run', !!c0);
   if (c0) { tapAt(s0.x + 6, s0.y - 5); check('a tap on the start dot ends the run and leaves no pipe', PD.cursor() === null && PD.model.pipes.length === 0); }
   tapAt(420, 330); check('another point can be picked after that', !!PD.cursor());
+}
+
+
+// Pencil workflow: finger or Pencil, end handles, box select, multi-selection, snaps, quick bar
+{
+  const ev = (type, kind, id, x, y) => ({ type, pointerType: kind, pointerId: id, clientX: x, clientY: y });
+  const pen = (x0, y0, x1, y1, id) => { id = id || (pid_++); L.cv.pointerdown(ev('pointerdown', 'pen', id, x0, y0)); if (x1 != null) L.cv.pointermove(ev('pointermove', 'pen', id, x1, y1)); L.cv.pointerup(ev('pointerup', 'pen', id, x1 == null ? x0 : x1, y1 == null ? y0 : y1)); globalThis.__perf = (globalThis.__perf || 0) + 1000; };   // touches within 350 ms of the Pencil count as a palm: move the stub clock on
+  const btn = id => ctx.document.getElementById(id);
+  PD.pen.setFinger(false);
+  PD.load({ pipes: [] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  tapAt(420, 330); check('Pencil mode: a finger tap places nothing', PD.cursor() === null);
+  pen(420, 330); check('Pencil mode: the Pencil places a point', !!PD.cursor());
+  PD.pen.setFinger(true); btn('finish').onclick();
+  tapAt(420, 330); check('finger mode: a finger tap places again', !!PD.cursor());
+  btn('finish').onclick();
+
+  // taking back the last pipe of a run
+  PD.load({ pipes: [] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  for (let i = 0; i < 6; i++) btn('down').onclick();
+  tapOn([0, 0, 0]); tapOn([2, 0, 0]); tapOn([2, 0, 2]);
+  check('two pipes drawn', PD.model.pipes.length === 2, PD.model.pipes.length);
+  PD.pen.segUndo();
+  check('take back the last pipe: one pipe left and the run goes on from its end', PD.model.pipes.length === 1 && PD.cursor() && near(PD.cursor(), [2, 0, 0]), JSON.stringify(PD.cursor()));
+  PD.pen.segUndo();
+  check('take back again: no pipe, the run starts where it began', PD.model.pipes.length === 0 && PD.cursor() && near(PD.cursor(), [0, 0, 0]), JSON.stringify(PD.cursor()));
+  PD.pen.segUndo(); check('with nothing to take back the run ends', PD.cursor() === null);
+
+  // free ends are shown, midpoints snap
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }] }); btn('t-pipe').onclick();
+  check('a free pipe end shows a dot in the Pipe tool', PD.pen.dots() === 2, PD.pen.dots());
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], caps: [[4, 0, 0, 'cap']] }); btn('t-pipe').onclick();
+  check('a closed end shows no dot', PD.pen.dots() === 1, PD.pen.dots());
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  tapOn([2, 0, 0]);
+  check('a tap at the middle of a pipe snaps to the midpoint and splits it', PD.cursor() && near(PD.cursor(), [2, 0, 0]) && PD.model.pipes.length === 2, JSON.stringify(PD.cursor()) + ' ' + PD.model.pipes.length);
+  btn('finish').onclick();
+
+  // lining up with an elevation already in the drawing
+  PD.load({ pipes: [{ a: [8, 0, 0], b: [8, 1.32, 0], n: 4 }] }); btn('t-pipe').onclick(); btn('finish').onclick();
+  for (let i = 0; i < 6; i++) btn('down').onclick();
+  tapOn([3, 0, 0]); tapOn([3, 1.31, 0]);
+  check('a new end lines up with an elevation already in the drawing', PD.model.pipes.length === 2 && Math.abs(lastPipe().b[1] - 1.32) < 0.011, JSON.stringify(lastPipe()));
+  btn('finish').onclick();
+
+  // end handles
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }] }); btn('t-sel').onclick();
+  tapOn([1, 0, 0]);
+  check('a selected pipe shows two end handles', PD.pen.hdl().vis && PD.pen.hdl().n === 2, JSON.stringify(PD.pen.hdl()));
+  const eb = PD.project([2, 0, 0]), ef = PD.project([3.2, 0, 0]);
+  pen(eb.x, eb.y, ef.x, ef.y);
+  check('dragging an end handle with the Pencil stretches the pipe', Math.abs(PD.model.pipes[0].b[0] - 3.2) < 0.16 && PD.model.pipes[0].a[0] === 0, JSON.stringify(PD.model.pipes[0]));
+
+  // the quick bar
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }] }); btn('t-sel').onclick(); tapOn([1, 0, 0]);
+  check('the quick bar shows for the selection', !PD.pen.qbar().hidden && PD.pen.qbar().html.indexOf('q-dn') > 0, PD.pen.qbar().html);
+  const n0 = PD.model.pipes[0].n; PD.pen.quick('q-up');
+  check('the quick bar steps the pipe to the next size up', PD.model.pipes[0].n > n0, PD.model.pipes[0].n + ' from ' + n0);
+
+  // near-part picking
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] }); btn('t-sel').onclick();
+  const vs = PD.project([2, 0, 0]);
+  const pk = PD.pen.pickSel({ pointerType: 'pen', clientX: vs.x + 12, clientY: vs.y + 9 }, true);
+  check('a Pencil tap a little off a valve still picks the valve', pk && pk.kind === 'valve', JSON.stringify(pk));
+  const p05 = PD.project([0.5, 0, 0]);
+  const pk2 = PD.pen.pickSel({ pointerType: 'pen', clientX: p05.x, clientY: p05.y }, true);
+  check('away from the valve the pipe is picked', pk2 && pk2.kind === 'pipe', JSON.stringify(pk2));
+
+  // box select, multi-selection, move, copy, delete
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [2, 0, 0], b: [2, 2, 0], n: 4, ln: 'A' }, { a: [8, 0, 8], b: [9, 0, 8], n: 2, ln: 'B' }], valves: [{ p: [1, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] }); btn('t-sel').onclick();
+  const ps = [PD.project([0, 0, 0]), PD.project([2, 2, 0]), PD.project([2.4, 0, 0])];
+  const x0 = Math.min(...ps.map(p => p.x)) - 40, x1 = Math.max(...ps.map(p => p.x)) + 40, y0 = Math.min(...ps.map(p => p.y)) - 40, y1 = Math.max(...ps.map(p => p.y)) + 40;
+  pen(x0, y0, x1, y1);
+  const mk = Object.keys(PD.pen.msel()).sort();
+  check('a Pencil drag on empty space selects what is inside the box', mk.indexOf('pipe:0') >= 0 && mk.indexOf('pipe:1') >= 0 && mk.indexOf('valve:0') >= 0 && mk.indexOf('pipe:2') < 0, mk.join());
+  const g = PD.pen.mgroup();
+  check('the selected pipes form a group with their valve and no joint shared with the rest', g && Object.keys(g.set).length === 2 && g.items.valves.length === 1 && g.shared === 0 && !g.eq, JSON.stringify(g && { s: g.set, sh: g.shared }));
+  const val = (id, v) => { btn(id).value = v; };
+  val('m-x', '0'); val('m-y', '0'); val('m-z', '500'); val('m-c', '1');
+  btn('m-move').onclick();
+  check('Move lifts every selected pipe and its valve together', PD.model.pipes[0].a[1] === 0.5 && PD.model.pipes[1].b[1] === 2.5 && PD.model.valves[0].p[1] === 0.5 && PD.model.pipes[2].a[1] === 0, JSON.stringify(PD.model.pipes.map(p => p.a[1])));
+  val('m-x', '3000'); val('m-y', '0'); val('m-z', '0'); val('m-c', '2');
+  btn('m-copy').onclick();
+  check('Copy makes the copies with their valves and selects the last copy', PD.model.pipes.length === 7 && PD.model.valves.length === 3 && Object.keys(PD.pen.msel()).length === 2, PD.model.pipes.length + ' ' + PD.model.valves.length + ' ' + Object.keys(PD.pen.msel()).join());
+  val('m-n', '6'); btn('m-n').onchange.call(btn('m-n'));
+  check('the size of the selected pipes changes together', PD.model.pipes.slice(5).every(p => p.n === 6) && PD.model.pipes[2].n === 2, JSON.stringify(PD.model.pipes.map(p => p.n)));
+  PD.pen.del();
+  check('Delete removes the selected pipes and the valve on them', PD.model.pipes.length === 5 && PD.model.valves.length === 2, PD.model.pipes.length + ' ' + PD.model.valves.length);
+  PD.rebuild();
+  check('after that the drawing still builds', PD.rows().length > 0);
+  PD.load({ pipes: [] });
 }
 
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
