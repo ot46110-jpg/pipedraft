@@ -773,10 +773,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function eqDef(k) { return Object.prototype.hasOwnProperty.call(EQUIP, k) ? EQUIP[k] : Object.prototype.hasOwnProperty.call(CEQ, k) ? CEQ[k] : undefined; }
   function eqInside(def, k, l, m) {                                 // is the equipment-frame scene point l inside the outline shrunk by m (metres)
     if (def && def.custom) return (def.shape === 'cyl' ? Math.hypot(l.x, l.z) < def.W / 2 - m : Math.abs(l.x) < def.W / 2 - m && Math.abs(l.z) < def.D / 2 - m) && l.y > m && l.y < def.H - m;
+    var ev = def && def.env;
+    if (ev) return ev.t === 'cylx' ? l.x > ev.x0 + m && l.x < ev.x1 - m && Math.hypot(l.y - ev.cy, l.z) < ev.r - m : l.x > ev.x0 + m && l.x < ev.x1 - m && l.y > ev.y0 + m && l.y < ev.y1 - m && l.z > ev.z0 + m && l.z < ev.z1 - m;
     return k === 'vessel' ? Math.hypot(l.x, l.z) < VES_R - m && l.y > VES_Y0 - VES_HD + m && l.y < VES_Y1 + VES_HD - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
   }
   function eqLabel(k) { var d = eqDef(k) || EQUIP.pump; return (d.custom ? d.short : d.name).toLowerCase(); }
-  function eqIsVessel(e) { var d = eqDef(e.k); return e.k === 'vessel' || !!(d && d.custom && d.shape === 'cyl'); }
+  function eqIsVessel(e) { var d = eqDef(e.k); return e.k === 'vessel' || !!(d && d.vesselPid) || !!(d && d.custom && d.shape === 'cyl'); }
   function nozPipes(k) {                                            // pipe ends sitting on a nozzle of this equipment type, to tell the user what an edit left behind
     var at = {}, n = 0; nozList.forEach(function (z) { if (z.e >= 0 && model.equip[z.e] && model.equip[z.e].k === k) at[key(mm3(z.p))] = 1; });
     model.pipes.forEach(function (p) { if (at[key(p.a)]) n++; if (at[key(p.b)]) n++; });
@@ -824,6 +826,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var STOCK = 6, STEEL = 7850, STEP = 0.5;
   var STORE = 'pipedraft.model.v1';
 
+  function eqKit(g, m) {                                          // small helpers for building equipment in its own frame (scene axes, y up)
+    function add(o, x, y, z) { o.position.set(x, y, z); g.add(o); return o; }
+    return {
+      box: function (w, h, d, x, y, z, mm) { return add(new T.Mesh(new T.BoxGeometry(w, h, d), mm || m), x, y, z); },
+      cx: function (r, len, x, y, z, mm, seg) { var o = new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 24), mm || m); o.rotation.z = Math.PI / 2; return add(o, x, y, z); },
+      cy: function (r, len, x, y, z, mm, seg) { return add(new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 20), mm || m), x, y, z); },
+      headX: function (r, depth, x, y, sg, mm) {                    // a dished head on a horizontal shell, bulging toward sg (+1 or -1 along x)
+        var o = new T.Mesh(new T.SphereGeometry(r, 36, 10, 0, Math.PI * 2, 0, Math.PI / 2), mm || m); o.scale.y = depth / r; o.rotation.z = -sg * Math.PI / 2; return add(o, x, y, 0);
+      }
+    };
+  }
+  var EQ_CHIPS = [['pump', 'Centrifugal pump'], ['vpump', 'Vertical in-line pump'], ['vessel', 'Vertical vessel'], ['hvessel', 'Horizontal vessel'], ['hx', 'Shell & tube exchanger']];
   var VES_R = 0.5, VES_Y0 = 0.3, VES_Y1 = 2.3, VES_HD = 0.17;   // built-in vertical vessel: shell radius, tangent lines, head depth (m); nozzle points stay where they always were
   var EQUIP = {
     pump: {                                                         // end suction, top discharge (ANSI style) on a steel baseplate, driven by a foot-mounted motor
@@ -887,6 +901,85 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           var d3 = new T.Vector3(z[3], z[4], z[5]), L = z[6], nk = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, L, 18), m);
           nk.position.set(z[0], z[1], z[2]).addScaledVector(d3, -0.12 - L / 2); nk.quaternion.setFromUnitVectors(UP, d3); g.add(nk);
         });
+      }
+    },
+    hvessel: {                                                      // 1.2 m drum, 3 m between tangent lines, 2:1 heads, two saddles, top manway
+      name: 'Horizontal vessel', short: 'Drum', vesselPid: false, wire: 'vessel', H: 1.95,
+      env: { t: 'cylx', r: 0.6, x0: -1.8, x1: 1.8, cy: 1.2 },
+      noz: [{ p: [-1.0, 1.95, 0], d: [0, 1, 0], n: 4 }, { p: [0.6, 0.45, 0], d: [0, -1, 0], n: 4 }, { p: [1.0, 1.95, 0], d: [0, 1, 0], n: 1 }],
+      build: function (g, m) {
+        var K = eqKit(g, m), cy = 1.2, R = 0.6, mLeg = mat(0x3d4b54, 0.6);
+        K.cx(R, 3.0, 0, cy, 0, m, 40);
+        [-1, 1].forEach(function (sg) { K.headX(R, 0.3, sg * 1.5, cy, sg, m); K.cx(R + 0.006, 0.012, sg * 1.5, cy, 0, mat(0x52697a, 0.6), 40); });
+        [-1.1, 1.1].forEach(function (x) {                          // saddles: web, two ribs and a base plate
+          K.box(0.03, cy, 1.0, x, cy / 2, 0, mLeg); K.box(0.24, 0.02, 1.1, x, 0.01, 0, mLeg);
+          [-0.3, 0.3].forEach(function (z) { K.box(0.2, cy - 0.35, 0.025, x, (cy - 0.35) / 2, z, mLeg); });
+        });
+        K.cy(0.06, 0.2, -1.0, 1.73, 0, m); K.cy(0.06, 0.2, 0.6, 0.67, 0, m); K.cy(0.03, 0.2, 1.0, 1.73, 0, m);   // nozzle necks out of the shell
+        K.cy(0.24, 0.2, 0, 1.82, 0, m, 32); K.cy(0.3, 0.045, 0, 1.94, 0, m, 32);   // top manway and its cover
+        var hd = new T.Mesh(new T.TorusGeometry(0.07, 0.012, 6, 16, Math.PI), mat(0xc9d6dc, 0.3)); hd.position.set(0, 1.965, 0); hd.rotation.y = Math.PI / 2; g.add(hd);
+        [-1.4, 1.4].forEach(function (x) { K.box(0.12, 0.1, 0.02, x, cy + R * 0.93, 0, mLeg); });   // lifting lugs
+      },
+      iso: function (W3, P, prims) {
+        [-1.1, 1.1].forEach(function (x) { var sd = P.box(W3, x - 0.12, x + 0.12, 0, 1.2, -0.5, 0.5, P.EBD); sd.d -= 100; prims.push(sd); });   // saddles sit under the shell, so they are painted first
+        prims.push(P.cyl(W3, 'x', 0, 1.2, 0, 0.6, 3.0));
+        prims.push(P.domeX(W3, 1.5, 1.2, 0, 0.6, 0.3, 1)); prims.push(P.domeX(W3, -1.5, 1.2, 0, 0.6, 0.3, -1));
+        prims.push(P.cyl(W3, 'y', 0, 1.82, 0, 0.24, 0.2)); prims.push(P.cyl(W3, 'y', 0, 1.94, 0, 0.3, 0.045, P.EAC));
+      }
+    },
+    vpump: {                                                        // in-line pump: suction and discharge on one line, motor standing on top
+      name: 'Vertical in-line pump', short: 'Inline pump', wire: 'pump', H: 1.24,
+      env: { t: 'box', x0: -0.3, x1: 0.3, y0: 0, y1: 1.24, z0: -0.22, z1: 0.26 },
+      noz: [{ p: [-0.3, 0.25, 0], d: [-1, 0, 0], n: 4 }, { p: [0.3, 0.25, 0], d: [1, 0, 0], n: 4 }],
+      build: function (g, m) {
+        var K = eqKit(g, m), mMot = mat(0x3d5361, 0.55), mCowl = mat(0x4a6272, 0.5), mDark = mat(0x1d262c, 0.8);
+        K.box(0.34, 0.08, 0.26, 0, 0.04, 0, mat(0x2e3a42, 0.7));     // foot
+        K.cy(0.17, 0.32, 0, 0.25, 0, m, 32);                        // casing
+        var sc = new T.Mesh(new T.TorusGeometry(0.15, 0.05, 10, 28), m); sc.rotation.x = Math.PI / 2; sc.position.set(0, 0.26, 0.02); g.add(sc);   // volute bulge
+        [-1, 1].forEach(function (sg) { K.cx(0.07, 0.1, sg * 0.14, 0.25, 0, m, 20); });   // necks out to the nozzle flanges
+        K.cy(0.2, 0.03, 0, 0.425, 0, m, 32);                        // casing cover
+        K.cy(0.12, 0.18, 0, 0.53, 0, m, 24);                        // motor stool
+        [-1, 1].forEach(function (sg) { K.box(0.1, 0.11, 0.02, 0, 0.53, sg * 0.115, mDark); });   // coupling windows
+        K.cy(0.2, 0.03, 0, 0.635, 0, mMot, 32);                     // motor flange
+        K.cy(0.18, 0.46, 0, 0.88, 0, mMot, 32);                     // motor frame and fins
+        for (var fi = 0; fi < 7; fi++) K.cy(0.194, 0.012, 0, 0.69 + fi * 0.065, 0, mMot, 32);
+        K.cy(0.17, 0.11, 0, 1.165, 0, mCowl, 28); K.cy(0.13, 0.012, 0, 1.226, 0, mDark, 24);   // fan cowl and grille
+        K.box(0.11, 0.1, 0.07, 0, 0.88, 0.215, mMot);               // terminal box
+      },
+      iso: function (W3, P, prims) {
+        prims.push(P.box(W3, -0.17, 0.17, 0, 0.08, -0.13, 0.13, '#cfd7db'));
+        prims.push(P.cyl(W3, 'y', 0, 0.25, 0, 0.17, 0.32));
+        prims.push(P.cyl(W3, 'x', -0.14, 0.25, 0, 0.07, 0.1)); prims.push(P.cyl(W3, 'x', 0.14, 0.25, 0, 0.07, 0.1));
+        prims.push(P.cyl(W3, 'y', 0, 0.53, 0, 0.12, 0.18));
+        prims.push(P.cyl(W3, 'y', 0, 0.88, 0, 0.19, 0.5, P.EAC)); prims.push(P.cyl(W3, 'y', 0, 1.165, 0, 0.17, 0.11, P.EAC));
+      }
+    },
+    hx: {                                                           // shell and tube: bonnet at the back, channel with a flat cover at the front, two saddles
+      name: 'Shell and tube heat exchanger', short: 'Exchanger', wire: 'vessel', H: 1.3,
+      env: { t: 'cylx', r: 0.38, x0: -1.42, x1: 1.36, cy: 0.8 },
+      noz: [{ p: [-0.8, 1.3, 0], d: [0, 1, 0], n: 4 }, { p: [0.65, 0.3, 0], d: [0, -1, 0], n: 4 }, { p: [1.1, 0.3, 0], d: [0, -1, 0], n: 3 }, { p: [1.1, 1.3, 0], d: [0, 1, 0], n: 3 }],
+      build: function (g, m) {
+        var K = eqKit(g, m), cy = 0.8, R = 0.3, mLeg = mat(0x3d4b54, 0.6), mCh = mat(0x6d8796, 0.55), mSteel = mat(0xc9d6dc, 0.3);
+        K.cx(R, 2.1, -0.15, cy, 0, m, 36);                          // shell
+        K.cx(0.38, 0.06, -1.2, cy, 0, m, 36); K.cx(0.38, 0.06, 0.9, cy, 0, m, 36);   // shell flanges
+        K.cx(0.32, 0.12, -1.29, cy, 0, mCh, 36); K.headX(0.32, 0.12, -1.35, cy, -1, mCh);   // rear bonnet
+        K.cx(0.32, 0.4, 1.12, cy, 0, mCh, 36);                      // channel
+        K.cx(0.38, 0.05, 1.335, cy, 0, mCh, 36);                    // channel flange and flat cover
+        for (var bi = 0; bi < 8; bi++) { var ba = bi * Math.PI / 4; K.cx(0.018, 0.08, 1.37, cy + Math.cos(ba) * 0.34, Math.sin(ba) * 0.34, mSteel, 8); }
+        [-0.85, 0.35].forEach(function (x) {                        // saddles
+          K.box(0.03, cy, 0.6, x, cy / 2, 0, mLeg); K.box(0.2, 0.02, 0.66, x, 0.01, 0, mLeg);
+          [-0.2, 0.2].forEach(function (z) { K.box(0.16, cy - 0.2, 0.02, x, (cy - 0.2) / 2, z, mLeg); });
+        });
+        K.cy(0.06, 0.12, -0.8, 1.12, 0, m); K.cy(0.06, 0.12, 0.65, 0.48, 0, m);           // shell side nozzle necks
+        K.cy(0.05, 0.1, 1.1, 0.47, 0, mCh); K.cy(0.05, 0.1, 1.1, 1.13, 0, mCh);         // tube side necks on the channel
+        K.box(0.008, 0.08, 0.14, -0.3, cy, -R - 0.004, mSteel);     // name plate
+      },
+      iso: function (W3, P, prims) {
+        [-0.85, 0.35].forEach(function (x) { var sd = P.box(W3, x - 0.1, x + 0.1, 0, 0.8, -0.3, 0.3, P.EBD); sd.d -= 100; prims.push(sd); });   // saddles sit under the shell, so they are painted first
+        prims.push(P.cyl(W3, 'x', -0.15, 0.8, 0, 0.3, 2.1));
+        prims.push(P.cyl(W3, 'x', -1.2, 0.8, 0, 0.38, 0.06, P.EAC)); prims.push(P.cyl(W3, 'x', 0.9, 0.8, 0, 0.38, 0.06, P.EAC));
+        prims.push(P.cyl(W3, 'x', -1.29, 0.8, 0, 0.32, 0.12)); prims.push(P.domeX(W3, -1.35, 0.8, 0, 0.32, 0.12, -1));
+        prims.push(P.cyl(W3, 'x', 1.12, 0.8, 0, 0.32, 0.4)); prims.push(P.cyl(W3, 'x', 1.335, 0.8, 0, 0.38, 0.05, P.EAC));
       }
     }
   };
@@ -2409,7 +2502,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
       egz.visible = true; return;
     }
-    var d = eqDef(e.k) || EQUIP.pump, hh = d.custom ? d.H : e.k === 'vessel' ? VES_Y1 + VES_HD : 0.7;
+    var d = eqDef(e.k) || EQUIP.pump, hh = d.custom || d.H ? d.H : e.k === 'vessel' ? VES_Y1 + VES_HD : 0.7;
     egz.position.set(e.p[0], e.p[1] + hh / 2, e.p[2]);
     ['x', 'y', 'z'].forEach(function (ax) {
       var A = V(EAX[ax]), q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), A);
@@ -3310,7 +3403,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     signal: { name: 'Signal line', tag: '', svg: '<line x1="-11" y1="0" x2="11" y2="0" stroke-dasharray="4 3"/>' },
     weld: { name: 'Butt weld', tag: 'W', svg: '<circle r="3.2" fill="' + INK + '" stroke="none"/>' },
     pump: { name: 'Centrifugal pump', tag: 'P', svg: '<circle r="11"/><polygon points="-4,-5 7,0 -4,5" fill="' + INK + '"/>' },
-    vessel: { name: 'Vertical vessel', tag: 'V', svg: '<rect x="-9" y="-16" width="18" height="32" rx="8"/>' }
+    vessel: { name: 'Vertical vessel', tag: 'V', svg: '<rect x="-9" y="-16" width="18" height="32" rx="8"/>' },
+    hvessel: { name: 'Horizontal vessel', tag: 'V', svg: '<rect x="-12" y="-7" width="24" height="14" rx="6"/>' },
+    vpump: { name: 'Vertical in-line pump', tag: 'P', svg: '<circle r="11"/><polygon points="-4,-5 7,0 -4,5" fill="' + INK + '"/><line x1="0" y1="-11" x2="0" y2="-16"/><rect x="-5" y="-22" width="10" height="6"/>' },
+    hx: { name: 'Shell and tube heat exchanger', tag: 'E', svg: '<circle r="11"/><polyline points="-11,0 -5,-6 5,6 11,0" fill="none"/>' }
   };
   var SYM_ORDER = Object.keys(SYM);
   // Isometric pictures. The iso sheet shows what a part looks like in side view, drawn in the plane of its pipe: x along the pipe,
@@ -3549,6 +3645,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var bc = [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(function (q) { return W3(q[0] * cd.W / 2, q[1] * cd.H, q[2] * cd.D / 2); });
         return { kind: 'pump', cs: bc, pts: bc.concat(xp), c: W3(0, cd.H / 2, 0) };
       }
+      if (cd && cd.env) {                                           // built-in equipment described by its envelope
+        var ev = cd.env, gp = [];
+        if (ev.t === 'cylx') [ev.x0, ev.x1].forEach(function (x) { for (var i = 0; i < 16; i++) { var a = i / 16 * 2 * Math.PI; gp.push(W3(x, ev.cy + ev.r * Math.cos(a), ev.r * Math.sin(a))); } });
+        else [ev.x0, ev.x1].forEach(function (x) { [ev.y0, ev.y1].forEach(function (y) { [ev.z0, ev.z1].forEach(function (z) { gp.push(W3(x, y, z)); }); }); });
+        gp.push(W3(0, 0, 0)); cd.noz.forEach(function (z) { gp.push(W3(z.p[0], z.p[1], z.p[2])); });
+        return { kind: cd.wire || 'pump', pts: gp, c: ev.t === 'cylx' ? W3((ev.x0 + ev.x1) / 2, ev.cy, 0) : W3((ev.x0 + ev.x1) / 2, (ev.y0 + ev.y1) / 2, (ev.z0 + ev.z1) / 2) };
+      }
       if (e.k === 'vessel') {
         var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(VES_R * Math.cos(i / 28 * 2 * Math.PI), y, VES_R * Math.sin(i / 28 * 2 * Math.PI))); return a; };
         var r0 = ring(0), r1 = ring(VES_Y1);
@@ -3679,6 +3782,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
       return { d: depth3(W3(cx, cy, cz)) + 0.01, s: '<polygon points="' + pstr(hull2(pts)) + '" fill="' + EBD + '" stroke="' + INK + '" stroke-width="1" stroke-linejoin="round"/>' };
     }
+    function domeXPrim(W3, cx, cy, cz, r, h0, sg) {                // a dished head on a horizontal shell, bulging toward sg along x
+      var pts = [], st, i;
+      for (st = 0; st <= 6; st++) {
+        var th = st / 6 * Math.PI / 2, rr = r * Math.cos(th), xx = cx + sg * h0 * Math.sin(th);
+        for (i = 0; i < 16; i++) pts.push(sp(W3(xx, cy + rr * Math.cos(i / 16 * Math.PI * 2), cz + rr * Math.sin(i / 16 * Math.PI * 2))));
+      }
+      return { d: depth3(W3(cx + sg * h0 * 0.5, cy, cz)), s: '<polygon points="' + pstr(hull2(pts)) + '" fill="' + EBD + '" stroke="' + INK + '" stroke-width="1" stroke-linejoin="round"/>' };
+    }
     function eqPicture(e, ei) {
       var W3 = eqW3(e), prims = [], cd = eqDef(e.k);
       if (cd && cd.custom) {                                        // user equipment: one box or one cylinder
@@ -3694,6 +3805,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           else if (p.t === 'cyly') prims.push(cylPrim(W3, 'z', x, z + hh / 2, y, w / 2, d));
           else { prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, true)); prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, false)); }
         });
+      } else if (cd && cd.iso) {
+        cd.iso(W3, { box: boxPrim, cyl: cylPrim, domeX: domeXPrim, EBD: EBD, EAC: EAC }, prims);
       } else if (e.k === 'vessel') {
         var lr = (VES_R + 0.045) * Math.SQRT1_2;
         [[lr, lr], [-lr, lr], [lr, -lr], [-lr, -lr]].forEach(function (lg) { prims.push(cylPrim(W3, 'y', lg[0], 0.475, lg[1], 0.044, 0.95, EBD)); });
@@ -4865,7 +4978,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     flange: { label: 'Flanges', items: [['wn', 'Weld-neck pair'], ['so', 'Slip-on pair'], ['lj', 'Lap-joint pair'], ['th', 'Threaded pair'], ['sw', 'Socket-weld pair'], ['ro', 'Orifice flange pair'], ['bl', 'Blind, pipe end']] },
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
-    equip: { label: 'Equipment', items: [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']] },    // plus one chip per equipment entry of the library
+    equip: { label: 'Equipment', items: EQ_CHIPS },    // plus one chip per equipment entry of the library
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
@@ -4906,7 +5019,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function refreshCustomParts() {                                   // the Custom chips follow the library
     var chip = function (e) { var sub = [e.brand, e.model].filter(Boolean).join(' '); return ['cu:' + e.id, esc(e.name) + (sub ? '<small>' + esc(sub) + '</small>' : '')]; };
     PARTS.custom.items = model.custom.filter(function (e) { return e.kind !== 'equipment'; }).map(chip);
-    PARTS.equip.items = [['pump', 'Centrifugal pump'], ['vessel', 'Vertical vessel']].concat(model.custom.filter(function (e) { return e.kind === 'equipment'; }).map(chip));
+    PARTS.equip.items = EQ_CHIPS.concat(model.custom.filter(function (e) { return e.kind === 'equipment'; }).map(chip));
     if (isCu(eqk) && !PARTS.equip.items.some(function (it) { return it[0] === eqk; })) eqk = 'pump';
     buildParts(); if (PARTS[tool]) syncParts();
   }
