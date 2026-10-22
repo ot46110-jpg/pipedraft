@@ -1181,7 +1181,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   // hostile
   PD.load({ pipes: [], equip: [{ k: 'cu:bad id', p: [0, 0, 0], r: 0 }, { k: 'cu:nolib', p: [1, 0, 0], r: 0 }, { k: 'constructor', p: [0, 0, 0] }, { k: '__proto__', p: [0, 0, 0] }, { k: 'pump', p: [NaN, 0, 0] }, { k: 'pump', p: 'x' }, null, { k: 'pump', p: [2, 0, 0], r: 7.4 }],
     instr: [{ k: 'LT', eq: 0, p: [0, 1, 0] }, { k: 'LT', eq: 7, p: [2, 1, 0], num: 105 }] });
-  check('hand-edited equipment with a bad id, no library entry, a prototype name or a bad position is dropped; the rest is kept with r 0..3', PD.model.equip.length === 1 && PD.model.equip[0].k === 'pump' && PD.model.equip[0].r === 3, JSON.stringify(PD.model.equip));
+  check('hand-edited equipment with a bad id, no library entry, a prototype name or a bad position is dropped; the rest is kept with r 0..3', PD.model.equip.length === 1 && PD.model.equip[0].k === 'pump' && Math.abs(PD.model.equip[0].r - 3.4) < 1e-9, JSON.stringify(PD.model.equip));
   check('instruments follow the equipment indexes and those on dropped equipment go', PD.model.instr.length === 1 && PD.model.instr[0].eq === 0 && PD.model.instr[0].num === 105, JSON.stringify(PD.model.instr));
   const evil = { id: 'h', kind: 'equipment', name: '=cmd', brand: '+x', model: '@y', shape: 'cyl', w: 1e12, d: -5, dia: 1e9, h: 'abc', col: 99, wt: 'x', prefix: '<b>', img: 'javascript:alert(1)',
     noz: Array.from({ length: 30 }, (_, i) => ({ x: 1e12, y: -1e12, z: i * 1e9, dir: i % 2 ? '+z' : '-X', n: 99 })).concat([{ x: 0, y: 0, z: 0, dir: '+Q', n: 4 }, null, 5, { x: NaN, y: 0, z: 0, dir: '+X', n: 4 }, { x: 0, y: 0, z: 0, dir: '__proto__', n: 4 }]) };
@@ -1550,6 +1550,44 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the NDE extent of a line is noted on the sheet', svg.includes('NDE A: RT 10%'));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }], lines: { A: { insul: 'none' } } });
   check('no insulation means no dashes', !PD.iso().includes('stroke-dasharray="7 3"'));
+  PD.load({ pipes: [] });
+}
+
+
+// Rotation ring: any angle for a valve handwheel and for equipment
+{
+  const btn = id => ctx.document.getElementById(id);
+  const ev = (type, id, x, y) => ({ type, pointerType: 'pen', pointerId: id, clientX: x, clientY: y });
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const ringPt = (R, deg) => { const t = deg * Math.PI / 180, pp = cross(R.n, R.ref); return [0, 1, 2].map(k => R.c[k] + R.ref[k] * Math.cos(t) * R.R + pp[k] * Math.sin(t) * R.R); };
+  const dragRing = (deg0, deg1) => { const R = PD.pen.ring(), a = PD.project(ringPt(R, deg0)), b = PD.project(ringPt(R, deg1)), id = pid_++; L.cv.pointerdown(ev('pointerdown', id, a.x, a.y)); L.cv.pointermove(ev('pointermove', id, b.x, b.y)); L.cv.pointerup(ev('pointerup', id, b.x, b.y)); globalThis.__perf = (globalThis.__perf || 0) + 1000; };
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+  btn('t-sel').onclick(); PD.selectPart('valve', 0);
+  let R = PD.pen.ring();
+  check('a selected valve shows the rotation ring at its handwheel angle', R && R.vis && R.kind === 'valve' && R.deg === 0, JSON.stringify(R));
+  dragRing(0, 35);
+  check('dragging the knob with the Pencil sets the handwheel to that angle in steps of 5', PD.model.valves[0].hw === 35, PD.model.valves[0].hw);
+  dragRing(35, 200);
+  check('and to any other angle', PD.model.valves[0].hw === 200, PD.model.valves[0].hw);
+  dragRing(200, 0);
+  check('back at 0 the angle is removed from the record', PD.model.valves[0].hw === undefined, JSON.stringify(PD.model.valves[0]));
+  check('the angle drags as one undo step', (() => { const n0 = PD.model.valves[0].hw; dragRing(0, 90); dragRing(90, 135); btn('undo').onclick(); return PD.model.valves[0].hw === 90 && n0 === undefined; })(), PD.model.valves[0].hw);
+  PD.selectPart('valve', 0); btn('i-hwn').value = '22.5'; btn('i-hwn').onchange();
+  check('a typed angle is kept to a quarter of a degree', PD.model.valves[0].hw === 22.5, PD.model.valves[0].hw);
+  btn('i-hwn').value = '-30'; btn('i-hwn').onchange();
+  check('a negative angle is turned into 0..360', PD.model.valves[0].hw === 330, PD.model.valves[0].hw);
+  btn('i-hwn').value = 'abc'; btn('i-hwn').onchange();
+  check('a typed non-number changes nothing', PD.model.valves[0].hw === 330);
+  // equipment
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] }); btn('t-sel').onclick(); PD.selectEq(0);
+  R = PD.pen.ring();
+  check('selected equipment shows a flat ring', R && R.vis && R.kind === 'equip' && R.n[1] === 1, JSON.stringify(R));
+  dragRing(0, 40);
+  check('dragging it turns the equipment to any angle', Math.abs(PD.model.equip[0].r * 90 - 40) < 1e-6, PD.model.equip[0].r);
+  btn('i-rota').value = '75'; btn('i-rota').onchange();
+  check('a typed rotation is in degrees', Math.abs(PD.model.equip[0].r * 90 - 75) < 1e-6, PD.model.equip[0].r);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], equip: [{ k: 'pump', p: [3, 0, 0], r: 0.44 }] });
+  check('the iso sheet still draws turned equipment', (PD.iso() || '').length > 1000);
   PD.load({ pipes: [] });
 }
 

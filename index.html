@@ -378,7 +378,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. Iso, Top, Front, Right and Fit are at the top.</li>
           <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
-          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z) and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
+          <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list.</li>
           <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
@@ -885,7 +885,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         } else ok = false;
       }
       if (!ok) { dropped++; emap[i] = -1; return; }
-      q.r = ((Math.round(Number(q.r)) || 0) % 4 + 4) % 4;
+      var rr = Number(q.r); q.r = isFinite(rr) ? +((((Math.round(rr * 360) / 360) % 4) + 4) % 4).toFixed(6) : 0;   // quarter turns, to a quarter of a degree
       emap[i] = o.equip.length; o.equip.push(q);
     });
     o.instr = o.instr.filter(function (q) { if (q.eq == null) return true; if (!(emap[q.eq] >= 0)) return false; q.eq = emap[q.eq]; return true; });
@@ -1620,7 +1620,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     })();
     hydroWarnings(); spWarnings(); partWarnings();
     matDirty = true;
-    renderBom(); showInsp(); updateEgz(); updateHdl(); buildQbar(); updateEndDots();
+    renderBom(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();
     $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
     $('undo').disabled = !hist.length;
   }
@@ -2978,7 +2978,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + (VALVE_END[it.k] ? '' : '<div class="row"><label class="field">Ends<select id="i-ve">' + opts([['', 'Automatic (' + (endType(it.k, it.n) === 'flg' ? 'flanged' : endType(it.k, it.n) === 'thd' ? 'threaded' : 'welded') + ')'], ['flg', 'Flanged'], ['thd', 'Threaded'], ['weld', 'Welded']], it.e || '') + '</select></label></div>')
         + (['flg', 'wafer'].indexOf(endType(it.k, it.n, it.e)) >= 0 ? '<p>' + valveFaceFlanges(it).length + ' flange' + (valveFaceFlanges(it).length === 1 ? '' : 's') + ' against this valve</p><div class="row"><button id="i-vfl">Add flanges against the valve</button></div>' : '')
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
-        + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '<div class="row"><label class="field">Handwheel or actuator, angle around the pipe<select id="i-hw">' + opts([[0, Math.abs(it.d[1]) > 0.9 ? '0° (toward X)' : 'Up'], [45, '45°'], [90, '90°'], [135, '135°'], [180, Math.abs(it.d[1]) > 0.9 ? '180°' : 'Down'], [225, '225°'], [270, '270°'], [315, '315°']], it.hw || 0) + '</select></label></div>')
+        + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '<div class="row"><label class="field">Handwheel or actuator, angle around the pipe<select id="i-hw">' + opts([[0, Math.abs(it.d[1]) > 0.9 ? '0° (toward X)' : 'Up'], [45, '45°'], [90, '90°'], [135, '135°'], [180, Math.abs(it.d[1]) > 0.9 ? '180°' : 'Down'], [225, '225°'], [270, '270°'], [315, '315°']].concat((it.hw || 0) % 45 ? [[it.hw, it.hw + '°']] : []), it.hw || 0) + '</select></label><label class="field">Angle in degrees, or drag the ring<input type="text" inputmode="decimal" id="i-hwn" value="' + (it.hw || 0) + '"></label></div>')
         + '<p>' + sz(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
     } else if (sel.kind === 'item') {
       h = '<h2>Inline fitting ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-it">' + opts(Object.keys(ITEM_NAME).map(function (k) { return [k, ITEM_NAME[k].split(',')[0]]; }).concat(Object.keys(CUX).map(function (k) { return [k, esc(CUX[k].name) + (CUX[k].lib ? '' : ' (deleted)')]; })), it.t) + '</select></label></div>'
@@ -3012,7 +3012,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else {
       var ed = eqDef(it.k);
       h = '<h2>' + esc(ed.custom ? ed.short : ed.name) + '</h2>' + (ed.custom ? '<p>' + esc(ed.note || 'Custom equipment') + (ed.lib ? '' : '. Deleted from the library: it keeps its size and nozzles') + '. ' + (ed.shape === 'cyl' ? 'Ø' + Math.round(ed.W * 1000) : Math.round(ed.W * 1000) + ' × ' + Math.round(ed.D * 1000)) + ' × ' + Math.round(ed.H * 1000) + ' mm. Edit it under ⋯, Project, Custom parts.</p>' : '')
-        + '<p>Nozzles: ' + (ed.noz.length ? ed.noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') : 'none') + '</p><p>Drag an arrow in the picture to move it. Pipes running along the move follow; others stay.</p><div class="row"><button id="i-rot">Rotate 90°</button></div>';
+        + '<p>Nozzles: ' + (ed.noz.length ? ed.noz.map(function (z, k) { return 'N' + (k + 1) + ' ' + sz(z.n); }).join(', ') : 'none') + '</p><p>Drag an arrow in the picture to move it. Pipes running along the move follow; others stay.</p><div class="row"><label class="field">Rotation in degrees, or drag the ring<input type="text" inputmode="decimal" id="i-rota" value="' + (Math.round((it.r || 0) * 9000) / 100) + '"></label><button id="i-rot">Rotate 90°</button></div>';
     }
     if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
@@ -3035,6 +3035,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ($('i-runall')) $('i-runall').onclick = function () { pushHist(); var c = setRunProps(sel.i); changed(); toast('SCH ' + it.s + ' and line ' + it.ln + ' on ' + c + ' pipe' + (c === 1 ? '' : 's')); };
     if ($('i-tag')) $('i-tag').onchange = edit(function (v) { v = String(v).trim(); if (v) it.tag = v; else delete it.tag; });
     if ($('i-hw')) $('i-hw').onchange = edit(function (v) { it.hw = Number(v) || 0; if (!it.hw) delete it.hw; });
+    if ($('i-hwn')) $('i-hwn').onchange = function () { var d = numField('i-hwn'); if (d == null) { toast('Type an angle in degrees, for example 30'); showInsp(); return; } pushHist(); rotApply(d); changed(); };
+    if ($('i-rota')) $('i-rota').onchange = function () { var d = numField('i-rota'); if (d == null) { toast('Type an angle in degrees, for example 30'); showInsp(); return; } pushHist(); rotApply(d); changed(); };
     if ($('i-rotv')) $('i-rotv').onclick = function () { pushHist(); it.rot = ((it.rot || 0) + 1) % 4; changed(); };
     if ($('i-flip')) $('i-flip').onclick = function () { pushHist(); it.rev = !it.rev; changed(); };
     if ($('i-st')) $('i-st').onchange = edit(function (v) { it.t = v; });
@@ -4213,7 +4215,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     return true;
   }
-  function hdlCancel() { hdlDrag = null; marker.visible = false; ghostLine.visible = false; }
+  function hdlCancel() { rotDrag = null; hdlDrag = null; marker.visible = false; ghostLine.visible = false; }
   function hdlMove(e) {
     var g = hdlDrag; if (tool !== 'sel' || !sel || sel.kind !== 'pipe' || sel.i !== g.i || !model.pipes[g.i]) { hdlCancel(); return; }
     setRay(e);
@@ -4439,6 +4441,67 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   $('segUndo').onclick = segUndo;
 
+  // ---------- rotation ring: drag the knob to turn a valve's handwheel or a piece of equipment to any angle ----------
+  var rgz = new T.Group(); rgz.visible = false; scene.add(rgz); var rotDrag = null, rotInfo = null, rotRaf = 0, RING_R = 2.4;
+  function rotSpec() {
+    if (tool !== 'sel' || !sel || mselCount()) return null;
+    if (sel.kind === 'valve') {
+      var v = model.valves[sel.i]; if (!v || v.k === 'threeway' || !v.d) return null;
+      var vdn = V(v.d).normalize(), ref = Math.abs(vdn.y) > 0.9 ? new T.Vector3(1, 0, 0) : UP.clone().addScaledVector(vdn, -UP.dot(vdn)).normalize();
+      return { kind: 'valve', c: V(v.p), n: vdn, ref: ref, deg: v.hw || 0 };
+    }
+    if (sel.kind === 'equip') { var e = model.equip[sel.i]; if (!e) return null; return { kind: 'equip', c: V(e.p).add(new T.Vector3(0, 0.02, 0)), n: UP.clone(), ref: new T.Vector3(1, 0, 0), deg: (e.r || 0) * 90 }; }
+    return null;
+  }
+  function updateRing() {
+    while (rgz.children.length) { var c = rgz.children[0]; rgz.remove(c); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
+    rotInfo = rotSpec();
+    if (!rotInfo) { rgz.visible = false; return; }
+    var pts = []; for (var k = 0; k < 64; k++) { var a = k / 64 * Math.PI * 2; pts.push(new T.Vector3(Math.cos(a) * RING_R, Math.sin(a) * RING_R, 0)); }
+    var ring = new T.LineLoop(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: 0.9 }));
+    ring.renderOrder = 22; rgz.add(ring);
+    var knob = new T.Mesh(new T.SphereGeometry(0.34, 14, 10), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false })); knob.renderOrder = 23;
+    var th = rotInfo.deg * Math.PI / 180; knob.position.set(Math.cos(th) * RING_R, Math.sin(th) * RING_R, 0); rgz.add(knob);
+    var q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), rotInfo.n);       // local x is the zero direction, local z the turning axis
+    var x0 = new T.Vector3(1, 0, 0).applyQuaternion(q), phi = Math.atan2(rotInfo.n.dot(x0.clone().cross(rotInfo.ref)), x0.dot(rotInfo.ref));
+    q.premultiply(new T.Quaternion().setFromAxisAngle(rotInfo.n, phi));
+    rgz.quaternion.copy(q); rgz.position.copy(rotInfo.c); rgz.scale.setScalar(Math.max(0.03, dist * 0.045)); rgz.visible = true;
+  }
+  function rotAngle(e) {                                            // where the pointer is on the ring plane: angle in degrees and distance from the centre
+    var sp0 = rotInfo; if (!sp0) return null;
+    setRay(e); var pl = new T.Plane().setFromNormalAndCoplanarPoint(sp0.n, sp0.c), pt = new T.Vector3();
+    if (!ray.ray.intersectPlane(pl, pt)) return null;
+    var p = pt.sub(sp0.c);
+    return { deg: Math.atan2(sp0.n.dot(sp0.ref.clone().cross(p)), sp0.ref.dot(p)) * 180 / Math.PI, r: p.length() };
+  }
+  function rotDown(e) {                                             // true when the touch landed on the ring
+    if (!rgz.visible || rotDrag || !rotInfo || tool !== 'sel' || !sel) return false;
+    var a = rotAngle(e); if (!a) return false;
+    var R = RING_R * rgz.scale.x; if (a.r < R * 0.55 || a.r > R * 1.45) return false;
+    rotDrag = { id: e.pointerId, moved: false, last: null };
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    rotMove(e); return true;
+  }
+  function rotApply(deg) {                                          // set the angle on the selected valve or equipment
+    if (!sel) return false;
+    deg = (((Math.round(deg * 4) / 4) % 360) + 360) % 360;
+    if (sel.kind === 'valve') { var v = model.valves[sel.i]; if (!v) return false; if (deg) v.hw = deg; else delete v.hw; }
+    else if (sel.kind === 'equip') { var q = model.equip[sel.i]; if (!q) return false; q.r = deg / 90; }
+    else return false;
+    return true;
+  }
+  function rotMove(e) {
+    var g = rotDrag; if (!rotInfo || tool !== 'sel' || !sel) { rotDrag = null; return; }
+    var a = rotAngle(e); if (!a) return;
+    var deg = ((Math.round(a.deg / 5) * 5) % 360 + 360) % 360;      // every 5 degrees, 0 is the usual position
+    if (deg === g.last) return;
+    var first = !g.moved; if (first) pushHist();
+    if (!rotApply(deg)) { if (first) hist.pop(); return; }
+    g.moved = true; g.last = deg; setPos('Angle ' + deg + '°');
+    if (!rotRaf) rotRaf = requestAnimationFrame(function () { rotRaf = 0; if (rotDrag) rebuild(); });
+  }
+  function rotEnd() { var g = rotDrag; rotDrag = null; if (g && g.moved) changed(); }
+
   // ---------- input ----------
   var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
   function penNow() { return performance.now() - lastPen < 350; }
@@ -4458,6 +4521,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (e.pointerType === 'pen' && !fingerSaved && fingerPlace) { setFinger(false); toast('Pencil found: it places points and fingers move the view. Change that in the pipe settings, Input.'); }
     if (hdlDown(e)) return;                                        // an end handle of the selected pipe
     if (egzDown(e)) return;                                        // an arrow of the selected equipment
+    if (rotDown(e)) return;                                        // the rotation ring of a valve or equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     if (e.pointerType === 'pen' && tool === 'sel' && nPtr === 0) band = { x: e.clientX, y: e.clientY };   // a Pencil drag on empty space makes a box
@@ -4468,6 +4532,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   cv.addEventListener('pointermove', function (e) {
     if (e.pointerType === 'pen') lastPen = performance.now();
+    if (rotDrag && rotDrag.id === e.pointerId) { rotMove(e); return; }
     if (hdlDrag && hdlDrag.id === e.pointerId) { hdlMove(e); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { egzMove(e); return; }
     var p = ptrs[e.pointerId];
@@ -4486,6 +4551,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
   });
   function end(e) {
+    if (rotDrag && rotDrag.id === e.pointerId) { rotEnd(); return; }
     if (hdlDrag && hdlDrag.id === e.pointerId) { hdlEnd(); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { egzEnd(); return; }
     if (!ptrs[e.pointerId]) return;
@@ -5316,7 +5382,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
@@ -5338,7 +5404,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!sample && model.pipes.length > 3 && Date.now() - last > 3 * 864e5) toast('Keep a copy outside Safari: ⋯, File, Save project');
     } catch (e) {}
   }, 6000);
-  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (rgz.visible) rgz.scale.setScalar(Math.max(0.03, dist * 0.045)); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>
 <script>if("serviceWorker"in navigator&&location.protocol.indexOf("http")==0)navigator.serviceWorker.register("sw.js").catch(function(){})</script></body></html>

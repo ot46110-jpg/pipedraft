@@ -77,3 +77,4 @@
 - Slide a pipe sideways with arrows, move hand-picked pipes with arrows, Run button. Not verified on a real iPad.
 - NDE column per weld, NDE extent per line, insulation drawn dashed on the iso with a note.
 - Parts list folds to one chip after a part is picked.
+- Rotation ring: drag to any angle for valve handwheels and equipment, or type degrees.
