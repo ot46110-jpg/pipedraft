@@ -137,7 +137,6 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #views { display: none; }
 #vcube { position: absolute; right: var(--gutter-r); top: 12px; width: 112px; height: 112px; z-index: 4; touch-action: none; user-select: none; -webkit-user-select: none; }
 #vcube button { position: absolute; min-width: 40px; min-height: 40px; width: 40px; height: 40px; padding: 0; font-size: 14px; border-color: transparent; background: var(--panel); }
-#vc-home { left: 0; top: 0; z-index: 2; font-size: 18px; }
 #vc-scene { position: absolute; left: 0; top: 0; width: 112px; height: 112px; perspective: 340px; }
 #vc-in { position: absolute; left: 20px; top: 20px; width: 72px; height: 72px; transform-style: preserve-3d; }
 .vf { position: absolute; width: 72px; height: 72px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dim); background: var(--panel2, var(--panel)); background: color-mix(in srgb, var(--panel) 88%, var(--fg)); color: var(--fg); font: 600 10px var(--font-data); letter-spacing: .08em; backface-visibility: hidden; -webkit-backface-visibility: hidden; cursor: pointer; }
@@ -243,7 +242,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <button id="t-del" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>Delete</button>
     </nav>
     <div id="vcube" aria-label="View cube">
-      <button id="vc-home" aria-label="Isometric view" title="Isometric view">⌂</button>
       <div id="vc-scene"><div id="vc-in">
         <div class="vf" data-face="front">FRONT</div><div class="vf" data-face="back">BACK</div><div class="vf" data-face="right">RIGHT</div><div class="vf" data-face="left">LEFT</div><div class="vf" data-face="top">TOP</div><div class="vf" data-face="bottom">BOTTOM</div>
       </div></div>
@@ -4609,7 +4607,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var W = f.offsetWidth || 72, d = vcDir(f.getAttribute('data-face'), (e.offsetX || W / 2) / W, (e.offsetY || W / 2) / W);
       if (d) viewDir(d);
     });
-    $('vc-home').onclick = function () { viewTo(0.785, 0.95); };
   })();
 
   // ---------- input ----------
