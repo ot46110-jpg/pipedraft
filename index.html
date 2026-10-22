@@ -3606,6 +3606,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; }
       return [(x - z) * c30, -(yv + (x + z) * 0.5)];
     }
+    function prd(d) {                                               // a direction on paper: the same turn and projection, never the shortening map
+      var x = d[0], z = d[2];
+      for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; }
+      return [(x - z) * c30, -(d[1] + (x + z) * 0.5)];
+    }
     function crossings() {                                          // pipes that cross on paper make a drawing hard to read
       var sg = model.pipes.map(function (q) { return [pr(q.a), pr(q.b)]; }), n = 0;
       function side(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
@@ -3730,7 +3735,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var s0 = SYM[key], own = isoCtx.style === 'pic' ? null : ISOS[key], pic = own || ISOA[key]; if (!s0 && !pic) return '';
       var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
-      var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = pr(A(d)), ey = pr(wv), k = Lpx / 20, q = sp(p3);
+      var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = prd(A(d)), ey = prd(wv), k = Lpx / 20, q = sp(p3);
       var ud = down ? -1 : 1, m = [ex[0] * k, ex[1] * k, -ey[0] * k * ud, -ey[1] * k * ud, q[0], q[1]].map(f3).join(' ');
       var extra = !pic && s0.act ? '<line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/>' : '';
       return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="' + (own ? 1.5 : pic ? 1.1 : 1.5) + '" stroke-linejoin="round" stroke-linecap="round">' + (pic || s0.svg) + extra + '</g>';
@@ -3872,11 +3877,33 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
     }
     isoCtx.brkMarks = brkMarks;
+    // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
+    // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
+    function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84); }
+    var flAt = model.flanges.map(function (f) {
+      if (!f.m) return null;
+      var hf = hostOf(f.p), best = null, bd = 0.03, fd = V(f.d).normalize();
+      model.valves.forEach(function (v) {
+        if (hostOf(v.p) !== hf) return;
+        var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], dv = V(v.p).sub(V(f.p));
+        if (dv.dot(fd) <= 0) return;                                // the valve lies on the side the flange faces
+        var e = Math.abs(dv.length() - ff / 2); if (e < bd) { bd = e; best = v; }
+      });
+      if (!best) return null;
+      var c0 = sp(best.p), want = vLpx(best) / 2, lo = 0, hi = 3;
+      function at(sv) { return A(V(best.p).addScaledVector(fd, -sv)); }
+      for (var it = 0; it < 30; it++) { var mid = (lo + hi) / 2, q = sp(at(mid)); if (Math.hypot(q[0] - c0[0], q[1] - c0[1]) < want) lo = mid; else hi = mid; }
+      return at((lo + hi) / 2);
+    });
+    function flShift(pos) {                                         // a weld behind a moved valve flange moves with it
+      for (var fi = 0; fi < model.flanges.length; fi++) if (flAt[fi] && V(pos).distanceTo(V(model.flanges[fi].p)) < 0.25) return A(V(pos).add(V(flAt[fi]).sub(V(model.flanges[fi].p))));
+      return pos;
+    }
     // Butt welds at fittings.
     var fabI = fabrication();
     fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
       if (w.atValve && !isoCtx.valveWelds) return;                  // a flanged valve is drawn as one part with its flanges
-      var q = sp(w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
+      var q = sp(w.atValve ? flShift(w.pos) : w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
       function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
       body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
         : '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
@@ -4000,12 +4027,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Valves, flanges, inline fittings and supports.
     model.valves.forEach(function (v, i) {
       var kk = SYM[v.k] ? v.k : 'gate';
-      body += isoSym(kk, v.p, v.d, clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248);
+      body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248);
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
     model.flanges.forEach(function (f, i) {
-      body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), f.p, f.d, 20); balloon(compDesc.flange[i], f.p);
-      if (f.m) body += isoSym('fl-end', mm3(V(f.p).addScaledVector(V(f.d), 5 / sc)), f.d, 20);   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
+      var fp = flAt[i] || f.p;
+      body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20); balloon(compDesc.flange[i], fp);
+      if (f.m) body += isoSym('fl-end', A(V(fp).addScaledVector(V(f.d).normalize(), 5 / sc)), f.d, 20);   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
     });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, clampPx(itemLen(it.t, it.n), 34, 70)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
@@ -4081,7 +4109,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // North arrow at the top left (north is the Y axis of the drawing), then the axes, material list and title block.
     (function () {
-      var nv = pr([0, 0, 1]), nl = Math.hypot(nv[0], nv[1]) || 1, ux = nv[0] / nl, uy = nv[1] / nl, cx = 50, cy = 58, r = 22;
+      var nv = prd([0, 0, 1]), nl = Math.hypot(nv[0], nv[1]) || 1, ux = nv[0] / nl, uy = nv[1] / nl, cx = 50, cy = 58, r = 22;
       o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
         + '<line x1="' + f1(cx - ux * 14) + '" y1="' + f1(cy - uy * 14) + '" x2="' + f1(cx + ux * 14) + '" y2="' + f1(cy + uy * 14) + '" stroke="' + INK + '" stroke-width="1.4"/>'
         + '<polygon points="' + f1(cx + ux * 17) + ',' + f1(cy + uy * 17) + ' ' + f1(cx + ux * 7 - uy * 4) + ',' + f1(cy + uy * 7 + ux * 4) + ' ' + f1(cx + ux * 7 + uy * 4) + ',' + f1(cy + uy * 7 - ux * 4) + '" fill="' + INK + '"/>'
@@ -4102,7 +4130,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     })();
     var ax = 84, ay = H - TB - 52;
     [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y (N)'], [[0, 1, 0], 'Z']].forEach(function (a3) {
-      var v = pr(a3[0]), ex = ax + v[0] * 38, ey = ay + v[1] * 38;
+      var v = prd(a3[0]), ex = ax + v[0] * 38, ey = ay + v[1] * 38;
       o += '<line x1="' + ax + '" y1="' + ay + '" x2="' + f1(ex) + '" y2="' + f1(ey) + '" stroke="' + INK + '" stroke-width="1.2"/>' + svgText(ex + v[0] * 8, ey + v[1] * 8 + 3, a3[1], 10, 'middle', 600);
     });
     o += '<line x1="' + Wd + '" y1="12" x2="' + Wd + '" y2="' + (H - TB) + '" stroke="' + INK + '" stroke-width="1"/>';

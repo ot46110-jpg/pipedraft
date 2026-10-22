@@ -1826,5 +1826,22 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Iso sheet: flanges bolted to a valve sit against the ends of the valve symbol, whatever the drawing scale
+{
+  const syms = svg => [...svg.matchAll(/class="sy" transform="matrix\(([-0-9.e]+) ([-0-9.e]+) [-0-9.e]+ [-0-9.e]+ ([-0-9.e]+) ([-0-9.e]+)\)"/g)].map(m => m.slice(1).map(Number));
+  const cases = [
+    ['gate on a short horizontal pipe', { pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }], valves: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, k: 'gate' }] }],
+    ['check on a vertical pipe', { pipes: [{ a: [0, 0.5, 0], b: [0, 3, 0], n: 4 }, { a: [0, 3, 0], b: [2, 3, 0], n: 4 }], valves: [{ p: [0, 1.6, 0], d: [0, 1, 0], n: 4, k: 'check' }] }],
+    ['butterfly (thin wafer) on a 20 m pipe that is shortened', { pipes: [{ a: [0, 1, 0], b: [20, 1, 0], n: 6 }, { a: [20, 1, 0], b: [20, 1, 1], n: 6 }], valves: [{ p: [10, 1, 0], d: [1, 0, 0], n: 6, k: 'butterfly' }] }],
+  ];
+  for (const [label, m] of cases) {
+    PD.load(m); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+    const ss = syms(PD.iso('', 'auto')), v = ss[0], half = 10 * Math.hypot(v[0], v[1]);
+    const fl = [ss[1], ss[3]].map(f => Math.hypot(f[2] - v[2], f[3] - v[3]));
+    check('iso, ' + label + ': both valve flanges touch the ends of the valve symbol', ss.length === 5 && fl.every(d => Math.abs(d - half) < 1.2), JSON.stringify({ half, fl, n: ss.length }));
+  }
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
