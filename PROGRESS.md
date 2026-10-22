@@ -82,3 +82,4 @@
 - Inspector is a chip until opened; panels fade while dragging.
 - Quick bar docked at the bottom centre.
 - Flanged valve is one part on the iso: no weld marks at it (option to show), four flange bars, flanges cast on the valve in 3D.
+- View cube replaces the view buttons.

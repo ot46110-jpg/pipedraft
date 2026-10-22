@@ -1628,5 +1628,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// View cube
+{
+  const C = PD.pen.cube, near2 = (a, b) => Math.abs(a - b) < 1e-6;
+  let d = C.dir('front', 0.5, 0.5); check('the middle of the Front face looks from the front', near2(d.x, 0) && near2(d.y, 0) && near2(d.z, 1));
+  let a = C.go(d); check('Front puts the camera on the +Z side level with the drawing', near2(a[0], 0) && near2(a[1], Math.PI / 2), a.join());
+  d = C.dir('right', 0.5, 0.5); a = C.go(d); check('Right looks from +X', near2(a[0], Math.PI / 2) && near2(a[1], Math.PI / 2), a.join());
+  d = C.dir('left', 0.5, 0.5); a = C.go(d); check('Left looks from -X', near2(Math.abs(a[0]), Math.PI / 2) && a[0] < 0, a.join());
+  d = C.dir('back', 0.5, 0.5); a = C.go(d); check('Back looks from -Z', near2(Math.abs(a[0]), Math.PI), a.join());
+  d = C.dir('top', 0.5, 0.5); a = C.go(d); check('Top looks straight down, keeping the turn of the view', a[1] < 0.05, a.join());
+  d = C.dir('bottom', 0.5, 0.5); a = C.go(d); check('Bottom looks from below', a[1] > Math.PI - 0.05, a.join());
+  d = C.dir('front', 0.9, 0.1); check('the top right corner of Front leans right and up: a corner view', d.x > 0.5 && d.y > 0.5 && d.z > 0.5, JSON.stringify(d));
+  d = C.dir('front', 0.5, 0.1); check('the top edge of Front leans up only', near2(d.x, 0) && d.y > 0.5 && d.z > 0.5);
+  d = C.dir('top', 0.1, 0.5); check('the left edge of Top leans toward Left', d.x < -0.5 && d.y > 0.5);
+  d = C.dir('right', 0.9, 0.9); check('the lower far corner of Right is a bottom corner', d.x > 0.5 && d.y < -0.5, JSON.stringify(d));
+  a = C.go(C.dir('front', 0.9, 0.1)); check('a corner click gives an iso-like view', a[1] > 0.6 && a[1] < 1.2 && a[0] > 0.5 && a[0] < 1.0, a.join());
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

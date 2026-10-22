@@ -112,7 +112,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #lvl .row { margin: 6px 0; }
 #elev output { font: 500 12px/1.2 var(--font-data); color: var(--accent); text-align: center; font-variant-numeric: tabular-nums; padding: 2px 0; }
 /* right column */
-#side { position: absolute; top: 12px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
+#side { position: absolute; top: 142px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
 #side .sheet { position: static; flex: none; pointer-events: auto; max-height: none; }
 .inspbar { width: 100%; min-height: 48px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-color: transparent; text-align: left; font: 600 13px var(--font-ui); }
 .inspbody { margin-top: 4px; }
@@ -134,6 +134,21 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #more details[open] > summary::after { content: '▾'; }
 #more details > button { margin-bottom: 4px; }
 /* isometric sheet */
+#views { display: none; }
+#vcube { position: absolute; right: var(--gutter-r); top: 12px; width: 112px; height: 124px; z-index: 4; touch-action: none; user-select: none; -webkit-user-select: none; }
+#vcube button { position: absolute; min-width: 40px; min-height: 40px; width: 40px; height: 40px; padding: 0; font-size: 14px; border-color: transparent; background: var(--panel); }
+#vc-home { left: 0; top: 0; z-index: 2; font-size: 18px; }
+#vc-l { left: 4px; bottom: 0; } #vc-r { right: 4px; bottom: 0; }
+#vc-scene { position: absolute; left: 0; top: 0; width: 112px; height: 112px; perspective: 340px; }
+#vc-in { position: absolute; left: 20px; top: 20px; width: 72px; height: 72px; transform-style: preserve-3d; }
+.vf { position: absolute; width: 72px; height: 72px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dim); background: var(--panel2, var(--panel)); background: color-mix(in srgb, var(--panel) 88%, var(--fg)); color: var(--fg); font: 600 10px var(--font-data); letter-spacing: .08em; backface-visibility: hidden; -webkit-backface-visibility: hidden; cursor: pointer; }
+.vf:hover { background: var(--accent); color: var(--accent-fg); }
+.vf[data-face="front"] { transform: translateZ(36px); }
+.vf[data-face="back"] { transform: rotateY(180deg) translateZ(36px); }
+.vf[data-face="right"] { transform: rotateY(90deg) translateZ(36px); }
+.vf[data-face="left"] { transform: rotateY(-90deg) translateZ(36px); }
+.vf[data-face="top"] { transform: rotateX(90deg) translateZ(36px); }
+.vf[data-face="bottom"] { transform: rotateX(-90deg) translateZ(36px); }
 #qbar { z-index: 5; padding: 4px; gap: 4px; left: 50%; bottom: 12px; transform: translateX(-50%); max-width: calc(100% - 180px); overflow-x: auto; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 #qbar[hidden] { display: none; }
 #qbar .qang { align-self: center; padding: 0 6px; font: 600 13px var(--font-data); min-width: 44px; text-align: center; color: var(--accent); }
@@ -228,6 +243,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <button id="t-measure" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg>Measure</button>
       <button id="t-del" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>Delete</button>
     </nav>
+    <div id="vcube" aria-label="View cube">
+      <button id="vc-home" aria-label="Isometric view" title="Isometric view">⌂</button>
+      <div id="vc-scene"><div id="vc-in">
+        <div class="vf" data-face="front">FRONT</div><div class="vf" data-face="back">BACK</div><div class="vf" data-face="right">RIGHT</div><div class="vf" data-face="left">LEFT</div><div class="vf" data-face="top">TOP</div><div class="vf" data-face="bottom">BOTTOM</div>
+      </div></div>
+      <button id="vc-l" aria-label="Turn the view left">◀</button><button id="vc-r" aria-label="Turn the view right">▶</button>
+    </div>
     <div id="parts" class="sheet" hidden><button id="pcur" aria-expanded="true"></button><div id="plist"></div></div>
     <div id="qbar" class="float" hidden></div>
     <div id="rband" hidden></div>
@@ -384,7 +406,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <header><h2>How to draw</h2><button id="help-close">Close</button></header>
       <div id="helpBody">
         <ul>
-          <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. Iso, Top, Front, Right and Fit are at the top.</li>
+          <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. The cube at the top right sets the view: tap a face, an edge or a corner, or drag it. Fit is at the top.</li>
           <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
@@ -4536,6 +4558,64 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function rotEnd() { var g = rotDrag; rotDrag = null; if (g && g.moved) changed(); }
 
+  // ---------- view cube: click a face, an edge or a corner to look from there, drag it to orbit ----------
+  var VC_FACES = {                                                  // normal and the two sides of each face in scene axes (y is up)
+    front: { n: [0, 0, 1], tu: [1, 0, 0], tv: [0, -1, 0] }, back: { n: [0, 0, -1], tu: [-1, 0, 0], tv: [0, -1, 0] },
+    right: { n: [1, 0, 0], tu: [0, 0, -1], tv: [0, -1, 0] }, left: { n: [-1, 0, 0], tu: [0, 0, 1], tv: [0, -1, 0] },
+    top: { n: [0, 1, 0], tu: [1, 0, 0], tv: [0, 0, 1] }, bottom: { n: [0, -1, 0], tu: [1, 0, 0], tv: [0, 0, -1] }
+  };
+  function vcDir(face, u, v) {                                      // u, v 0 to 1 across the face: near an edge or corner the view leans toward the neighbour faces
+    var f = VC_FACES[face]; if (!f) return null;
+    var a = u < 0.28 ? -1 : u > 0.72 ? 1 : 0, b = v < 0.28 ? -1 : v > 0.72 ? 1 : 0;
+    return new T.Vector3(f.n[0] + a * f.tu[0] + b * f.tv[0], f.n[1] + a * f.tu[1] + b * f.tv[1], f.n[2] + a * f.tu[2] + b * f.tv[2]).normalize();
+  }
+  var vcAnim = 0;
+  function viewTo(th, ph, instant) {                                // turn the camera there, over a quarter of a second
+    vcAnim = 0;
+    if (instant || typeof requestAnimationFrame !== 'function') { theta = th; phi = ph; return; }
+    var t0 = performance.now() || 1, th0 = theta, ph0 = phi, dth = (((th - th0 + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    vcAnim = t0;
+    (function step() {
+      if (vcAnim !== t0) return;
+      var k = Math.min(1, (performance.now() - t0) / 260), e = k * k * (3 - 2 * k);
+      theta = th0 + dth * e; phi = ph0 + (ph - ph0) * e;
+      if (k < 1) requestAnimationFrame(step); else vcAnim = 0;
+    })();
+  }
+  function viewDir(d, instant) {
+    var ph = Math.min(Math.PI - 0.03, Math.max(0.03, Math.acos(Math.min(1, Math.max(-1, d.y)))));
+    viewTo(Math.hypot(d.x, d.z) > 0.02 ? Math.atan2(d.x, d.z) : theta, ph, instant);
+  }
+  var vcLast = '';
+  function updateCube() {                                           // the cube turns the opposite way to the camera, so each face points where it does in the drawing
+    var m = new T.Matrix4().makeRotationFromQuaternion(camera.quaternion.clone().invert()), e = m.elements, sg = [1, -1, 1];
+    for (var c = 0; c < 3; c++) for (var r = 0; r < 3; r++) e[c * 4 + r] *= sg[r] * sg[c];     // css has y down
+    var str = 'matrix3d(' + e.join(',') + ')';
+    if (str !== vcLast) { vcLast = str; $('vc-in').style.transform = str; }
+  }
+  (function () {
+    var vc = $('vcube'), drag = null;
+    vc.addEventListener('pointerdown', function (e) { if (e.target && e.target.closest && e.target.closest('button')) return; drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false }; try { vc.setPointerCapture(e.pointerId); } catch (x) {} });
+    vc.addEventListener('pointermove', function (e) {
+      if (!drag || drag.id !== e.pointerId) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      drag.moved = true; vcAnim = 0; drag.x = e.clientX; drag.y = e.clientY;
+      theta -= dx * 0.012; phi = Math.min(3.0, Math.max(0.05, phi - dy * 0.012));
+    });
+    function up(e) { if (drag && drag.id === e.pointerId) { var mv = drag.moved; drag = null; if (mv) vc._dragged = performance.now() || 1; } }
+    vc.addEventListener('pointerup', up); vc.addEventListener('pointercancel', up);
+    vc.addEventListener('click', function (e) {
+      if (vc._dragged && (performance.now() || 1) - vc._dragged < 400) return;      // the click that ends a drag is not a pick
+      var f = e.target && e.target.closest ? e.target.closest('[data-face]') : null; if (!f) return;
+      var W = f.offsetWidth || 72, d = vcDir(f.getAttribute('data-face'), (e.offsetX || W / 2) / W, (e.offsetY || W / 2) / W);
+      if (d) viewDir(d);
+    });
+    $('vc-home').onclick = function () { viewTo(0.785, 0.95); };
+    $('vc-l').onclick = function () { viewTo(theta + Math.PI / 2, phi); };
+    $('vc-r').onclick = function () { viewTo(theta - Math.PI / 2, phi); };
+  })();
+
   // ---------- input ----------
   var ptrs = {}, nPtr = 0, down = null, multi = false, pinch = null, lastPen = -1e9;
   function penNow() { return performance.now() - lastPen < 350; }
@@ -4577,7 +4657,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (nPtr === 1 && e.pointerType === 'pen' && tool !== 'nav') { if (band && tool === 'sel') bandDraw(e); else queueGhost(e); return; }   // Pencil aims, lifting places
     if (nPtr === 1) {
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
-      if (down.moved) { theta -= dx * 0.007; phi = Math.min(1.5, Math.max(0.1, phi - dy * 0.007)); }
+      if (down.moved) { theta -= dx * 0.007; phi = Math.min(3.0, Math.max(0.05, phi - dy * 0.007)); }
     } else if (nPtr === 2) {
       var s = pinchState();
       dist = Math.min(60, Math.max(0.8, dist * pinch.d / Math.max(s.d, 1)));
@@ -5419,7 +5499,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { cube: { dir: vcDir, go: function (d) { viewDir(d, true); return [theta, phi]; }, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
@@ -5441,6 +5521,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!sample && model.pipes.length > 3 && Date.now() - last > 3 * 864e5) toast('Keep a copy outside Safari: ⋯, File, Save project');
     } catch (e) {}
   }, 6000);
-  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (rgz.visible) rgz.scale.setScalar(ringScale()); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (rgz.visible) rgz.scale.setScalar(ringScale()); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); try { updateCube(); } catch (x) {} renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>
