@@ -1787,5 +1787,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Company logo in the iso title block
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }] });
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  check('no logo: the title block starts at the left edge', !PD.iso('', 'auto').includes('<image href="data:image/png'));
+  check('a logo picture is accepted', PD.setLogo(png) === true && PD.model.title.logo === png);
+  const sv = PD.iso('', 'auto');
+  check('the logo is drawn in the title block', sv.includes('<image href="' + png + '"') && sv.includes('preserveAspectRatio="xMidYMid meet"'));
+  check('the panel shows the logo with Change and Remove', PD.isoInfoHtml().includes('data-logo-del') && PD.isoInfoHtml().includes('Change'));
+  check('something that is not a picture is refused', PD.setLogo('javascript:alert(1)') === false && PD.model.title.logo === png);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], title: { project: 'P', logo: 'data:text/html;base64,PHNjcmlwdD4=' } });
+  check('a file with a bad logo loads without it', !('logo' in PD.model.title) && PD.model.title.project === 'P');
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], title: { project: 'P', logo: png } });
+  check('a saved logo comes back with the project', PD.model.title.logo === png);
+  PD.setLogo(''); check('Remove takes the logo off', !('logo' in PD.model.title) && !PD.iso('', 'auto').includes('<image href="data:image/png'));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

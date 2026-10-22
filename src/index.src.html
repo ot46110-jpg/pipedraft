@@ -597,7 +597,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     for (var i = 0; i < q.length; i++) { var u = ''; try { u = canvas.toDataURL('image/jpeg', q[i]); } catch (x) { return ''; } if (cuImgOk(u)) return u; }
     return '';
   }
-  function cuImgFromFile(file, cb) {                                // pick from Photos or Files, shrink in a canvas, hand back a data URL ('' on failure)
+  function cuImgFromFile(file, cb, maxPx) {                         // pick from Photos or Files, shrink in a canvas, hand back a data URL ('' on failure)
     var rd = new FileReader();
     rd.onerror = function () { cb(''); };
     rd.onload = function () {
@@ -605,7 +605,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       im.onerror = function () { cb(''); };
       im.onload = function () {
         try {
-          var d = cuImgSize(im.naturalWidth || im.width, im.naturalHeight || im.height), c = document.createElement('canvas');
+          var d = cuImgSize(im.naturalWidth || im.width, im.naturalHeight || im.height, maxPx), c = document.createElement('canvas');
           c.width = d.w; c.height = d.h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, d.w, d.h); g.drawImage(im, 0, 0, d.w, d.h);
           cb(cuImgEncode(c));
         } catch (x) { cb(''); }
@@ -883,7 +883,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var d = plain(m.lines[k]), c = {}; Object.keys(d).forEach(function (f) { if (typeof d[f] === 'string' || (typeof d[f] === 'number' && isFinite(d[f]))) c[f] = d[f]; }); o.lines[k] = c;
     });
     o.fit = plain(m.fit); o.field = plain(m.field);
-    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.title = plain(m.title); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
+    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.title = plain(m.title); Object.keys(o.title).forEach(function (k) { if (typeof o.title[k] !== 'string' || (k === 'logo' ? !cuImgOk(o.title[k]) : o.title[k].length > 200)) delete o.title[k]; }); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, plain(m.spec));
     if (!OWN(STD, o.spec.std)) o.spec.std = 'asme';
     (Array.isArray(m.pspecs) ? m.pspecs : []).forEach(function (r) {   // piping classes; a bad one is dropped, a missing or repeated id gets a new one
@@ -3937,12 +3937,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', isoSheetTxt || '1 OF 1', 0.07], ['SCALE', 'NTS', 0.05]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
     o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
+    var logo = cuImgOk(T0.logo) ? T0.logo : '', LW = logo ? 120 : 0;   // the company logo fills a box at the left end of both rows
+    if (logo) {
+      bw -= LW;
+      o += '<image href="' + logo + '" x="18" y="' + (pb + 21) + '" width="' + (LW - 12) + '" height="73" preserveAspectRatio="xMidYMid meet"/>';
+      o += '<line x1="' + (12 + LW) + '" y1="' + (pb + 17) + '" x2="' + (12 + LW) + '" y2="' + (pb + 98) + '" stroke="' + INK + '" stroke-width="0.8"/>';
+    }
     [[cells1, pb + 17, 41], [cells2, pb + 58, 40]].forEach(function (rw) {
-      var x = 12;
-      o += '<line x1="12" y1="' + (rw[1]) + '" x2="' + (W - 12) + '" y2="' + (rw[1]) + '" stroke="' + INK + '" stroke-width="0.8"/>';
+      var x = 12 + LW;
+      o += '<line x1="' + (rw[1] > pb + 20 ? 12 + LW : 12) + '" y1="' + (rw[1]) + '" x2="' + (W - 12) + '" y2="' + (rw[1]) + '" stroke="' + INK + '" stroke-width="0.8"/>';
       rw[0].forEach(function (c) {
         var w = bw * c[2];
-        o += (x > 12 ? '<line x1="' + f1(x) + '" y1="' + rw[1] + '" x2="' + f1(x) + '" y2="' + (rw[1] + rw[2]) + '" stroke="' + INK + '" stroke-width="0.8"/>' : '')
+        o += (x > 12 + LW ? '<line x1="' + f1(x) + '" y1="' + rw[1] + '" x2="' + f1(x) + '" y2="' + (rw[1] + rw[2]) + '" stroke="' + INK + '" stroke-width="0.8"/>' : '')
           + '<text x="' + f1(x + 6) + '" y="' + (rw[1] + 11) + '" font-size="7.5" fill="#555">' + c[0] + '</text>'
           + '<text x="' + f1(x + 6) + '" y="' + (rw[1] + 30) + '" font-size="' + (String(c[1]).length * 8 > w ? 9 : 12.5) + '" font-weight="600" fill="' + INK + '">' + esc(String(c[1]).slice(0, Math.floor(w / 6))) + '</text>';
         x += w;
@@ -5054,7 +5060,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function isoInfoHtml() {
     var T0 = model.title || {}, ln = isoOpts.ln, LD = ln ? (model.lines[ln] || {}) : null;
     function f(id, label, v, ph) { return '<label class="field">' + label + '<input type="text" data-t="' + id + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
-    var o = '<h3>Title block</h3>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked) + f('rdesc', 'Revision description', T0.rdesc, 'Issued');
+    var lg = cuImgOk(T0.logo) ? T0.logo : '';
+    var o = '<h3>Title block</h3>' + '<div class="logo-row" style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font:600 11px var(--font-data);letter-spacing:.1em;color:var(--dim)">LOGO</span>'
+      + (lg ? '<img src="' + lg + '" alt="Logo" style="max-height:44px;max-width:140px;background:#fff;border-radius:4px;padding:2px">' : '<span style="color:var(--dim)">none</span>')
+      + '<button type="button" data-logo-pick="1" style="min-height:44px">' + (lg ? 'Change logo' : 'Choose a logo picture') + '</button><input type="file" accept="image/*" data-logo="1" hidden>'
+      + (lg ? '<button type="button" data-logo-del="1" style="min-height:44px">Remove</button>' : '') + '</div>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked) + f('rdesc', 'Revision description', T0.rdesc, 'Issued');
     o += '<h3>Earlier revisions</h3>' + [1, 2, 3].map(function (k) { return f('h' + k + 'rev', 'Rev ' + k, T0['h' + k + 'rev']) + f('h' + k + 'date', 'Date', T0['h' + k + 'date']) + f('h' + k + 'desc', 'Description', T0['h' + k + 'desc']) + f('h' + k + 'by', 'By', T0['h' + k + 'by']) + f('h' + k + 'chk', 'Checked', T0['h' + k + 'chk']); }).join('');
     if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('from', 'From', LD.from, 'e.g. Tank T-101') + f('to', 'To', LD.to, 'e.g. Pump P-101') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none') + f('nde', 'NDE extent', LD.nde, 'e.g. RT 10%');
     else o += '<p class="empty" style="grid-column:1/-1;margin:0">Pick a line number above to set its service, class, pressure, temperature and insulation. A sheet for one line also lists only that line\'s parts, cuts and welds.</p>';
@@ -5143,8 +5153,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
   };
   $('iso-print').onclick = function () { try { window.print(); } catch (e) { toast('Use the browser Share or Print menu'); } };
+  function isoInfoRedraw() { save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').innerHTML = isoInfoHtml(); $('isoInfo').hidden = !open; applyIsoZoom(0, 0); }
+  function setLogo(u) { if (u && !cuImgOk(u)) return false; pushHist(); if (u) model.title.logo = u; else delete model.title.logo; isoInfoRedraw(); return true; }
+  $('isoInfo').addEventListener('click', function (e) {
+    var t = e.target && e.target.closest ? e.target : null; if (!t) return;
+    if (t.closest('[data-logo-del]')) { setLogo(''); toast('Logo removed'); }
+    else if (t.closest('[data-logo-pick]')) { var inp = $('isoInfo').querySelector('input[data-logo]'); if (inp) inp.click(); }
+  });
   $('isoInfo').addEventListener('change', function (e) {
-    var t = e.target, k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
+    var t = e.target;
+    if (t && t.getAttribute && t.getAttribute('data-logo')) {
+      var fl = t.files && t.files[0]; t.value = ''; if (!fl) return;
+      cuImgFromFile(fl, function (u) { if (!u || !setLogo(u)) toast('That picture could not be used. Try a smaller or simpler image.'); else toast('Logo added to the title block'); }, 320);
+      return;
+    }
+    var k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
     var v = String(t.value).trim();
     if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'nde', 'from', 'to'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
     else model.title[k] = v;
@@ -5547,7 +5570,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
-    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, setLogo: setLogo, isoInfoHtml: isoInfoHtml, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     spec: { tpl: SP_TPL, add: spAdd, update: spUpdate, del: spDelete, assign: spAssign, of: spOf, html: specHtml, desig: lineDesignation, lineList: lineList },
     buildPdf: buildPdf, addValveFlanges: addValveFlanges, fname: fname, parseNum: parseNum, resizePipe: resizePipe,
     selectPart: function (kind, i) { setTool('sel'); sel = { kind: kind, i: i }; rebuild(); return egzMeshes.length; },
