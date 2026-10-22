@@ -111,6 +111,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 /* right column */
 #side { position: absolute; top: 12px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
 #side .sheet { position: static; flex: none; pointer-events: auto; max-height: none; }
+.inspbar { width: 100%; min-height: 48px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-color: transparent; text-align: left; font: 600 13px var(--font-ui); }
+.inspbody { margin-top: 4px; }
+.inspbody[hidden] { display: none; }
+body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; transition: opacity .1s; }
 #insp p { margin: 0 0 10px; font: 400 12.5px var(--font-data); color: var(--fg); }
 #bom table { width: 100%; border-collapse: collapse; font: 400 12.5px var(--font-data); font-variant-numeric: tabular-nums; }
 #bom td { padding: 6px 0; border-bottom: 1px solid var(--line); }
@@ -2959,6 +2963,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // ---------- inspector ----------
   function opts(list, cur) { return list.map(function (v) { return '<option value="' + esc(v[0]) + '"' + (String(v[0]) === String(cur) ? ' selected' : '') + '>' + v[1] + '</option>'; }).join(''); }
   var SCH_OPTS = [[40, 'SCH 40'], [80, 'SCH 80']];
+  var inspMin = true;                                               // the inspector starts as one chip so it does not cover the part being moved
+  function inspSet(el, h) {
+    var ttl = ((h.match(/<h2>(.*?)<\/h2>/) || [])[1] || 'Selection').replace(/<[^>]*>/g, '');
+    el.innerHTML = '<button id="insp-tg" class="inspbar" aria-expanded="' + !inspMin + '"><span>' + ttl + '</span><span>' + (inspMin ? 'Edit ▾' : 'Hide ▴') + '</span></button><div class="inspbody"' + (inspMin ? ' hidden' : '') + '>' + h + '</div>';
+    el.hidden = false;
+  }
+  $('insp').addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('#insp-tg') : null; if (!b) return;
+    inspMin = !inspMin; showInsp();
+  });
+  function dragUi(on) { try { document.body.classList.toggle('dragging', on); } catch (x) {} }   // the panels fade while something is being dragged
   function showInsp() {
     var el = $('insp');
     if (tool === 'sel' && mselCount()) { renderMulti(el); return; }
@@ -3018,7 +3033,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (['valve', 'flange', 'item', 'support', 'equip'].indexOf(sel.kind) >= 0) h += '<div class="row"><label class="field">Tag<input type="text" id="i-tag" value="' + esc(it.tag || '') + '" placeholder="auto" maxlength="16" autocomplete="off"></label></div>';
     if (it.eq == null && ['valve', 'flange', 'item', 'support', 'instr'].indexOf(sel.kind) >= 0) h += posHtml(it);
     h += '<div class="row">' + (sel.kind === 'fit' ? '<button id="i-del">Remove fitting</button>' : '<button id="i-del">Delete</button>') + '<button id="i-x">Close</button></div>';
-    el.innerHTML = h; el.hidden = false;
+    inspSet(el, h);
     function edit(fn) { return function () { pushHist(); fn(this.value); changed(); }; }
     if ($('i-n')) $('i-n').onchange = edit(function (v) {
       if (sel.kind === 'pipe') resizePipe(sel.i, +v); else it.n = +v;
@@ -4314,7 +4329,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + '<div class="row"><button id="m-move">Move</button><button id="m-copy">Copy</button></div>';
     }
     h += '<div class="row"><button id="m-del">Delete</button><button id="m-x2">Clear</button></div>';
-    el.innerHTML = h; el.hidden = false;
+    inspSet(el, h);
     function pipesSel() { return ks.filter(function (k) { return k.indexOf('pipe:') === 0; }).map(function (k) { return +k.split(':')[1]; }); }
     function offs() { return [numField('m-x') || 0, numField('m-y') || 0, numField('m-z') || 0]; }
     if ($('m-n')) $('m-n').onchange = function () { var nn = +this.value; if (!nn) return; pushHist(); pipesSel().forEach(function (k) { resizePipe(k, nn); }); changed(); toast(pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's') + ' now ' + sz(nn)); };
@@ -4382,8 +4397,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var q = $('qbar'); if (q.hidden || !qAnchor) return;
     var v = V(qAnchor).project(camera), W = cv.clientWidth, H = cv.clientHeight;
     if (v.z > 1) { q.style.visibility = 'hidden'; return; }
-    var w = q.offsetWidth || 260, x = Math.max(w / 2 + 92, Math.min(W - w / 2 - 8, (v.x + 1) / 2 * W)), y = (1 - v.y) / 2 * H - 88;
-    if (y < 8) y += 176; y = Math.min(y, H - 60);
+    var w = q.offsetWidth || 260, x = Math.max(w / 2 + 92, Math.min(W - w / 2 - 8, (v.x + 1) / 2 * W)), y = (1 - v.y) / 2 * H - 150;
+    if (y < 8) y += 270; y = Math.min(y, H - 60);
     var s = Math.round(x) + ',' + Math.round(y); if (s === qLast) return; qLast = s;
     q.style.left = Math.round(x) + 'px'; q.style.top = Math.round(y) + 'px'; q.style.visibility = 'visible';
   }
@@ -4532,10 +4547,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (e.pointerType === 'pen') lastPen = performance.now();
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
     if (e.pointerType === 'pen' && !fingerSaved && fingerPlace) { setFinger(false); toast('Pencil found: it places points and fingers move the view. Change that in the pipe settings, Input.'); }
-    if (hdlDown(e)) return;                                        // an end handle of the selected pipe
-    if (rotMode && rotDown(e)) return;                             // Rotate mode: a dial anywhere on the screen
-    if (egzDown(e)) return;                                        // an arrow of the selected equipment
-    if (rotDown(e)) return;                                        // the rotation ring of a valve or equipment
+    if (hdlDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                      // an end handle of the selected pipe
+    if (rotMode && rotDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }           // Rotate mode: a dial anywhere on the screen
+    if (egzDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                      // an arrow of the selected equipment
+    if (rotDown(e)) { dragUi(!!(hdlDrag || egzDrag || rotDrag)); return; }                                        // the rotation ring of a valve or equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     if (e.pointerType === 'pen' && tool === 'sel' && nPtr === 0) band = { x: e.clientX, y: e.clientY };   // a Pencil drag on empty space makes a box
@@ -4565,6 +4580,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
   });
   function end(e) {
+    if (rotDrag || hdlDrag || egzDrag) dragUi(false);
     if (rotDrag && rotDrag.id === e.pointerId) { rotEnd(); return; }
     if (hdlDrag && hdlDrag.id === e.pointerId) { hdlEnd(); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { egzEnd(); return; }
