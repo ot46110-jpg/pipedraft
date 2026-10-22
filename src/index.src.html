@@ -1907,7 +1907,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var nb = side === 'a' ? pc.from : pc.to, t = side === 'a' ? pc.t0 : pc.t1, pos = side === 'a' ? pc.pa : pc.pb;
         if (nb) {
           var kind = elEnd(nb), w = mkWeld(kind, nb.n, pos, ln, i + '@' + key(pos));
-          if (nb.what === 'flange' && model.flanges[nb.idx] && model.flanges[nb.idx].m) w.atValve = true;   // the flange fitted to a flanged valve: the valve and its flanges are one part on the drawing
+          if (nb.what === 'flange' && model.flanges[nb.idx] && model.flanges[nb.idx].m) w.atValve = true;
+          if (nb.what === 'valve') w.vEnd = nb.idx;                 // a butt or socket welded valve: the iso puts this weld on the end of the valve symbol   // the flange fitted to a flanged valve: the valve and its flanges are one part on the drawing
           var half = (nb.t < t ? 'b' : 'a'), node = nb.what[0].toUpperCase() + nb.idx + (nb.what === 'flange' ? half : '');
           link(w, pc.id, node); return;
         }
@@ -3424,15 +3425,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var DOME = Ln(0, 0, 0, -9) + P('M-7,-9 A7,7 0 0 1 7,-9Z', W);                          // diaphragm operator
     var s = {};
     s.gate = BT + HAND;
-    s.globe = BT + C(0, 0, 3, DK) + HAND;
+    s.globe = BT + C(0, 0, 4.4, DK);                                // filled ball in the bow-tie, no stem
     s.check = P('M-10,-5 L-10,5 L10,0Z', W) + Ln(10, -5, 10, 5, 2);
-    s.ball = BT + C(0, 0, 3.4, W) + LEVER;
-    s.butterfly = Ln(-7, -5, -7, 5, 2) + Ln(7, -5, 7, 5, 2) + Ln(-5.5, -3, 5.5, 3) + C(0, 0, 2, DK) + LEVER;
-    s.plug = BT + P('M-3.5,-4 L3.5,-4 L0,4Z', DK) + LEVER;
+    s.ball = BT + C(0, 0, 4.4, W) + Ln(-3.1, -3.1, 3.1, 3.1) + Ln(-3.1, 3.1, 3.1, -3.1);   // open ball with a cross
+    s.butterfly = Ln(-6, 4, 6, -4) + C(0, 0, 2.4, DK);             // the disc, slanted, between the two flanges
+    s.plug = BT + P('M0,0 L0,-11 L6,-11', 'none');                 // stem bent over into a flag
     s.control = BT + DOME;
     s.angle = P('M-10,-5 L-10,5 L0,0Z', W) + P('M0,0 L-5,12 L5,12Z', W) + HAND;
-    s.needle = BT + P('M-2.5,-8 L2.5,-8 L0,-3.5Z', DK) + Ln(0, -3.5, 0, 0) + Ln(-5, -8, 5, -8, 2);
-    s.diaphragm = BT + Ln(0, 0, 0, -7) + P('M-5,-7 A5,5 0 0 1 5,-7Z', W) + Ln(0, -12, 0, -12);
+    s.needle = BT + P('M-3.5,-11 L3.5,-11 L0,-1Z', DK);            // filled point on top
+    s.diaphragm = BT + P('M-10,-5 A10,9 0 0 1 10,-5', 'none');    // a dome over the whole body
     s.knife = Ln(-7, -5, -7, 5, 2) + Ln(7, -5, 7, 5, 2) + P('M-5,-5 L5,-5 L0,3Z', W) + Ln(0, -5, 0, -14) + Ln(-4, -14, 4, -14, 2) + Ln(-3, -14, -3, -8) + Ln(3, -14, 3, -8);
     s.threeway = BT + Ln(0, 0, 0, 10) + Ln(-5, 10, 5, 10, 2) + HAND;
     s.footv = P('M-10,-5 L-10,5 L10,0Z', W) + Ln(10, -5, 10, 5, 2) + P('M-5,6 L5,6 L7,14 L-7,14Z', W);
@@ -3457,6 +3458,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     s['plug-end'] = R(-9, -4, 9, 8) + R(0, -5, 6, 10);
     s.olet = P('M-4,-2.2 L-2,-5 L2,-5 L4,-2.2 L4,2.2 L2,5 L-2,5 L-4,2.2Z', W);
     s['fl-end'] = Ln(0, -8, 0, 8, 2.8);
+    s.endSW = Ln(-10.5, -4.5, -10.5, 4.5) + Ln(-15, -2.6, -11.5, -2.6) + Ln(-15, 2.6, -11.5, 2.6) + Ln(10.5, -4.5, 10.5, 4.5) + Ln(11.5, -2.6, 15, -2.6) + Ln(11.5, 2.6, 15, 2.6);   // socket weld ends
+    s.endTHD = Ln(-11.5, -4, -13.5, 4) + Ln(-14, -4, -16, 4) + Ln(11.5, -4, 13.5, 4) + Ln(14, -4, 16, 4);   // threaded ends
     var pair = R(-4.2, -7, 2.4, 14) + R(1.8, -7, 2.4, 14);
     ['wn', 'so', 'lj', 'sw'].forEach(function (t) { s['fl-' + t] = pair; });
     s['fl-th'] = pair + Ln(-10, 0, -4.2, 0) + Ln(4.2, 0, 10, 0);
@@ -3728,14 +3731,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var body = '';
 
     // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
-    function isoSym(key, p3, d3, Lpx, flip, down) {
+    function isoSym(key, p3, d3, Lpx, flip, down, more) {
       var s0 = SYM[key], own = isoCtx.style === 'pic' ? null : ISOS[key], pic = own || ISOA[key]; if (!s0 && !pic) return '';
       var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
       var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = prd(A(d)), ey = prd(wv), k = Lpx / 20, q = sp(p3);
       var ud = down ? -1 : 1, m = [ex[0] * k, ex[1] * k, -ey[0] * k * ud, -ey[1] * k * ud, q[0], q[1]].map(f3).join(' ');
       var extra = !pic && s0.act ? '<line x1="0" y1="0" x2="0" y2="-12"/><path d="M-6,-12 a6,6 0 0 1 12,0z"/>' : '';
-      return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="' + (own ? 1.5 : pic ? 1.1 : 1.5) + '" stroke-linejoin="round" stroke-linecap="round">' + (pic || s0.svg) + extra + '</g>';
+      return '<g class="sy" transform="matrix(' + m + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="' + (own ? 1.5 : pic ? 1.1 : 1.5) + '" stroke-linejoin="round" stroke-linecap="round">' + (pic || s0.svg) + extra + (more || '') + '</g>';
     }
     function clampPx(m, lo, hi) { return Math.max(lo, Math.min(hi, m * sc)); }
 
@@ -3877,6 +3880,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
     // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
     function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84); }
+    function symEnd(v, away) {                                      // the point along the valve's pipe where its symbol ends, on the side away points to
+      var c0 = sp(v.p), want = vLpx(v) / 2, lo = 0, hi = 3;
+      function at(sv) { return A(V(v.p).addScaledVector(away, sv)); }
+      for (var it = 0; it < 30; it++) { var mid = (lo + hi) / 2, q = sp(at(mid)); if (Math.hypot(q[0] - c0[0], q[1] - c0[1]) < want) lo = mid; else hi = mid; }
+      return at((lo + hi) / 2);
+    }
     var flAt = model.flanges.map(function (f) {
       if (!f.m) return null;
       var hf = hostOf(f.p), best = null, bd = 0.03, fd = V(f.d).normalize();
@@ -3887,10 +3896,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var e = Math.abs(dv.length() - ff / 2); if (e < bd) { bd = e; best = v; }
       });
       if (!best) return null;
-      var c0 = sp(best.p), want = vLpx(best) / 2, lo = 0, hi = 3;
-      function at(sv) { return A(V(best.p).addScaledVector(fd, -sv)); }
-      for (var it = 0; it < 30; it++) { var mid = (lo + hi) / 2, q = sp(at(mid)); if (Math.hypot(q[0] - c0[0], q[1] - c0[1]) < want) lo = mid; else hi = mid; }
-      return at((lo + hi) / 2);
+      return symEnd(best, fd.clone().negate());
     });
     function flShift(pos) {                                         // a weld behind a moved valve flange moves with it
       for (var fi = 0; fi < model.flanges.length; fi++) if (flAt[fi] && V(pos).distanceTo(V(model.flanges[fi].p)) < 0.25) return A(V(pos).add(V(flAt[fi]).sub(V(model.flanges[fi].p))));
@@ -3900,9 +3906,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var fabI = fabrication();
     fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
       if (w.atValve && !isoCtx.valveWelds) return;                  // a flanged valve is drawn as one part with its flanges
-      var q = sp(w.atValve ? flShift(w.pos) : w.pos), tx = 'W' + w.no, rr = w.field ? 11 : 9;
+      var vw = w.vEnd != null ? model.valves[w.vEnd] : null, wp = w.atValve ? flShift(w.pos) : vw ? symEnd(vw, V(w.pos).sub(V(vw.p)).normalize()) : w.pos;
+      var q = sp(wp), tx = 'W' + w.no, rr = w.field ? 11 : 9, noDot = vw && w.kind === 'SW' && isoCtx.style !== 'pic';   // a socket weld shows as the socket mark, a butt weld as the dot
       function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
-      body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
+      if (!noDot) body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
         : '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="2.6" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
       want(1, q[0], q[1], rr * 2 + 1, rr * 2 + 1, ring([rr + 6, rr + 12, rr + 20, rr + 30], [-45, 45, -135, 135, -90, 90, 0, 180]),
         function (cx, cy) {
@@ -4024,13 +4031,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Valves, flanges, inline fittings and supports.
     model.valves.forEach(function (v, i) {
       var kk = SYM[v.k] ? v.k : 'gate';
-      body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248);
+      var et = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e), marks = isoCtx.style === 'pic' ? '' : et === 'sw' ? ISOS.endSW : et === 'thd' ? ISOS.endTHD : '';
+      body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248, marks);
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
     model.flanges.forEach(function (f, i) {
       var fp = flAt[i] || f.p;
       body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20); balloon(compDesc.flange[i], fp);
-      if (f.m) body += isoSym('fl-end', A(V(fp).addScaledVector(V(f.d).normalize(), 5 / sc)), f.d, 20);   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
+      if (f.m && isoCtx.style === 'pic') body += isoSym('fl-end', A(V(fp).addScaledVector(V(f.d).normalize(), 5 / sc)), f.d, 20);   // pictures show the valve's own flange too; symbols use one bar a side   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
     });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, clampPx(itemLen(it.t, it.n), 34, 70)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
@@ -5814,7 +5822,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
-    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, setLogo: setLogo, isoInfoHtml: isoInfoHtml, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, isos: ISOS, setLogo: setLogo, isoInfoHtml: isoInfoHtml, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     spec: { tpl: SP_TPL, add: spAdd, update: spUpdate, del: spDelete, assign: spAssign, of: spOf, html: specHtml, desig: lineDesignation, lineList: lineList },
     buildPdf: buildPdf, addValveFlanges: addValveFlanges, fname: fname, parseNum: parseNum, resizePipe: resizePipe,
     selectPart: function (kind, i) { setTool('sel'); sel = { kind: kind, i: i }; rebuild(); return egzMeshes.length; },
