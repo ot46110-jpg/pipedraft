@@ -114,3 +114,5 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - The quick bar `#qbar` is docked at the bottom centre (no longer next to the part), so it cannot cover the selection, its arrows or its ring; `placeQbar` does nothing now.
 
 - Flanged valve as one part: `fabrication()` flags the weld between a pipe and a flange fitted to a valve (`m:1`) as `atValve` and numbers those welds after all others. The iso draws no dot or number for them and leaves them out of its weld list unless Options, Welds at valve flanges is on (`isoCtx.valveWelds`); the cut list sheet and its CSV still list every weld. A valve with flanged ends (`endType` flg) carries its own flange discs in 3D, and the iso draws a second flange bar beside each mating flange, so a flanged valve shows four flanges, two at each end. The BOM is unchanged: the valve, two weld-neck flanges, gaskets and bolts.
+
+- Ring size (`ringScale`): a valve ring is a fixed size on screen (smaller than before, `dist * 0.028`), an equipment ring is a turntable as wide as the equipment's footprint (box of its meshes, `rotInfo.fixed`), never smaller than `dist * 0.012`.

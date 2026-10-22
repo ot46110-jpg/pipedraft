@@ -4482,8 +4482,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), rotInfo.n);       // local x is the zero direction, local z the turning axis
     var x0 = new T.Vector3(1, 0, 0).applyQuaternion(q), phi = Math.atan2(rotInfo.n.dot(x0.clone().cross(rotInfo.ref)), x0.dot(rotInfo.ref));
     q.premultiply(new T.Quaternion().setFromAxisAngle(rotInfo.n, phi));
-    rgz.quaternion.copy(q); rgz.position.copy(rotInfo.c); rgz.scale.setScalar(Math.max(0.03, dist * 0.045)); rgz.visible = true;
+    rgz.quaternion.copy(q); rgz.position.copy(rotInfo.c); rotInfo.fixed = 0;
+    if (rotInfo.kind === 'equip') {                                 // a turntable under the equipment: as wide as its footprint, not a fixed size on screen
+      var bb = new T.Box3(), got = false; world.traverse(function (o) { if (o.userData && o.userData.kind === 'equip' && o.userData.i === sel.i && o.geometry) { bb.expandByObject(o); got = true; } });
+      if (got) rotInfo.fixed = Math.max(0.3, Math.hypot(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 * 1.05) / RING_R;
+    }
+    rgz.scale.setScalar(ringScale()); rgz.visible = true;
   }
+  function ringScale() { return rotInfo && rotInfo.fixed ? Math.max(rotInfo.fixed, dist * 0.012) : Math.max(0.02, dist * 0.028); }   // a valve ring is a fixed size on screen, an equipment ring fits its base
   function rotAngle(e) {                                            // where the pointer is on the ring plane: angle in degrees and distance from the centre
     var sp0 = rotInfo; if (!sp0) return null;
     setRay(e); var pl = new T.Plane().setFromNormalAndCoplanarPoint(sp0.n, sp0.c), pt = new T.Vector3();
@@ -5435,6 +5441,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (!sample && model.pipes.length > 3 && Date.now() - last > 3 * 864e5) toast('Keep a copy outside Safari: ⋯, File, Save project');
     } catch (e) {}
   }, 6000);
-  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (rgz.visible) rgz.scale.setScalar(Math.max(0.03, dist * 0.045)); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  (function loop() { placeCamera(); if (egz.visible) egz.scale.setScalar(Math.max(0.2, dist * 0.12)); if (rgz.visible) rgz.scale.setScalar(ringScale()); if (hdl.visible) { var hs = Math.max(0.03, dist * 0.016); hdl.children.forEach(function (m) { m.scale.setScalar(hs); }); } placeQbar(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
 })();
 </script>
