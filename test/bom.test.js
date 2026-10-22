@@ -1732,5 +1732,39 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.pen.setFinger(true); btn('finish').onclick(); PD.load({ pipes: [] });
 }
 
+// Drawing in a side view: Front and Right use an upright plane facing the camera, so a tap sets the height too
+{
+  const btn = id => ctx.document.getElementById(id);
+  const T3 = ctx.THREE; globalThis.__perf = (globalThis.__perf || 0) + 5000;   // the block before ends with a Pencil touch: move past the palm window
+  PD.load({ pipes: [] }); PD.pen.setFinger(true); btn('t-pipe').onclick(); btn('finish').onclick();
+  PD.pen.cube.go(new T3.Vector3(0, 0, 1));
+  check('the Front view counts as a side view', PD.pen.cube.sideAxis() === 2);
+  tapAt(400, 200);
+  const c0 = PD.cursor();
+  const near = (p, x, y) => { const q = PD.project(p); return Math.hypot(q.x - x, q.y - y) < 30; };
+  check('Front view: a tap above the middle starts a run in the air, under the finger', !!c0 && c0[1] > 0.3 && near(c0, 400, 200), JSON.stringify(c0));
+  tapAt(600, 200);
+  const p1 = PD.model.pipes[0];
+  check('Front view: tapping sideways draws a level pipe along X', !!p1 && Math.abs(p1.a[1] - p1.b[1]) < 1e-6 && p1.b[0] > p1.a[0] && Math.abs(p1.b[2] - p1.a[2]) < 1e-6, JSON.stringify(p1));
+  tapAt(600, 270);
+  const p2 = PD.model.pipes[1];
+  check('Front view: tapping lower draws a pipe straight down', !!p2 && p2.b[1] < p2.a[1] && Math.abs(p2.a[0] - p2.b[0]) < 1e-6, JSON.stringify(PD.model.pipes));
+  btn('finish').onclick();
+  PD.pen.cube.go(new T3.Vector3(1, 0, 0));
+  check('the Right view counts as a side view', PD.pen.cube.sideAxis() === 0);
+  tapAt(300, 150);
+  const c1 = PD.cursor();
+  check('Right view: a new run starts in the air, under the finger', !!c1 && c1[1] > 0.3 && near(c1, 300, 150), JSON.stringify(c1));
+  btn('finish').onclick();
+  PD.pen.cube.go(new T3.Vector3(0, 0, 1));
+  tapAt(400, 590);
+  const c2 = PD.cursor();
+  check('Front view: nothing goes below the floor', !c2 || c2[1] >= 0, JSON.stringify(c2));
+  btn('finish').onclick();
+  PD.pen.cube.go(new T3.Vector3(0.6, 0.7, 0.4).normalize());
+  check('a view from above still uses the level plane', PD.pen.cube.sideAxis() === -1);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

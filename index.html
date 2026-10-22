@@ -400,7 +400,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div id="helpBody">
         <ul>
           <li><b>View</b>: one finger turns the picture, two fingers pinch to zoom and pan. The cube at the top right sets the view: tap a face, an edge or a corner, or drag it. Fit is at the top.</li>
-          <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
+          <li><b>Pipe</b>: choose Pipe, tap the grid to start, point along an axis (Auto picks it), tap to place. Type an exact length in mm (1500, 1,500 or 1200+300) and press the arrow. With an Apple Pencil, aim and lift: once the Pencil is used, fingers only move the view (pipe settings, Input, changes that). Snaps show as a dot: white end or nozzle, blue midpoint, green lined up with the drawing. Orange dots are free ends to carry on from. In a side view (Front, Back, Left or Right on the cube) a tap sets the height too, on an upright plane through the last point of the run or the middle of the view. ⌫ takes back the last pipe, a tap on the white start dot or Finish run ends the line.</li>
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
@@ -2150,11 +2150,24 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
   }
-  function planePoint(e) {
+  function sideAxis() {                                             // looking nearly level (Front, Right, Back, Left): the scene axis the camera looks along (0 = x, 2 = z), else -1
+    var d = new T.Vector3(); camera.getWorldDirection(d);
+    if (Math.abs(d.y) > 0.26) return -1;
+    return Math.abs(d.x) > Math.abs(d.z) ? 0 : 2;
+  }
+  function sideDepth(ax) { return cursor ? cursor[ax] : rs(target.getComponent(ax)); }   // the depth of the upright drawing plane: the run's last point, else the middle of the view
+  function planePoint(e) {                                          // where the pointer meets the work plane: level at the working height, or upright facing the camera in a side view
     setRay(e);
-    var hit = new T.Vector3();
+    var hit = new T.Vector3(), ax = sideAxis();
+    if (ax >= 0) {
+      var nv = new T.Vector3(ax === 0 ? 1 : 0, 0, ax === 2 ? 1 : 0);
+      if (!ray.ray.intersectPlane(new T.Plane(nv, -sideDepth(ax)), hit)) return null;
+      if (hit.distanceTo(camera.position) > 400) return null;
+      hit.side = true; return hit;
+    }
     return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -elev), hit) ? hit : null;
   }
+  function planePt(p) { return [rs(p.x), p.side ? Math.max(0, rs(p.y)) : elev, rs(p.z)]; }   // a work-plane hit on the grid, height from the plane in a side view
   var matDirty = true;
   function pickMeshes(e, kind) {
     setRay(e); if (matDirty) { world.updateMatrixWorld(true); matDirty = false; }
@@ -2350,12 +2363,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var best = null, bd = 0.3;
     model.pipes.forEach(function (q) {
       [q.a, q.b].forEach(function (e) {
-        var d = Math.hypot(e[0] - p.x, e[2] - p.z);
-        if (Math.abs(e[1] - elev) < 0.01 && d < bd) { bd = d; best = e.slice(); }
+        var d = p.side ? Math.hypot(e[0] - p.x, e[1] - p.y, e[2] - p.z) : Math.hypot(e[0] - p.x, e[2] - p.z);
+        if ((p.side || Math.abs(e[1] - elev) < 0.01) && d < bd) { bd = d; best = e.slice(); }
       });
     });
     nozList.forEach(function (z) {
-      var d = z.p.distanceTo(new T.Vector3(p.x, elev, p.z));
+      var d = z.p.distanceTo(new T.Vector3(p.x, p.side ? p.y : elev, p.z));
       if (d < bd) { bd = d; best = mm3(z.p); }
     });
     return best;
@@ -2471,7 +2484,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (s) return s;
     var hit = pickMeshes(e, 'pipe')[0], op = hit ? onPipe(hit) : null;
     if (op) return op.pt;
-    return p ? [rs(p.x), elev, rs(p.z)] : null;
+    return p ? planePt(p) : null;
   }
 
   function addVentDrain(hit, kind) {                                // a small branch with a ball valve and a plug, up for a vent and down for a drain
@@ -2668,10 +2681,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else if (tool === 'equip') {
       var pp = planePoint(e); if (!pp) return;
       if (!eqDef(eqk) || (isCu(eqk) && !CEQ[eqk].lib)) { toast('That equipment is not in the library any more'); return; }
-      pushHist(); model.equip.push({ k: eqk, p: [rs(pp.x), elev, rs(pp.z)], r: curRot }); changed();
+      pushHist(); model.equip.push({ k: eqk, p: planePt(pp), r: curRot }); changed();
     } else if (tool === 'measure') {
       var mp = planePoint(e); if (!mp) return;
-      var pt = snapPoint(mp) || [rs(mp.x), elev, rs(mp.z)];
+      var pt = snapPoint(mp) || planePt(mp);
       if (!mA) { mA = pt; measLine.visible = false; $('pos').textContent = 'A set. Tap point B.'; }
       else {
         var A = V(mA), B = V(pt), D = A.distanceTo(B);
@@ -2736,7 +2749,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function ghost(e) {
     if (tool === 'measure') {
       var mp = planePoint(e); if (!mp) return;
-      var pt = snapPoint(mp) || [rs(mp.x), elev, rs(mp.z)];
+      var pt = snapPoint(mp) || planePt(mp);
       marker.visible = true; marker.position.set(pt[0], pt[1], pt[2]); markSnap(!!snapPoint(mp));
       if (mA) { ghostLine.visible = true; setLine(ghostLine, mA, pt); } else ghostLine.visible = false;
       return;
@@ -2744,7 +2757,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     guideLine.visible = false;
     if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
     var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null, snapKind = null;
-    if (tool === 'equip') { if (p) t = [rs(p.x), elev, rs(p.z)]; }
+    if (tool === 'equip') { if (p) t = planePt(p); }
     else if (ss && !(cursor && key(ss.pt) === key(cursor))) { t = ss.pt; snapKind = ss.kind; }
     else if (cursor) { var am = aim(e); t = am ? am.q : null; if (am && am.align) snapKind = 'align'; showGuide(am); if (am) $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); }
     else t = startPoint(e);
@@ -5501,7 +5514,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); return [theta, phi]; }, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
