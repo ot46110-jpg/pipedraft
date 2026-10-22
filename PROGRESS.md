@@ -85,3 +85,5 @@
 - Quick bar docked at the bottom centre.
 - Flanged valve is one part on the iso: no weld marks at it (option to show), four flange bars, flanges cast on the valve in 3D.
 - View cube replaces the view buttons.
+
+- โมเดล 3D เหมือนของจริงขึ้น (22 ต.ค.): ปั๊ม = ฐานเหล็กราง + anchor bolt, volute, คอดูด/คอส่ง, bearing frame, coupling guard สีเหลือง, มอเตอร์มีครีบ, ฝาครอบพัดลม, terminal box; ถังตั้ง = เส้นผ่าศูนย์กลาง 1 ม. หัวถัง dished บน-ล่าง, ขา 4 ขา + base plate, manway พร้อมฝา, lifting lug, nozzle มีคอยื่นออกมาให้เห็นหน้าแปลน; วาล์ว = gate (bonnet, yoke, rising stem, พวงมาลัย), globe, swing check (ฝา bolt), ball/plug (คันโยก+ด้ามจับ), butterfly (wafer, คันโยก, notch plate), control (yoke, diaphragm actuator, positioner), knife gate, diaphragm. ตำแหน่ง nozzle และขนาดวาล์วไม่เปลี่ยน งานเก่าเปิดได้เหมือนเดิม; แผ่น iso ของถังปรับตาม (ขา, หัวล่าง, manway)

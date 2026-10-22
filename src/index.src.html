@@ -770,7 +770,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function eqDef(k) { return Object.prototype.hasOwnProperty.call(EQUIP, k) ? EQUIP[k] : Object.prototype.hasOwnProperty.call(CEQ, k) ? CEQ[k] : undefined; }
   function eqInside(def, k, l, m) {                                 // is the equipment-frame scene point l inside the outline shrunk by m (metres)
     if (def && def.custom) return (def.shape === 'cyl' ? Math.hypot(l.x, l.z) < def.W / 2 - m : Math.abs(l.x) < def.W / 2 - m && Math.abs(l.z) < def.D / 2 - m) && l.y > m && l.y < def.H - m;
-    return k === 'vessel' ? Math.hypot(l.x, l.z) < 0.6 - m && l.y > m && l.y < 2.4 - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
+    return k === 'vessel' ? Math.hypot(l.x, l.z) < VES_R - m && l.y > VES_Y0 - VES_HD + m && l.y < VES_Y1 + VES_HD - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
   }
   function eqLabel(k) { var d = eqDef(k) || EQUIP.pump; return (d.custom ? d.short : d.name).toLowerCase(); }
   function eqIsVessel(e) { var d = eqDef(e.k); return e.k === 'vessel' || !!(d && d.custom && d.shape === 'cyl'); }
@@ -821,22 +821,69 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var STOCK = 6, STEEL = 7850, STEP = 0.5;
   var STORE = 'pipedraft.model.v1';
 
+  var VES_R = 0.5, VES_Y0 = 0.3, VES_Y1 = 2.3, VES_HD = 0.17;   // built-in vertical vessel: shell radius, tangent lines, head depth (m); nozzle points stay where they always were
   var EQUIP = {
-    pump: {
+    pump: {                                                         // end suction, top discharge (ANSI style) on a steel baseplate, driven by a foot-mounted motor
       name: 'Centrifugal pump', short: 'Pump',
       noz: [{ p: [-0.35, 0.4, 0], d: [-1, 0, 0], n: 4 }, { p: [-0.15, 0.7, 0], d: [0, 1, 0], n: 3 }],
       build: function (g, m) {
-        var base = new T.Mesh(new T.BoxGeometry(1.5, 0.08, 0.55), m); base.position.set(0.2, 0.04, 0); g.add(base);
-        var cas = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.4, 28), m); cas.rotation.z = Math.PI / 2; cas.position.set(-0.15, 0.4, 0); g.add(cas);
-        var mot = new T.Mesh(new T.CylinderGeometry(0.22, 0.22, 0.8, 28), mat(0x3d5361, 0.6)); mot.rotation.z = Math.PI / 2; mot.position.set(0.45, 0.4, 0); g.add(mot);
+        var mBase = mat(0x2e3a42, 0.7), mMot = mat(0x3d5361, 0.55), mCowl = mat(0x4a6272, 0.5), mGuard = mat(0xffb21f, 0.5), mSteel = mat(0xc9d6dc, 0.3);
+        function box(w, h, d, x, y, z, mm) { var o = new T.Mesh(new T.BoxGeometry(w, h, d), mm); o.position.set(x, y, z); g.add(o); return o; }
+        function cx(r, len, x, y, z, mm, seg, r2) { var o = new T.Mesh(new T.CylinderGeometry(r2 == null ? r : r2, r, len, seg || 24), mm); o.rotation.z = Math.PI / 2; o.position.set(x, y, z); g.add(o); return o; }
+        function cy(r, len, x, y, z, mm, seg) { var o = new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 20), mm); o.position.set(x, y, z); g.add(o); return o; }
+        box(1.5, 0.06, 0.55, 0.2, 0.05, 0, mBase);                 // baseplate: a deck on two channel side rails
+        [-0.25, 0.25].forEach(function (z) { box(1.5, 0.08, 0.05, 0.2, 0.04, z, mBase); });
+        [[-0.48, -0.22], [-0.48, 0.22], [0.88, -0.22], [0.88, 0.22]].forEach(function (a) { cy(0.018, 0.05, a[0], 0.1, a[1], mSteel, 8); });   // anchor bolts
+        cx(0.24, 0.2, -0.2, 0.4, 0, m, 32);                         // volute casing
+        cx(0.25, 0.03, -0.2, 0.4, 0, m, 32);                        // the casing joint
+        var sc = new T.Mesh(new T.TorusGeometry(0.2, 0.065, 10, 28, Math.PI * 1.25), m);   // the scroll swelling round toward the discharge
+        sc.rotation.y = Math.PI / 2; sc.rotation.x = -Math.PI * 0.12; sc.position.set(-0.2, 0.42, 0); g.add(sc);
+        cy(0.065, 0.14, -0.15, 0.58, 0, m);                         // discharge neck up to the nozzle flange
+        cx(0.075, 0.08, -0.29, 0.4, 0, m, 24, 0.06);                // suction neck, tapering to the casing
+        box(0.12, 0.12, 0.3, -0.2, 0.14, 0, m);                     // casing foot
+        cx(0.19, 0.05, -0.07, 0.4, 0, m, 28);                       // back cover
+        cx(0.1, 0.27, 0.07, 0.4, 0, m, 22);                         // bearing frame
+        box(0.1, 0.22, 0.24, 0.14, 0.19, 0, m);                     // bearing frame foot
+        cy(0.012, 0.03, 0.12, 0.5, 0.0, mSteel, 8);                 // oil filler
+        cx(0.025, 0.2, 0.28, 0.4, 0, mSteel, 12);                   // shaft through the coupling
+        var gd = new T.Mesh(new T.CylinderGeometry(0.13, 0.13, 0.17, 20, 1, true, -Math.PI / 2, Math.PI), mGuard);   // coupling guard over the top half
+        gd.rotation.z = Math.PI / 2; gd.position.set(0.285, 0.4, 0); gd.material.side = T.DoubleSide; g.add(gd);
+        box(0.17, 0.02, 0.26, 0.285, 0.4, 0, mGuard);
+        cx(0.2, 0.46, 0.6, 0.4, 0, mMot, 32);                       // motor frame
+        for (var fi = 0; fi < 8; fi++) cx(0.214, 0.014, 0.4 + fi * 0.055, 0.4, 0, mMot, 32);   // cooling fins
+        cx(0.205, 0.035, 0.375, 0.4, 0, mMot, 32);                  // drive end shield
+        cx(0.19, 0.11, 0.885, 0.4, 0, mCowl, 28);                   // fan cowl
+        cx(0.15, 0.012, 0.946, 0.4, 0, mat(0x1d262c, 0.8), 24);     // its grille
+        box(0.13, 0.08, 0.13, 0.58, 0.64, 0, mMot);                 // terminal box
+        box(0.03, 0.04, 0.03, 0.75, 0.62, 0, mSteel);               // lifting eye
+        [-0.12, 0.12].forEach(function (z) { box(0.38, 0.13, 0.07, 0.6, 0.145, z, mMot); });   // motor feet
       }
     },
-    vessel: {
+    vessel: {                                                       // 1 m vertical drum, 2 m between tangent lines, dished heads, four pipe legs, side manway
       name: 'Vertical vessel', short: 'Vessel',
       noz: [{ p: [0, 2.55, 0], d: [0, 1, 0], n: 4 }, { p: [0.6, 1.8, 0], d: [1, 0, 0], n: 4 }, { p: [0, 0.4, 0.6], d: [0, 0, 1], n: 4 }],
       build: function (g, m) {
-        var body = new T.Mesh(new T.CylinderGeometry(0.6, 0.6, 2.4, 32), m); body.position.y = 1.2; g.add(body);
-        var dome = new T.Mesh(new T.SphereGeometry(0.6, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), m); dome.scale.y = 0.25; dome.position.y = 2.4; g.add(dome);
+        var R = VES_R, y0 = VES_Y0, y1 = VES_Y1, hd = VES_HD, mLeg = mat(0x3d4b54, 0.6), mSteel = mat(0xc9d6dc, 0.3);
+        var sh = new T.Mesh(new T.CylinderGeometry(R, R, y1 - y0, 40), m); sh.position.y = (y0 + y1) / 2; g.add(sh);
+        [[y1, 0, Math.PI / 2], [y0, Math.PI / 2, Math.PI / 2]].forEach(function (h) {   // dished heads, top and bottom
+          var dm = new T.Mesh(new T.SphereGeometry(R, 40, 12, 0, Math.PI * 2, h[1], h[2]), m); dm.scale.y = hd / R; dm.position.y = h[0]; g.add(dm);
+        });
+        [y0, y1].forEach(function (y) { var w = new T.Mesh(new T.CylinderGeometry(R + 0.006, R + 0.006, 0.012, 40), mat(0x52697a, 0.6)); w.position.y = y; g.add(w); });   // head to shell welds
+        [1, 3, 5, 7].forEach(function (k) {                         // legs between the nozzles, each with a pad on the shell and a base plate
+          var a = k * Math.PI / 4, lx = Math.cos(a) * (R + 0.045), lz = Math.sin(a) * (R + 0.045);
+          var lg = new T.Mesh(new T.CylinderGeometry(0.044, 0.044, 0.95, 14), mLeg); lg.position.set(lx, 0.475, lz); g.add(lg);
+          var pd = new T.Mesh(new T.BoxGeometry(0.03, 0.34, 0.16), m); pd.position.set(Math.cos(a) * (R + 0.012), 0.75, Math.sin(a) * (R + 0.012)); pd.rotation.y = -a; g.add(pd);
+          var bp = new T.Mesh(new T.BoxGeometry(0.17, 0.016, 0.17), mLeg); bp.position.set(lx, 0.008, lz); bp.rotation.y = -a; g.add(bp);
+        });
+        var mw = new T.Mesh(new T.CylinderGeometry(0.24, 0.24, 0.16, 32), m); mw.rotation.z = Math.PI / 2; mw.position.set(-R - 0.06, 1.25, 0); g.add(mw);   // manway neck
+        var bl = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.045, 32), m); bl.rotation.z = Math.PI / 2; bl.position.set(-R - 0.16, 1.25, 0); g.add(bl);    // its blind cover
+        var dv = new T.Mesh(new T.TorusGeometry(0.07, 0.012, 6, 16, Math.PI), mSteel); dv.position.set(-R - 0.18, 1.25, 0); dv.rotation.z = Math.PI / 2; g.add(dv);   // a U handle standing out of the cover face
+        [[0.3, 0], [-0.3, 0]].forEach(function (q) { var lu = new T.Mesh(new T.BoxGeometry(0.02, 0.1, 0.12), mLeg); lu.position.set(q[0], y1 + hd * 0.55, q[1]); g.add(lu); });   // lifting lugs on the top head
+        var np = new T.Mesh(new T.BoxGeometry(0.008, 0.08, 0.12), mSteel); np.position.set(Math.cos(Math.PI * 1.25) * R, 1.0, Math.sin(Math.PI * 1.25) * R); np.rotation.y = Math.PI * 0.25; g.add(np);   // name plate
+        [[0, 2.55, 0, 0, 1, 0, 0.12], [0.6, 1.8, 0, 1, 0, 0, 0.14], [0, 0.4, 0.6, 0, 0, 1, 0.14]].forEach(function (z) {   // nozzle necks from the shell out to the flange
+          var d3 = new T.Vector3(z[3], z[4], z[5]), L = z[6], nk = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, L, 18), m);
+          nk.position.set(z[0], z[1], z[2]).addScaledVector(d3, -0.12 - L / 2); nk.quaternion.setFromUnitVectors(UP, d3); g.add(nk);
+        });
       }
     }
   };
@@ -1077,6 +1124,87 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var rs = function (v) { return Math.round(v / snap) * snap; };
   var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   function mat(color, rough) { return new T.MeshStandardMaterial({ color: color, roughness: rough == null ? 0.5 : rough, metalness: 0.25 }); }
+  // A valve in its own frame: the pipe runs along y (length L, pipe radius r, body scale R), the stem and operator point along +x.
+  function valveShape(g, kind, r, R, L, bm) {
+    var mSt = mat(0xc9d6dc, 0.3), mHw = mat(0xffb21f, 0.45), mGrip = mat(0x2b2f33, 0.8), mAct = mat(0x2f7f78, 0.5);
+    function cyl(rt, rb, h, ax, x, y, z, mm, seg) {                 // along x, y or z, centred on x, y, z
+      var o = new T.Mesh(new T.CylinderGeometry(rt, rb, h, seg || 20), mm || bm);
+      if (ax === 'x') o.rotation.z = -Math.PI / 2; else if (ax === 'z') o.rotation.x = Math.PI / 2;
+      o.position.set(x, y, z); g.add(o); return o;
+    }
+    function box(sx, sy, sz, x, y, z, mm) { var o = new T.Mesh(new T.BoxGeometry(sx, sy, sz), mm || bm); o.position.set(x, y, z); g.add(o); return o; }
+    function ball(rad, sx, sy, sz, x, mm) { var o = new T.Mesh(new T.SphereGeometry(rad, 22, 14), mm || bm); o.scale.set(sx, sy, sz); o.position.x = x; g.add(o); return o; }
+    function wheel(x, rw) {                                         // handwheel: rim, hub and three spokes, square to the stem
+      var rim = new T.Mesh(new T.TorusGeometry(rw, Math.max(r * 0.09, 0.004), 8, 28), mHw); rim.rotation.y = Math.PI / 2; rim.position.x = x; g.add(rim);
+      cyl(r * 0.2, r * 0.2, r * 0.35, 'x', x, 0, 0, mHw, 12);
+      for (var k = 0; k < 3; k++) { var sp = box(r * 0.1, rw * 2 * 0.98, r * 0.12, x, 0, 0, mHw); sp.rotation.x = k * Math.PI / 3; }
+    }
+    function bonnet(x0, x1) {                                       // bonnet flange and tapered bonnet from x0 to x1
+      cyl(R * 0.7, R * 0.7, R * 0.13, 'x', x0, 0, 0);
+      cyl(R * 0.4, R * 0.52, x1 - x0, 'x', (x0 + x1) / 2, 0, 0);
+    }
+    function yoke(x0, x1) {                                         // two arms and a top plate
+      [-1, 1].forEach(function (sg) { box(x1 - x0, r * 0.16, r * 0.34, (x0 + x1) / 2, sg * R * 0.36, 0); });
+      box(R * 0.12, R * 0.86, r * 0.34, x1, 0, 0);
+    }
+    function lever(x, len, mm) {                                    // a flat bar along the pipe with a grip at its end
+      box(r * 0.16, len, r * 0.42, x, len / 2 - R * 0.3, 0, mm || mHw);
+      cyl(r * 0.17, r * 0.17, len * 0.35, 'y', x, len - R * 0.3 - len * 0.175, 0, mGrip, 10);
+    }
+    var ends = function (k) { cyl(r * 1.16, r * 1.16, L, 'y', 0, 0, 0, bm, 20); };
+    if (kind === 'gate' || kind === 'angle') {
+      ends(); ball(R * 0.82, 1.15, 0.62, 0.8, R * 0.12);
+      bonnet(R * 0.78, R * 1.55); yoke(R * 1.55, R * 2.7);
+      cyl(r * 0.11, r * 0.11, R * 3.0, 'x', R * 2.2, 0, 0, mSt, 8);   // rising stem, standing above the wheel
+      wheel(R * 2.85, R * 0.95);
+    } else if (kind === 'globe' || kind === 'needle') {
+      ends(); ball(R * 1.02, 1.0, 0.8, 1.0, 0);
+      bonnet(R * 0.82, R * 1.45); yoke(R * 1.45, R * 2.15);
+      cyl(r * 0.11, r * 0.11, R * 2.0, 'x', R * 1.9, 0, 0, mSt, 8);
+      wheel(R * 2.35, kind === 'needle' ? R * 0.45 : R * 0.8);
+    } else if (kind === 'control') {
+      ends(); ball(R * 1.02, 1.0, 0.8, 1.0, 0);
+      bonnet(R * 0.82, R * 1.4); yoke(R * 1.4, R * 2.55);
+      cyl(r * 0.11, r * 0.11, R * 1.3, 'x', R * 2.0, 0, 0, mSt, 8);
+      var dc = ball(R * 1.25, 0.32, 1, 1, R * 2.95, mAct);          // diaphragm case: two shallow halves and their bolted rim
+      var rim = new T.Mesh(new T.TorusGeometry(R * 1.22, r * 0.12, 8, 32), mAct); rim.rotation.y = Math.PI / 2; rim.position.x = R * 2.95; g.add(rim);
+      cyl(r * 0.25, r * 0.25, R * 0.3, 'x', R * 3.45, 0, 0, mSt, 10);   // air connection
+      box(R * 0.5, R * 0.42, R * 0.32, R * 1.95, 0, R * 0.62, mat(0xd9dee2, 0.5));   // positioner on the yoke
+    } else if (kind === 'check' || kind === 'footv') {
+      ends(); cyl(R * 0.82, R * 0.82, L * 0.66, 'y', R * 0.12, 0, 0);   // swing check: a long body with a bolted cover on top
+      cyl(R * 0.64, R * 0.64, R * 0.18, 'x', R * 0.95, 0, 0);
+      for (var bi = 0; bi < 6; bi++) { var ba = bi * Math.PI / 3; cyl(r * 0.08, r * 0.08, R * 0.08, 'x', R * 1.08, Math.cos(ba) * R * 0.52, Math.sin(ba) * R * 0.52, mSt, 6); }
+      cyl(r * 0.28, r * 0.28, R * 1.9, 'z', R * 0.45, -L * 0.18, 0);   // hinge pin bosses each side
+    } else if (kind === 'ball' || kind === 'threeway') {
+      ends(); ball(R * 0.95, 1, 0.9, 1, 0);
+      cyl(r * 0.36, r * 0.36, R * 0.5, 'x', R * 1.1, 0, 0);          // stem neck and mounting pad
+      box(R * 0.14, R * 0.55, R * 0.55, R * 1.32, 0, 0);
+      lever(R * 1.45, R * 2.5);
+    } else if (kind === 'butterfly') {
+      cyl(R * 1.15, R * 1.15, L, 'y', 0, 0, 0, bm, 28);                // wafer body between the flanges
+      cyl(r * 0.42, r * 0.42, R * 0.8, 'x', R * 1.45, 0, 0);
+      box(R * 0.1, R * 0.75, R * 0.75, R * 1.86, 0, 0);
+      var qd = new T.Mesh(new T.CylinderGeometry(R * 0.7, R * 0.7, r * 0.06, 16, 1, false, 0, Math.PI / 2), mSt); qd.rotation.z = -Math.PI / 2; qd.position.x = R * 1.95; g.add(qd);   // notch plate
+      lever(R * 2.02, R * 2.2);
+    } else if (kind === 'knife') {
+      ends(); box(R * 2.4, L * 0.9, R * 2.1, R * 0.55, 0, 0);          // tall thin body that houses the blade
+      yoke(R * 1.75, R * 2.8);
+      cyl(r * 0.11, r * 0.11, R * 2.6, 'x', R * 2.6, 0, 0, mSt, 8);
+      wheel(R * 2.95, R * 0.8);
+    } else if (kind === 'plug') {
+      ends(); cyl(R * 0.85, R * 0.85, L * 0.75, 'y', 0, 0, 0);
+      cyl(R * 0.4, R * 0.78, R * 1.05, 'x', R * 0.5, 0, 0);            // tapered plug housing
+      box(R * 0.22, r * 0.55, r * 0.55, R * 1.12, 0, 0, mSt);          // square head
+      lever(R * 1.28, R * 2.4);
+    } else if (kind === 'diaphragm') {
+      ends(); box(R * 1.2, L * 0.62, R * 1.4, R * 0.05, 0, 0);         // weir body
+      var bd = new T.Mesh(new T.SphereGeometry(R * 0.78, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xb9a5e8, 0.5)); bd.rotation.z = -Math.PI / 2; bd.position.x = R * 0.65; g.add(bd);
+      cyl(r * 0.11, r * 0.11, R * 1.0, 'x', R * 1.45, 0, 0, mSt, 8);
+      wheel(R * 1.75, R * 0.55);
+    } else {
+      ends(); ball(R * 0.9, 1, 0.8, 1, 0);
+    }
+  }
   function lineWeight(n, s) {                                       // kg per metre of steel pipe
     var od = SIZES[n].od / 1000, id = od - 2 * SIZES[n].wt[s] / 1000;
     return Math.PI / 4 * (od * od - id * id) * STEEL;
@@ -1439,21 +1567,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var kind = VALVE_FF[v.k] ? v.k : 'gate';
       var r = OD[v.n] / 2000, R = r * 1.9, L = VALVE_FF[kind][v.n];
       var g = new T.Group(), bm = mat({ check: 0x6bb0ff, ball: 0x6bd18f, butterfly: 0xb48cff, plug: 0xff9d5c, control: 0x4fd1c5, angle: 0xff8f5c, needle: 0xd6c34a, diaphragm: 0x9a7fd1, knife: 0x7fa8d1, threeway: 0x49b3a0, footv: 0x6bb0ff }[kind] || 0xff6b5e, 0.4);
-      if (kind === 'globe' || kind === 'ball' || kind === 'control' || kind === 'angle' || kind === 'needle') {
-        g.add(new T.Mesh(new T.SphereGeometry(R * 1.05, 20, 14), bm));
-        g.add(new T.Mesh(new T.CylinderGeometry(r * 1.1, r * 1.1, L, 20), bm));
-      } else if (kind === 'check' || kind === 'footv') {
-        g.add(new T.Mesh(new T.CylinderGeometry(R * 0.9, R * 0.9, L, 24), bm));
-        var cap = new T.Mesh(new T.CylinderGeometry(R * 0.6, R * 0.6, R * 0.8, 20), bm); cap.position.x = R * 0.8; cap.rotation.z = Math.PI / 2; g.add(cap);
-      } else if (kind === 'butterfly' || kind === 'knife') {
-        g.add(new T.Mesh(new T.CylinderGeometry(R * 1.1, R * 1.1, L, 28), bm));
-      } else if (kind === 'plug') {
-        g.add(new T.Mesh(new T.CylinderGeometry(R * 0.85, R * 0.85, L, 24), bm));
-        var pc = new T.Mesh(new T.CylinderGeometry(R * 0.35, R * 0.8, R * 1.0, 20), bm); pc.rotation.z = Math.PI / 2; pc.position.x = R * 0.7; g.add(pc);
-      } else {
-        var c1 = new T.Mesh(new T.CylinderGeometry(R, 0, L / 2, 20), bm); c1.position.y = -L / 4; g.add(c1);
-        var c2 = new T.Mesh(new T.CylinderGeometry(0, R, L / 2, 20), bm); c2.position.y = L / 4; g.add(c2);
-      }
+      valveShape(g, kind, r, R, L, bm);
       if (endType(kind, v.n, v.e) === 'flg' && FL[v.n]) {              // the flanges cast on a flanged valve, so a valve between pipe flanges shows four
         var vft = FL[v.n][1], vfr = FL[v.n][0] / 2;
         [1, -1].forEach(function (sg) { var vf = new T.Mesh(new T.CylinderGeometry(vfr, vfr, vft, 28), bm); vf.position.y = sg * (L / 2 - vft / 2); g.add(vf); });
@@ -1466,21 +1580,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var tw = new T.Mesh(new T.CylinderGeometry(r * 1.1, r * 1.1, R * 1.8, 20), bm); tw.quaternion.setFromUnitVectors(UP, lv); tw.position.copy(lv).multiplyScalar(R * 0.9); g.add(tw);
         port = { p: V(v.p).addScaledVector(sideW, R * 1.8), d: sideW, n: v.n, e: -1, v: i };
       }
-      if (kind === 'diaphragm') { var dm = new T.Mesh(new T.SphereGeometry(R * 0.8, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xb9a5e8, 0.5)); dm.rotation.z = -Math.PI / 2; dm.position.x = R * 0.9; g.add(dm); }
       if (kind === 'footv') { var fs = new T.Mesh(new T.CylinderGeometry(R * 1.1, R * 1.1, R * 0.5, 16), mat(0xc9d6dc, 0.6)); fs.position.y = -L / 2 - R * 0.2; g.add(fs); }
-      if (kind === 'control') {
-        var stc = new T.Mesh(new T.CylinderGeometry(r * 0.25, r * 0.25, R * 1.6, 10), mat(0xc9d6dc)); stc.rotation.z = Math.PI / 2; stc.position.x = R * 0.8; g.add(stc);
-        var act = new T.Mesh(new T.SphereGeometry(R * 0.95, 22, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x2f7f78, 0.5)); act.rotation.z = -Math.PI / 2; act.position.x = R * 1.5; g.add(act);
-      } else if (kind === 'butterfly' || kind === 'plug') {
-        var lv = new T.Mesh(new T.BoxGeometry(r * 0.2, r * 0.2, R * 2.4), mat(0xffb21f)); lv.position.x = R * 1.5; g.add(lv);
-      } else if (kind !== 'check' && kind !== 'footv' && kind !== 'diaphragm') {
-        var st = new T.Mesh(new T.CylinderGeometry(r * 0.22, r * 0.22, R * 2.2, 10), mat(0xc9d6dc)); st.rotation.z = Math.PI / 2; st.position.x = R * 1.1; g.add(st);
-        var hw = kind === 'ball' || kind === 'threeway'
-          ? new T.Mesh(new T.BoxGeometry(r * 0.2, r * 0.2, R * 2.2), mat(0xffb21f))
-          : new T.Mesh(new T.TorusGeometry(R * 0.9, r * 0.12, 8, 24), mat(0xffb21f));
-        if (kind !== 'ball' && kind !== 'threeway') hw.rotation.y = Math.PI / 2;
-        hw.position.x = R * 2.2; g.add(hw);
-      }
       g.position.copy(V(v.p));
       var vdn = V(v.d).normalize(), q0 = new T.Quaternion().setFromUnitVectors(UP, vdn);
       g.quaternion.copy(q0);
@@ -2306,7 +2406,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
       egz.visible = true; return;
     }
-    var d = eqDef(e.k) || EQUIP.pump, hh = d.custom ? d.H : e.k === 'vessel' ? 2.4 : 0.7;
+    var d = eqDef(e.k) || EQUIP.pump, hh = d.custom ? d.H : e.k === 'vessel' ? VES_Y1 + VES_HD : 0.7;
     egz.position.set(e.p[0], e.p[1] + hh / 2, e.p[2]);
     ['x', 'y', 'z'].forEach(function (ax) {
       var A = V(EAX[ax]), q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), A);
@@ -3447,9 +3547,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         return { kind: 'pump', cs: bc, pts: bc.concat(xp), c: W3(0, cd.H / 2, 0) };
       }
       if (e.k === 'vessel') {
-        var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(0.6 * Math.cos(i / 28 * 2 * Math.PI), y, 0.6 * Math.sin(i / 28 * 2 * Math.PI))); return a; };
-        var r0 = ring(0), r1 = ring(2.4);
-        return { kind: 'vessel', r0: r0, r1: r1, pts: r0.concat(r1, [W3(0, 2.55, 0)]), c: W3(0, 1.2, 0) };
+        var ring = function (y) { var a = []; for (var i = 0; i < 28; i++) a.push(W3(VES_R * Math.cos(i / 28 * 2 * Math.PI), y, VES_R * Math.sin(i / 28 * 2 * Math.PI))); return a; };
+        var r0 = ring(0), r1 = ring(VES_Y1);
+        return { kind: 'vessel', r0: r0, r1: r1, pts: r0.concat(r1, [W3(0, 2.55, 0), W3(0.6, 1.8, 0), W3(0, 0.4, 0.6), W3(-VES_R - 0.2, 1.25, 0)]), c: W3(0, 1.3, 0) };
       }
       var c = [[-0.55, 0, -0.3], [0.95, 0, -0.3], [0.95, 0, 0.3], [-0.55, 0, 0.3], [-0.55, 0.7, -0.3], [0.95, 0.7, -0.3], [0.95, 0.7, 0.3], [-0.55, 0.7, 0.3]].map(function (q) { return W3(q[0], q[1], q[2]); });
       return { kind: 'pump', cs: c, pts: c, c: W3(0.2, 0.35, 0) };
@@ -3592,9 +3692,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           else { prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, true)); prims.push(domePrim(W3, x, z + w / 2, y, w / 2, w / 2, false)); }
         });
       } else if (e.k === 'vessel') {
-        prims.push(cylPrim(W3, 'y', 0, 1.2, 0, 0.6, 2.4));
-        prims.push(domePrim(W3, 0, 2.4, 0, 0.6, 0.18, true));
-        [[0.45, 0.45], [-0.45, 0.45], [0.45, -0.45], [-0.45, -0.45]].forEach(function (lg) { prims.push(boxPrim(W3, lg[0] - 0.04, lg[0] + 0.04, -0.25, 0.02, lg[1] - 0.04, lg[1] + 0.04, EBD)); });
+        var lr = (VES_R + 0.045) * Math.SQRT1_2;
+        [[lr, lr], [-lr, lr], [lr, -lr], [-lr, -lr]].forEach(function (lg) { prims.push(cylPrim(W3, 'y', lg[0], 0.475, lg[1], 0.044, 0.95, EBD)); });
+        prims.push(cylPrim(W3, 'y', 0, (VES_Y0 + VES_Y1) / 2, 0, VES_R, VES_Y1 - VES_Y0));
+        prims.push(domePrim(W3, 0, VES_Y1, 0, VES_R, VES_HD, true));
+        prims.push(domePrim(W3, 0, VES_Y0, 0, VES_R, VES_HD, false));
+        prims.push(cylPrim(W3, 'x', -VES_R - 0.06, 1.25, 0, 0.24, 0.16)); prims.push(cylPrim(W3, 'x', -VES_R - 0.16, 1.25, 0, 0.3, 0.045, EAC));   // manway and its cover
       } else {                                                      // centrifugal pump: base, volute, coupling guard, motor
         prims.push(boxPrim(W3, -0.55, 0.95, 0, 0.07, -0.3, 0.3, '#cfd7db'));
         prims.push(boxPrim(W3, -0.25, 0.15, 0.07, 0.2, -0.2, 0.2));
