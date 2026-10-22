@@ -129,6 +129,18 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #iso .tools { display: contents; }
 #iso .tools[hidden] { display: none; }
 #iso select { min-height: 44px; width: auto; max-width: 200px; }
+#iso header h2 { font: 600 13px var(--font-data); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+#iso header button { border-color: transparent; }
+#iso header button:hover { border-color: var(--line); }
+#iso .zoomg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; }
+#iso .zoomg button { border: 0; padding: 0 10px; min-width: 44px; }
+#iso .pop-wrap { position: relative; }
+#iso .pop { position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: flex; flex-direction: column; min-width: 190px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+#iso .pop[hidden] { display: none; }
+#iso .pop button { border: 0; text-align: left; justify-content: flex-start; }
+#iso .pop button[aria-pressed] { display: flex; justify-content: space-between; align-items: center; }
+#iso .pop button[aria-pressed="true"] { background: transparent; color: var(--fg); }
+#iso .pop button[aria-pressed="true"]::after { content: '✓'; color: var(--accent); margin-left: 16px; }
 #isoInfo { background: var(--panel2, var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 #isoInfo[hidden] { display: none; }
 #isoInfo h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
@@ -311,13 +323,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <span id="isoTools" class="tools">
           <select id="iso-line" aria-label="Line number"></select>
           <select id="iso-view" aria-label="View direction"><option value="auto">View: auto</option><option value="0">View 1</option><option value="1">View 2</option><option value="2">View 3</option><option value="3">View 4</option></select>
-          <button id="iso-tidy" aria-pressed="true">Auto layout</button>
-          <button id="iso-coords" aria-pressed="false">Coordinates</button>
-          <button id="iso-style" aria-pressed="false">Symbols</button>
-          <button id="iso-info" aria-pressed="false">Title block</button>
         </span>
-        <button id="iso-zo" aria-label="Zoom out">−</button><button id="iso-zf" aria-label="Fit the sheet">Fit</button><button id="iso-zi" aria-label="Zoom in">+</button>
-        <button id="iso-pdf">Save PDF</button><button id="iso-pdfall">PDF, all lines</button><button id="iso-paper" aria-label="Paper size">A3</button><button id="iso-print">Print</button><button id="iso-save">Save .svg</button><button id="iso-close">Close</button></header>
+        <span class="zoomg"><button id="iso-zo" aria-label="Zoom out">−</button><button id="iso-zf" aria-label="Fit the sheet">Fit</button><button id="iso-zi" aria-label="Zoom in">+</button></span>
+        <span id="isoOptWrap" class="pop-wrap"><button id="iso-optb" aria-haspopup="true" aria-expanded="false">Options</button>
+          <div class="pop" id="isoOptPop" hidden>
+            <button id="iso-tidy" aria-pressed="true">Auto layout</button>
+            <button id="iso-coords" aria-pressed="false">Coordinates</button>
+            <button id="iso-style" aria-pressed="false">Symbols</button>
+            <button id="iso-info" aria-pressed="false">Title block</button>
+            <button id="iso-paper" aria-label="Paper size">Paper A3</button>
+          </div></span>
+        <span class="pop-wrap"><button id="iso-saveb" aria-haspopup="true" aria-expanded="false">Save</button>
+          <div class="pop" id="isoSavePop" hidden>
+            <button id="iso-pdf">PDF</button><button id="iso-pdfall">PDF, all lines</button><button id="iso-print">Print</button><button id="iso-save">SVG</button>
+          </div></span>
+        <button id="iso-close" aria-label="Close">✕</button></header>
       <div id="isoInfo" hidden></div>
       <div id="isoSheet"></div>
     </section>
@@ -4417,7 +4437,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
   function showSheet(title, svg, file, isIso) {
-    $('isoTools').hidden = !isIso; $('iso-print').hidden = false; if (!isIso) $('isoInfo').hidden = true;
+    $('isoTools').hidden = !isIso; $('isoOptWrap').hidden = !isIso; closeIsoPops(); $('iso-print').hidden = false; if (!isIso) $('isoInfo').hidden = true;
     isoCur = svg; isoName = file; $('isoTitle').textContent = title;
     $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
     isoZ = 1; applyIsoZoom();
@@ -4438,6 +4458,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     isoZ = Math.min(ISO_ZMAX, Math.max(1, isoZ * f)); if (isoZ < 1.02) isoZ = 1;
     applyIsoZoom(cx != null ? cx : r.width / 2, cy != null ? cy : r.height / 2);
   }
+  function closeIsoPops() { ['isoOptPop', 'isoSavePop'].forEach(function (id) { $(id).hidden = true; }); $('iso-optb').setAttribute('aria-expanded', 'false'); $('iso-saveb').setAttribute('aria-expanded', 'false'); }
+  function popToggle(btn, pop) { var open = $(pop).hidden; closeIsoPops(); if (open) { $(pop).hidden = false; $(btn).setAttribute('aria-expanded', 'true'); } }
+  $('iso-optb').onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); popToggle('iso-optb', 'isoOptPop'); };
+  $('iso-saveb').onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); popToggle('iso-saveb', 'isoSavePop'); };
+  $('isoSavePop').addEventListener('click', closeIsoPops);
+  $('iso').addEventListener('click', function (e) { if (!e.target || !e.target.closest || !e.target.closest('.pop-wrap')) closeIsoPops(); });
   $('iso-zi').onclick = function () { zoomIso(1.5); };
   $('iso-zo').onclick = function () { zoomIso(1 / 1.5); };
   $('iso-zf').onclick = function () { isoZ = 1; applyIsoZoom(); };
@@ -4468,7 +4494,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       saveBlob(fname('iso' + (isoOpts.ln ? '-' + isoOpts.ln : ''), 'pdf'), new Blob([buildPdf(pg, isoOpts.paper === 'a4' ? 'a4' : 'a3')], { type: 'application/pdf' }));
     });
   };
-  $('iso-paper').onclick = function () { isoOpts.paper = isoOpts.paper === 'a4' ? 'a3' : 'a4'; $('iso-paper').textContent = isoOpts.paper === 'a4' ? 'A4' : 'A3'; };
+  $('iso-paper').onclick = function () { isoOpts.paper = isoOpts.paper === 'a4' ? 'a3' : 'a4'; $('iso-paper').textContent = isoOpts.paper === 'a4' ? 'Paper A4' : 'Paper A3'; };
   $('iso-pdfall').onclick = function () {                           // one page per line number, each with its own list, cuts and welds
     var names = {}; model.pipes.forEach(function (p) { names[p.ln] = 1; }); var lns = Object.keys(names).sort();
     if (!lns.length) { toast('Nothing to save'); return; }
