@@ -402,7 +402,7 @@ check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
 check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#e8edef"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
 check('the axes are marked', isoP.includes('>X<') && isoP.includes('>Y (N)<') && isoP.includes('>Z<'));
-check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('symbol the isometric sheet draws') && PD.legend().includes('M-10,-5 L10,5 L10,-5 L-10,5Z'));
+check('the symbol reference sheet says how iso uses the symbols', PD.legend().includes('symbol the isometric sheet draws') && PD.legend().includes('M-10,-9 L10,9 L10,-9 L-10,9Z'));
 {
   const valveKinds = ['gate', 'globe', 'check', 'ball', 'butterfly', 'plug', 'control', 'angle', 'needle', 'diaphragm', 'knife', 'threeway', 'footv'];
   const pics = new Set(valveKinds.map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k }] }); const m = PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s); return m ? m[1] : ''; }));
@@ -417,8 +417,8 @@ check('the symbol reference sheet says how iso uses the symbols', PD.legend().in
   check('gauges, transmitters and controllers are drawn', ins.every(Boolean));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate' }] });
   const symSvg = PD.iso('', 0), picSvg = PD.iso('', 0, undefined, 'pic');
-  check('by default a valve is the usual iso bow-tie with its stem and handwheel bar', symSvg.includes('M-10,-5 L10,5 L10,-5 L-10,5Z'));
-  check('and the pictures can be chosen instead', picSvg.includes('#dde3e6') && !picSvg.includes('M-10,-5 L10,5 L10,-5 L-10,5Z') && symSvg !== picSvg);
+  check('by default a valve is the usual iso bow-tie with its stem and handwheel bar', symSvg.includes('M-10,-9 L10,9 L10,-9 L-10,9Z'));
+  check('and the pictures can be chosen instead', picSvg.includes('#dde3e6') && !picSvg.includes('M-10,-9 L10,9 L10,-9 L-10,9Z') && symSvg !== picSvg);
   const bowties = new Set(valveKinds.map(k => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k }] }); return (PD.iso('', 0).match(/<g class="sy"[^>]*>(.*?)<\/g>/s) || [])[1]; }));
   check('each valve type has a different mark in the symbol style too', bowties.size === valveKinds.length, String(bowties.size));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, k: 'gate', hw: 180 }] });
@@ -1836,7 +1836,8 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   ];
   for (const [label, m] of cases) {
     PD.load(m); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
-    const ss = syms(PD.iso('', 'auto')), v = ss[0], half = 10 * Math.hypot(v[0], v[1]);
+    PD.isoOpts.style = 'pic'; const ss = syms(PD.iso('', 'auto')).filter((x, i) => i !== 2 && i !== 4); PD.isoOpts.style = 'sym';   // Pictures: the valve, then each flange and its second bar
+    const v = ss[0], half = 10 * Math.hypot(v[0], v[1]);
     const fl = [ss[1], ss[2]].map(f => Math.hypot(f[2] - v[2], f[3] - v[3]));
     check('iso, ' + label + ': both valve flanges touch the ends of the valve symbol', ss.length === 3 && fl.every(d => Math.abs(d - half) < 1.2), JSON.stringify({ half, fl, n: ss.length }));
   }
@@ -1846,14 +1847,23 @@ check('a size outside the list is snapped to the nearest listed size and the mod
 // Iso valve symbols after the reference chart: ends by joint type (butt weld dot, socket marks, one flange bar a side)
 {
   const one = (n, e, k) => { PD.load({ pipes: [{ a: [0, 1, 0], b: [1.2, 1, 0], n }, { a: [1.2, 1, 0], b: [1.2, 1, -1.2], n }], valves: [{ p: [0.6, 1, 0], d: [1, 0, 0], n, k: k || 'gate', e }] }); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild(); return PD.iso('', '0'); };
-  const dots = svg => (svg.match(/<circle cx="[-0-9.]+" cy="[-0-9.]+" r="2.6" fill="#/g) || []).length;
+  const dots = svg => (svg.match(/<circle cx="[-0-9.]+" cy="[-0-9.]+" r="(2.6|3.6)" fill="#/g) || []).length;
   const sw = one(1, 'weld'), bw = one(4, 'weld'), fl = one(4, 'flg');
-  check('a socket welded valve shows socket marks and no weld dots at its ends', sw.includes('x1="-15" y1="-2.6"') && dots(sw) === 2, String(dots(sw)));   // the two left are the elbow's
-  check('a butt welded valve shows a weld dot at each end and no socket marks', !bw.includes('x1="-15" y1="-2.6"') && dots(bw) === 4, String(dots(bw)));   // two at the valve, two at the elbow
-  check('a flanged valve shows one flange bar a side', (fl.match(/class="sy"/g) || []).length === 3);
+  check('a socket welded valve shows socket marks and no weld dots at its ends', sw.includes('x1="-10.5" y1="-3.5"') && dots(sw) === 2, String(dots(sw)));   // the two left are the elbow's
+  check('a butt welded valve shows a weld dot at each end and no socket marks', !bw.includes('x1="-10.5" y1="-3.5"') && dots(bw) === 4, String(dots(bw)));   // two at the valve, two at the elbow
+  check('a flanged valve shows one flange bar a side, drawn in its own symbol', (fl.match(/class="sy"/g) || []).length === 1 && (fl.match(/x1="-12.6" y1="-11.5"/g) || []).length === 1 && (fl.match(/x1="12.6" y1="-11.5"/g) || []).length === 1);
+  check('the flange balloons still point at the flanges', (fl.match(/>5</g) || []).length >= 1);
   PD.isoOpts.style = 'pic'; const flp = one(4, 'flg'); PD.isoOpts.style = 'sym';
   check('the Pictures style still shows the valve\'s own flanges too', (flp.match(/class="sy"/g) || []).length === 5);
-  check('globe and ball follow the chart: filled ball, open ball with a cross, no stem', PD.isos.globe.includes('r="4.4" fill="#14191c"') && !PD.isos.globe.includes('y2="-12"') && PD.isos.ball.includes('r="4.4" fill="#ffffff"'));
+  check('globe and ball follow the chart: filled ball, open ball with a cross, no stem', PD.isos.globe.includes('r="5.4" fill="#14191c"') && !PD.isos.globe.includes('y2="-15"') && PD.isos.ball.includes('r="5.5" fill="#ffffff"'));
+  PD.load({ pipes: [] });
+}
+
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }], instr: [{ k: 'PSV', p: [1, 1, 0], d: [1, 0, 0], n: 4, num: 1 }] });
+  const sv = PD.iso('', '0');
+  check('the PSV is drawn as on the reference chart (inlet and outlet triangles with flange bars, spring bonnet)', sv.includes('M13,-21 L13,-9 L0,-15Z') && sv.includes('M-6,-3 L6,-3 L0,-15Z'));
+  PD.isoOpts.style = 'pic'; check('the Pictures style keeps the PSV picture', !PD.iso('', '0').includes('M13,-21 L13,-9 L0,-15Z')); PD.isoOpts.style = 'sym';
   PD.load({ pipes: [] });
 }
 
