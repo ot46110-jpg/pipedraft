@@ -134,7 +134,7 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #more details[open] > summary::after { content: '▾'; }
 #more details > button { margin-bottom: 4px; }
 /* isometric sheet */
-#qbar { z-index: 5; padding: 4px; gap: 4px; transform: translate(-50%, 0); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+#qbar { z-index: 5; padding: 4px; gap: 4px; left: 50%; bottom: 12px; transform: translateX(-50%); max-width: calc(100% - 180px); overflow-x: auto; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 #qbar[hidden] { display: none; }
 #qbar .qang { align-self: center; padding: 0 6px; font: 600 13px var(--font-data); min-width: 44px; text-align: center; color: var(--accent); }
 #qbar button { min-height: 44px; min-width: 44px; padding: 0 12px; border-color: transparent; }
@@ -4390,15 +4390,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       pushHist(); resizePipe(sel.i, nn); changed(); toast('Pipe ' + (sel.i + 1) + ' is ' + sz(nn));
     }
   }
-  function placeQbar() {                                            // runs every frame while the bar is shown: only moves it
-    var q = $('qbar'); if (q.hidden || !qAnchor) return;
-    var v = V(qAnchor).project(camera), W = cv.clientWidth, H = cv.clientHeight;
-    if (v.z > 1) { q.style.visibility = 'hidden'; return; }
-    var w = q.offsetWidth || 260, x = Math.max(w / 2 + 92, Math.min(W - w / 2 - 8, (v.x + 1) / 2 * W)), y = (1 - v.y) / 2 * H - 150;
-    if (y < 8) y += 270; y = Math.min(y, H - 60);
-    var s = Math.round(x) + ',' + Math.round(y); if (s === qLast) return; qLast = s;
-    q.style.left = Math.round(x) + 'px'; q.style.top = Math.round(y) + 'px'; q.style.visibility = 'visible';
-  }
+  function placeQbar() { }                                          // the bar is docked at the bottom centre, so it never covers the part, its arrows or its ring
 
   // Free pipe ends show as dots in the Pipe tool, so a run can be continued from them.
   var endDots = null;

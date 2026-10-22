@@ -110,3 +110,5 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 - Rotate mode (quick bar Rotate, `rotMode`): while on, a drag from anywhere on the screen turns the selected valve or equipment by how far the pointer goes round it, measured on the ring plane (`rel` drag in `rotMove`; refused with a toast when the plane is seen nearly edge on, `rotFacing`), and the bar shows the angle (`q-ang`). Off, only the ring and a little around it grab. Selecting something else, Esc or the Rotate button leave the mode. The ring is a thick torus and the knob is big, so it reads on an iPad.
 
 - The inspector starts as one chip (`#insp-tg`, title and Edit, `inspMin`, `inspSet`) so it does not cover the part being moved; tap it to open, Hide folds it, and the choice is kept for the next selection. While an arrow, end handle or ring is being dragged the inspector and the quick bar fade (`dragUi`, body class `dragging`). The quick bar sits 150 px above the part, clear of the ring.
+
+- The quick bar `#qbar` is docked at the bottom centre (no longer next to the part), so it cannot cover the selection, its arrows or its ring; `placeQbar` does nothing now.
