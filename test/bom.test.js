@@ -1591,5 +1591,24 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// Rotate mode: a dial from anywhere on the screen
+{
+  const btn = id => ctx.document.getElementById(id);
+  const ev = (type, id, x, y) => ({ type, pointerType: 'pen', pointerId: id, clientX: x, clientY: y });
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const ringPt = (R, deg, k3) => { const t = deg * Math.PI / 180, pp = cross(R.n, R.ref); return [0, 1, 2].map(k => R.c[k] + R.ref[k] * Math.cos(t) * R.R * k3 + pp[k] * Math.sin(t) * R.R * k3); };
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate', hw: 20 }] });
+  btn('t-sel').onclick(); PD.selectPart('valve', 0);
+  check('the quick bar of a valve offers Rotate and shows its angle', /q-rot/.test(PD.pen.qbar().html) && /20/.test(PD.pen.qbar().html), PD.pen.qbar().html);
+  PD.pen.quick('q-rot');
+  const R = PD.pen.ring(), a = PD.project(ringPt(R, 10, 3)), b = PD.project(ringPt(R, 60, 3)), id = pid_++;
+  L.cv.pointerdown(ev('pointerdown', id, a.x, a.y)); L.cv.pointermove(ev('pointermove', id, b.x, b.y)); L.cv.pointerup(ev('pointerup', id, b.x, b.y));
+  check('in Rotate mode a drag far from the ring turns it by how far the pointer went round', PD.model.valves[0].hw === 70, PD.model.valves[0].hw);
+  PD.pen.quick('q-x'); PD.selectPart('valve', 0);
+  check('leaving the selection leaves Rotate mode', PD.pen.ring() && !/aria-pressed="true"/.test(PD.pen.qbar().html.split('q-rot')[1].split('</button>')[0]), PD.pen.qbar().html);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

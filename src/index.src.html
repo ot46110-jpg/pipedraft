@@ -132,6 +132,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 /* isometric sheet */
 #qbar { z-index: 5; padding: 4px; gap: 4px; transform: translate(-50%, 0); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 #qbar[hidden] { display: none; }
+#qbar .qang { align-self: center; padding: 0 6px; font: 600 13px var(--font-data); min-width: 44px; text-align: center; color: var(--accent); }
 #qbar button { min-height: 44px; min-width: 44px; padding: 0 12px; border-color: transparent; }
 #rband { position: fixed; border: 1.5px dashed var(--accent); background: rgba(255,178,31,.08); pointer-events: none; z-index: 7; }
 #rband[hidden] { display: none; }
@@ -1617,7 +1618,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     })();
     hydroWarnings(); spWarnings(); partWarnings();
     matDirty = true;
-    renderBom(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();
+    renderBom(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();   // the ring before the bar: the bar shows the angle
     $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
     $('undo').disabled = !hist.length;
   }
@@ -4352,10 +4353,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else {
       a = anchorOf(sel.kind, sel.i);
       h = (sel.kind === 'pipe' ? b('q-dn', '−', 'Smaller size') + b('q-up', '+', 'Larger size') + b('q-valve', 'Valve', 'Add a valve') + b('q-run', 'Run', 'Select the whole run') : '')
+        + (rotInfo ? b('q-rot', 'Rotate', 'Turn it by dragging anywhere', rotMode) + '<span id="q-ang" class="qang">' + Math.round(rotInfo.deg * 10) / 10 + '°</span>' : '')
         + (MK[sel.kind] ? b('q-multi', 'Multi', 'Select several parts', multiMode) : '')
         + b('q-del', sel.kind === 'fit' ? 'Remove' : 'Delete', 'Delete') + b('q-x', '✕', 'Done');
     }
-    var sig = (mc ? 'M' + mc + multiMode : sel.kind + sel.i + multiMode);
+    var sig = (mc ? 'M' + mc + multiMode : sel.kind + sel.i + multiMode + (rotInfo ? 'r' + rotMode : ''));
     if (sig !== qSig) { q.innerHTML = h; qSig = sig; }
     qAnchor = a; q.hidden = !a; qLast = '';
   }
@@ -4363,6 +4365,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function qbarAct(id) {
     if (id === 'q-x') { sel = null; msel = {}; multiMode = false; rebuild(); updateUi(); }
     else if (id === 'q-multi') setMulti(!multiMode);
+    else if (id === 'q-rot') { rotMode = !rotMode; rebuild(); updateUi(); if (rotMode) toast('Drag anywhere to turn it, round the part like a dial'); }
     else if (id === 'q-del') { if (mselCount()) deleteMsel(); else if (sel) removeItem(sel.kind, sel.i); }
     else if (id === 'q-valve') setTool('valve');
     else if (id === 'q-run' && sel && sel.kind === 'pipe') { var rp = runPipes(sel.i); msel = {}; rp.forEach(function (k) { msel['pipe:' + k] = 1; }); sel = null; rebuild(); updateUi(); toast(rp.length + ' pipe' + (rp.length === 1 ? '' : 's') + ' in the run. Drag an arrow to move them.'); }
@@ -4439,7 +4442,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('segUndo').onclick = segUndo;
 
   // ---------- rotation ring: drag the knob to turn a valve's handwheel or a piece of equipment to any angle ----------
-  var rgz = new T.Group(); rgz.visible = false; scene.add(rgz); var rotDrag = null, rotInfo = null, rotRaf = 0, RING_R = 2.4;
+  var rgz = new T.Group(); rgz.visible = false; scene.add(rgz); var rotDrag = null, rotInfo = null, rotRaf = 0, RING_R = 2.4, rotMode = false, rotWarn = 0;
   function rotSpec() {
     if (tool !== 'sel' || !sel || mselCount()) return null;
     if (sel.kind === 'valve') {
@@ -4453,11 +4456,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function updateRing() {
     while (rgz.children.length) { var c = rgz.children[0]; rgz.remove(c); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
     rotInfo = rotSpec();
-    if (!rotInfo) { rgz.visible = false; return; }
-    var pts = []; for (var k = 0; k < 64; k++) { var a = k / 64 * Math.PI * 2; pts.push(new T.Vector3(Math.cos(a) * RING_R, Math.sin(a) * RING_R, 0)); }
-    var ring = new T.LineLoop(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: 0.9 }));
+    if (!rotInfo) { rgz.visible = false; rotMode = false; return; }
+    var ring = new T.Mesh(new T.TorusGeometry(RING_R, 0.1, 8, 64), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: rotMode ? 0.95 : 0.7 }));
     ring.renderOrder = 22; rgz.add(ring);
-    var knob = new T.Mesh(new T.SphereGeometry(0.34, 14, 10), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false })); knob.renderOrder = 23;
+    var knob = new T.Mesh(new T.SphereGeometry(0.55, 16, 12), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false })); knob.renderOrder = 23;
     var th = rotInfo.deg * Math.PI / 180; knob.position.set(Math.cos(th) * RING_R, Math.sin(th) * RING_R, 0); rgz.add(knob);
     var q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), rotInfo.n);       // local x is the zero direction, local z the turning axis
     var x0 = new T.Vector3(1, 0, 0).applyQuaternion(q), phi = Math.atan2(rotInfo.n.dot(x0.clone().cross(rotInfo.ref)), x0.dot(rotInfo.ref));
@@ -4474,10 +4476,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function rotDown(e) {                                             // true when the touch landed on the ring
     if (!rgz.visible || rotDrag || !rotInfo || tool !== 'sel' || !sel) return false;
     var a = rotAngle(e); if (!a) return false;
-    var R = RING_R * rgz.scale.x; if (a.r < R * 0.55 || a.r > R * 1.45) return false;
-    rotDrag = { id: e.pointerId, moved: false, last: null };
+    var R = RING_R * rgz.scale.x;
+    if (!rotMode && (a.r < R * 0.5 || a.r > R * 1.6)) return false;   // outside Rotate mode only the ring and a little around it
+    if (rotMode && !rotFacing()) return true;                        // seen edge on the dial cannot be read: the view has to be turned
+    rotDrag = { id: e.pointerId, moved: false, last: null, rel: rotMode, base: a.deg, deg0: rotInfo.deg };
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
-    rotMove(e); return true;
+    if (!rotMode) rotMove(e);
+    return true;
+  }
+  function rotFacing() {                                            // false when the ring plane is seen nearly edge on
+    var d = new T.Vector3().subVectors(rotInfo.c, camera.position).normalize();
+    if (Math.abs(d.dot(rotInfo.n)) >= 0.2) return true;
+    if (performance.now() - rotWarn > 3000) { rotWarn = performance.now(); toast('Turn the view so the ring faces you, then drag'); }
+    return false;
   }
   function rotApply(deg) {                                          // set the angle on the selected valve or equipment
     if (!sel) return false;
@@ -4490,11 +4501,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function rotMove(e) {
     var g = rotDrag; if (!rotInfo || tool !== 'sel' || !sel) { rotDrag = null; return; }
     var a = rotAngle(e); if (!a) return;
-    var deg = ((Math.round(a.deg / 5) * 5) % 360 + 360) % 360;      // every 5 degrees, 0 is the usual position
+    if (g.rel && !rotFacing()) return;
+    var raw = g.rel ? g.deg0 + (a.deg - g.base) : a.deg;           // Rotate mode turns by how far the pointer went round, from anywhere
+    var deg = ((Math.round(raw / 5) * 5) % 360 + 360) % 360;        // every 5 degrees, 0 is the usual position
     if (deg === g.last) return;
     var first = !g.moved; if (first) pushHist();
     if (!rotApply(deg)) { if (first) hist.pop(); return; }
-    g.moved = true; g.last = deg; setPos('Angle ' + deg + '°');
+    g.moved = true; g.last = deg; setPos('Angle ' + deg + '°'); var ao = $('q-ang'); if (ao) ao.textContent = deg + '°';
     if (!rotRaf) rotRaf = requestAnimationFrame(function () { rotRaf = 0; if (rotDrag) rebuild(); });
   }
   function rotEnd() { var g = rotDrag; rotDrag = null; if (g && g.moved) changed(); }
@@ -4517,6 +4530,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     else if (e.pointerType === 'touch' && penNow()) return;        // palm resting while the Pencil is in use
     if (e.pointerType === 'pen' && !fingerSaved && fingerPlace) { setFinger(false); toast('Pencil found: it places points and fingers move the view. Change that in the pipe settings, Input.'); }
     if (hdlDown(e)) return;                                        // an end handle of the selected pipe
+    if (rotMode && rotDown(e)) return;                             // Rotate mode: a dial anywhere on the screen
     if (egzDown(e)) return;                                        // an arrow of the selected equipment
     if (rotDown(e)) return;                                        // the rotation ring of a valve or equipment
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
@@ -5355,7 +5369,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var map = { b: 'branch', r: 'reduce', n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
     if (k === 'backspace' && tool === 'pipe' && cursor) { e.preventDefault(); segUndo(); return; }
     if ((k === 'backspace' || k === 'delete') && tool === 'sel' && mselCount()) { e.preventDefault(); deleteMsel(); return; }
-    if (k === 'escape' || k === 'enter') { cursor = null; sel = null; msel = {}; multiMode = false; mA = null; rebuild(); updateUi(); }
+    if (k === 'escape' || k === 'enter') { cursor = null; sel = null; msel = {}; multiMode = false; rotMode = false; mA = null; rebuild(); updateUi(); }
     else if (map[k]) setTool(map[k]);
     else if (k === 'x' || k === 'y' || k === 'z' || k === 'a') { axisMode = k === 'a' ? 'auto' : k; updateUi(); }
     else if (k === 'arrowup') vertical(1);
@@ -5379,7 +5393,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

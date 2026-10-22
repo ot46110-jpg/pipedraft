@@ -78,3 +78,4 @@
 - NDE column per weld, NDE extent per line, insulation drawn dashed on the iso with a note.
 - Parts list folds to one chip after a part is picked.
 - Rotation ring: drag to any angle for valve handwheels and equipment, or type degrees.
+- Rotate mode: a dial from anywhere on the screen, angle shown in the quick bar.
