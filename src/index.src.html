@@ -369,6 +369,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <div class="pop" id="isoOptPop" hidden>
             <button id="iso-tidy" aria-pressed="true">Auto layout</button>
             <button id="iso-coords" aria-pressed="false">Coordinates</button>
+            <button id="iso-brk" aria-pressed="true">Shorten long pipes</button>
             <button id="iso-vw" aria-pressed="false">Welds at valve flanges</button>
             <button id="iso-style" aria-pressed="false">Symbols</button>
             <button id="iso-info" aria-pressed="false">Title block</button>
@@ -3341,6 +3342,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // The isometric sheet follows isometric drawing practice, not P&ID practice: pipe is a single line, every symbol is
   // skewed into the plane of its pipe, components carry item balloons that point at the material list on the sheet,
   // dimensions run along the pipe, and elevations are written at the free ends.
+  function lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
   function isoCore(rot0) {
     if (!model.pipes.length) return null;
     var allRows = bomRows(), isNote = function (r) { return /^Pipe (stock|weight)/.test(r[0]); };
@@ -3378,10 +3380,32 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
     var c30 = Math.cos(Math.PI / 6);
     var rot = rot0 === 'auto' ? 0 : rot0 || 0;
-    function pr(p) {                                                // turn about the vertical axis by 90° steps, then project
-      var x = p[0], z = p[2];
+    // Long pipes are shortened on paper: along each axis a gap between pipe ends longer than BRK_L keeps BRK_L plus a fifth of the rest.
+    // The map is monotone per axis, so straight pipes stay straight and lined-up points stay lined up; equipment keeps its own size.
+    var BRK_L = 2.5, BRK_F = 0.2, brkN = 0;
+    function axMap(ai) {
+      var ks = [], prot = [];
+      model.pipes.forEach(function (q) { ks.push(q.a[ai], q.b[ai]); });
+      model.equip.forEach(function (e) { var g = eqGeom(e), lo = Infinity, hi = -Infinity; g.pts.forEach(function (q) { lo = Math.min(lo, q[ai]); hi = Math.max(hi, q[ai]); }); ks.push(lo, hi); prot.push([lo - 1e-6, hi + 1e-6]); });
+      ks = ks.map(function (v) { return Math.round(v * 1000) / 1000; }).sort(function (x, y) { return x - y; }).filter(function (v, i, a) { return !i || v - a[i - 1] > 5e-4; });
+      var fs = [ks[0]];
+      for (var i = 1; i < ks.length; i++) {
+        var g = ks[i] - ks[i - 1], held = prot.some(function (r) { return r[0] <= ks[i - 1] && ks[i] <= r[1]; });
+        if (isoCtx.brk !== false && g > BRK_L && !held) { fs.push(fs[i - 1] + BRK_L + (g - BRK_L) * BRK_F); brkN++; } else fs.push(fs[i - 1] + g);
+      }
+      return function (v) {
+        if (ks.length < 2 || v <= ks[0]) return v - ks[0] + fs[0];
+        var n = ks.length - 1; if (v >= ks[n]) return v - ks[n] + fs[n];
+        var lo = 0, hi = n; while (hi - lo > 1) { var m = (lo + hi) >> 1; if (ks[m] <= v) lo = m; else hi = m; }
+        return fs[lo] + (v - ks[lo]) * (fs[hi] - fs[lo]) / (ks[hi] - ks[lo]);
+      };
+    }
+    var MX = axMap(0), MY = axMap(1), MZ = axMap(2);
+    isoCtx.brkN = brkN;
+    function pr(p) {                                                // shorten long gaps, turn about the vertical axis by 90° steps, then project
+      var x = MX(p[0]), z = MZ(p[2]), yv = MY(p[1]);
       for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; }
-      return [(x - z) * c30, -(p[1] + (x + z) * 0.5)];
+      return [(x - z) * c30, -(yv + (x + z) * 0.5)];
     }
     function crossings() {                                          // pipes that cross on paper make a drawing hard to read
       var sg = model.pipes.map(function (q) { return [pr(q.a), pr(q.b)]; }), n = 0;
@@ -3609,6 +3633,26 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var a = sp(p.a), b = sp(p.b); segs.push([a, b]);
       body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.1 + Math.sqrt(p.n) * 0.45).toFixed(2) + '" stroke-linecap="round"/>';
     });
+    // Break marks on pipes the shortening made noticeably shorter than true scale, in the widest stretch clear of parts.
+    var brkMarks = 0;
+    if (brkN) {
+      var onP = model.pipes.map(function () { return []; });
+      [model.valves, model.items, model.supports, model.flanges, model.instr].forEach(function (arr) { arr.forEach(function (q) { if (q.p && q.eq == null) { var hi = hostOf(q.p); if (hi >= 0) onP[hi].push(V(model.pipes[hi].a).distanceTo(V(q.p))); } }); });
+      model.pipes.forEach(function (p, pi) {
+        var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), lpx = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L3 < 1e-6 || lpx < 44 || lpx > 0.75 * L3 * sc) return;
+        var ts = [0].concat(onP[pi].sort(function (x, y) { return x - y; }), [L3]), bt = L3 / 2, bg = -1;
+        for (var q = 0; q + 1 < ts.length; q++) if (ts[q + 1] - ts[q] > bg) { bg = ts[q + 1] - ts[q]; bt = (ts[q] + ts[q + 1]) / 2; }
+        var c = sp(lerp3(p.a, p.b, bt / L3)), ux = (b[0] - a[0]) / lpx, uy = (b[1] - a[1]) / lpx, nx = -uy, ny = ux, w = 2.2 + Math.sqrt(p.n) * 0.45;
+        body += '<line x1="' + f1(c[0] - ux * 4) + '" y1="' + f1(c[1] - uy * 4) + '" x2="' + f1(c[0] + ux * 4) + '" y2="' + f1(c[1] + uy * 4) + '" stroke="' + PAPER + '" stroke-width="' + (w + 2).toFixed(2) + '"/>';
+        [-4, 4].forEach(function (o2) {
+          var mx = c[0] + ux * o2, my = c[1] + uy * o2;
+          body += '<line class="brk" x1="' + f1(mx - nx * 7 - ux * 2.5) + '" y1="' + f1(my - ny * 7 - uy * 2.5) + '" x2="' + f1(mx + nx * 7 + ux * 2.5) + '" y2="' + f1(my + ny * 7 + uy * 2.5) + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round"/>';
+        });
+        occ.push([c[0] - 10, c[1] - 10, c[0] + 10, c[1] + 10]); brkMarks++;
+      });
+    }
+    isoCtx.brkMarks = brkMarks;
     // Butt welds at fittings.
     var fabI = fabrication();
     fabI.welds.forEach(function (w) {                               // a dot on the weld, its number in a circle beside it, a second ring for a field weld
@@ -3676,14 +3720,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.valves.forEach(function (v) { locate(v.p); }); model.items.forEach(function (it) { locate(it.p); }); model.supports.forEach(function (q0) { locate(q0.p); });
     model.instr.forEach(function (it) { if (it.eq == null) locate(it.p); });
     model.pipes.forEach(function (p, pi) {
-      var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), lpx = Math.hypot(b[0] - a[0], b[1] - a[1]), k = lpx / Math.max(L3, 1e-9), kept = [], last = 0;
-      onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { if ((t - last) * k >= 18 && (L3 - t) * k >= 18) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
+      var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
+      function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
+      onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { var c0 = scr(t); if (Math.hypot(c0[0] - scr(last)[0], c0[1] - scr(last)[1]) >= 18 && Math.hypot(c0[0] - b[0], c0[1] - b[1]) >= 18) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
       var total = String(Math.round(L3 * 1000));
       if (!kept.length) { body += dimLine(a, b, total); return; }
       var pick = dimPick(a, b, total); if (!pick) return;               // the chain shares one side and distance, so it reads as one line of dimensions
       var ts = [0].concat(kept, [L3]);
       for (var q = 0; q + 1 < ts.length; q++) {
-        var s0 = [a[0] + (b[0] - a[0]) * ts[q] / L3, a[1] + (b[1] - a[1]) * ts[q] / L3], s1 = [a[0] + (b[0] - a[0]) * ts[q + 1] / L3, a[1] + (b[1] - a[1]) * ts[q + 1] / L3];
+        var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
         body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
       }
       body += dimLine(a, b, total, pick.off + (pick.off < 0 ? -22 : 22));   // the overall length on the next tier out
@@ -3891,7 +3936,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.16], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.10], ['CHECKED', T0.checked || '', 0.10],
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', isoSheetTxt || '1 OF 1', 0.07], ['SCALE', 'NTS', 0.05]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
+    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
     [[cells1, pb + 17, 41], [cells2, pb + 58, 40]].forEach(function (rw) {
       var x = 12;
       o += '<line x1="12" y1="' + (rw[1]) + '" x2="' + (W - 12) + '" y2="' + (rw[1]) + '" stroke="' + INK + '" stroke-width="0.8"/>';
@@ -3927,7 +3972,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (!model.pipes.length) return null;
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
-    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.valveWelds = isoOpts.valveWelds === true;
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.valveWelds = isoOpts.valveWelds === true;
     if (!ln) return isoCore(rot);
     var sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode; model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }
@@ -5022,7 +5067,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
-    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
+    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
     $('isoInfo').innerHTML = isoInfoHtml();
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
@@ -5076,6 +5121,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-style').onclick = function () { isoOpts.style = isoOpts.style === 'pic' ? 'sym' : 'pic'; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
+  $('iso-brk').onclick = function () { isoOpts.brk = isoOpts.brk === false; refreshIso(); };
   $('iso-vw').onclick = function () { isoOpts.valveWelds = isoOpts.valveWelds !== true; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {

@@ -1766,5 +1766,26 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Iso sheet: long pipes are shortened on paper with a break mark, dimensions stay true
+{
+  PD.load({ pipes: [
+    { a: [0, 1, 0], b: [20, 1, 0], n: 4 }, { a: [20, 1, 0], b: [20, 1, 1.2], n: 4 }, { a: [20, 1, 1.2], b: [20, 3, 1.2], n: 4 },
+    { a: [20, 3, 1.2], b: [21.5, 3, 1.2], n: 4 } ],
+    valves: [{ p: [20.6, 3, 1.2], d: [1, 0, 0], n: 4, k: 'gate' }], supports: [{ p: [4, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }] });
+  const marks = svg => (svg.match(/class="brk"/g) || []).length / 2;
+  const on = PD.iso('', 'auto');
+  check('a 20 m pipe next to a short spool gets one break mark', marks(on) === 1, String(marks(on)));
+  check('the sheet says long pipes are shortened', on.includes('long pipes shortened at break marks'));
+  check('the true lengths are still dimensioned', on.includes('>20000<') && on.includes('>4000<') && on.includes('>16000<'));
+  PD.isoOpts.brk = false; const off = PD.iso('', 'auto'); PD.isoOpts.brk = true;
+  check('Options, Shorten long pipes off: no break marks and no note', marks(off) === 0 && !off.includes('long pipes shortened'));
+  const span = svg => { const xs = [...svg.matchAll(/<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" stroke="#[0-9a-fA-F]+" stroke-width="2\.00" stroke-linecap="round"\/>/g)].map(m => Math.hypot(m[3] - m[1], m[4] - m[2])); return xs; };
+  const lo = span(on), lf = span(off), ratio = (l) => l[1] / l[0];
+  check('shortened, the 1.2 m pipe is drawn larger next to the long one than at true scale', lo.length === 4 && lf.length === 4 && ratio(lo) > ratio(lf) * 2, JSON.stringify([lo, lf]));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }, { a: [2, 0, 0], b: [2, 0, 1.5], n: 4 }] });
+  check('a compact layout is not shortened', marks(PD.iso('', 'auto')) === 0);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
