@@ -102,3 +102,5 @@ Offline 3D piping layout tool for the owner's iPad (Safari, installed to the Hom
 
 - NDE and insulation: `model.ndeW` (weld key to RT, PT, MT, VT or UT, only these survive `normalize()`) is set per weld in the cut list sheet (`data-nde` select), printed in the iso weld list (NDE column) and the cut list CSV. `model.lines[ln].nde` is the extent text (e.g. RT 10
 - NDE and insulation: `model.ndeW` (weld key to RT, PT, MT, VT or UT, only these survive `normalize()`) is set per weld in the cut list sheet (`data-nde` select), printed in the iso weld list (NDE column) and the cut list CSV. `model.lines[ln].nde` is the extent text (e.g. RT 10 percent) and `.insul` draws a dashed line each side of every pipe of that line on the iso (`insulated()` ignores none, no, n/a, - and 0); both are noted under the material list.
+
+- Parts list folds: choosing a part sets `partsMin`, so `#parts` shrinks to one chip (`#pcur`, the part name and Change) and the list no longer covers the drawing; the chip, or Parts in the rail, opens it again, and Hide the list folds it without choosing. `buildParts` writes only `#plist`.
