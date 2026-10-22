@@ -75,3 +75,4 @@
 - Pipe tool: midpoint and alignment snaps with coloured marker, dots on free ends, ⌫ takes back the last pipe, bigger Finish run.
 - Not verified on a real iPad: Pencil drag handles and box select, handle hit sizes (26 px Pencil, 34 finger), quick bar position near screen edges.
 - Slide a pipe sideways with arrows, move hand-picked pipes with arrows, Run button. Not verified on a real iPad.
+- NDE column per weld, NDE extent per line, insulation drawn dashed on the iso with a note.

@@ -731,7 +731,7 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","",""'), csvRow);
 }
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
-check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 16);
+check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 18);
 check('from and to reach the csv and the foot note of that line sheet', (PD.model.lines['L-001'].from = 'Tank T-101', PD.model.lines['L-001'].to = 'Pump <P-101>', PD.lineCsv()).includes('"Tank T-101","Pump <P-101>"') && (s => s.includes('FROM Tank T-101  TO Pump &lt;P-101&gt;') && !s.includes('<P-101>'))(PD.iso('L-001', 'auto', true)) && !PD.iso('L-002', 'auto', true).includes('FROM '));
 check('a short iso sheet has at least the A3 landscape shape (1200 x 849)', (m => m && +m[1] === 1200 && +m[2] >= 849)(/viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(PD.iso('L-001', 'auto', true))));
 const bomBefore = JSON.stringify(PD.rows()), bomPipes0 = PD.model.pipes.length, bl = PD.bomByLine();
@@ -1530,6 +1530,26 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   U(); btn('t-sel').onclick(); PD.selectPart('pipe', 1); PD.pen.quick('q-run');
   check('Run selects the whole run', Object.keys(PD.pen.msel()).length === 3, Object.keys(PD.pen.msel()).join());
   PD.pen.quick('q-x');
+  PD.load({ pipes: [] });
+}
+
+
+// NDE on welds and insulation on the iso
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [2, 0, 0], b: [2, 0, 2], n: 4, ln: 'A' }], lines: { A: { insul: '50 mm mineral wool', nde: 'RT 10%' } } });
+  const w0 = PD.fab().welds[0];
+  check('a weld has an empty NDE method by default', w0 && w0.nde === '', JSON.stringify(w0));
+  PD.model.ndeW[w0.key] = 'RT'; PD.rebuild();
+  check('the NDE method follows the weld', PD.fab().welds[0].nde === 'RT');
+  check('the cut list CSV has an NDE column', PD.fabCsv().split('\n').some(l => /Made,NDE$/.test(l)) && /,(Shop|Field),"RT"/.test(PD.fabCsv()), PD.fabCsv().slice(-200));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], ndeW: { '1,2,3': 'XX', '4,5,6': 'PT', __proto__: 'RT' } });
+  check('a loaded project keeps only known NDE methods', JSON.stringify(PD.model.ndeW) === '{"4,5,6":"PT"}', JSON.stringify(PD.model.ndeW));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [2, 0, 0], b: [2, 0, 2], n: 4, ln: 'A' }, { a: [5, 0, 0], b: [7, 0, 0], n: 4, ln: 'B' }], lines: { A: { insul: '50 mm mineral wool', nde: 'RT 10%' }, B: { insul: 'none' } } });
+  const svg = PD.iso();
+  check('an insulated line is drawn dashed and noted, an uninsulated one is not', svg.includes('stroke-dasharray="7 3"') && svg.includes('Insulation A (dashed): 50 mm mineral wool') && !svg.includes('Insulation B'), 'dash ' + svg.includes('stroke-dasharray="7 3"'));
+  check('the NDE extent of a line is noted on the sheet', svg.includes('NDE A: RT 10%'));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }], lines: { A: { insul: 'none' } } });
+  check('no insulation means no dashes', !PD.iso().includes('stroke-dasharray="7 3"'));
   PD.load({ pipes: [] });
 }
 
