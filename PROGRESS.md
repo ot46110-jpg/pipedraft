@@ -106,3 +106,9 @@
 ## ISO 6412-2 check of the iso sheet
 - Done: offset triangles with bracketed true length, crossing gaps, slope triangle, reducer size label, false break mark on off-axis pipes removed, `depth3` paint order fixed (equipment pictures were painted near to far).
 - Done next: EL shoulder, "CONT. ON <drawing>" with per-line drawing numbers, field fit weld (FFW) with a cut allowance.
+
+## รอบตรวจ 23 ต.ค. (หาจุดปรับปรุง)
+- แก้: เกจบนท่อตั้งเคยวาดทับวาล์วบน iso (ก้านชี้ขึ้นตามท่อ) ตอนนี้ยื่นออกด้านข้างเหมือนใน 3D
+- แก้: ไฟล์ที่ท่อแยกปลายไปแตะกลางท่ออื่นโดยไม่ได้ตัดท่อ เคยไม่มี olet/tee และ weld ใน BOM เลย ตอนนี้ตัดให้ตอนเปิดไฟล์ และ Check เตือนถ้าเกิดจากการแก้ภายหลัง
+- แก้: แผ่น iso รายไลน์ที่มีไลน์อื่นแยกออก เคยหาย olet/tee และขึ้น weld ปลอมกลางท่อ ตอนนี้มีท่อสั้นเส้นประของไลน์อื่น + CONT. ON, fitting นับในไลน์เดียว (BOM by line ไม่ซ้ำ)
+- ค้าง: แผ่น iso สูงเกิน A3 เมื่อรายการยาว (material + cut + weld list) พิมพ์แล้วตัวเล็ก ควรแยก cut/weld list ไปแผ่น 2 หรือแบ่งคอลัมน์

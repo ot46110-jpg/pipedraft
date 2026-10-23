@@ -2059,5 +2059,33 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// A file with a branch ending part way along a header: split on load so the olet and its welds appear; overlaps are left for Check; later loose ends are reported
+{
+  PD.load({ pipes: [{ a: [0, 3, 0], b: [6, 3, 0], n: 4, sl: 100 }, { a: [3, 3, 0], b: [3, 3, -1.5], n: 2 }] });
+  check('a branch ending mid-header is split on load', PD.model.pipes.length === 3 && PD.rows().some(r => /^Weldolet/.test(r[0])));
+  check('both halves keep the header data (slope too)', PD.model.pipes.filter(p => p.n === 4).every(p => p.sl === 100));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4 }, { a: [1, 0, 0], b: [2, 0, 0], n: 4 }] });
+  check('pipes along each other are not split on load', PD.model.pipes.length === 2);
+  PD.load({ pipes: [{ a: [0, 3, 0], b: [6, 3, 0], n: 4 }] }); PD.model.pipes.push({ a: [2, 3, 0], b: [2, 3, 1], n: 2, s: 40, ln: 'L-001' }); PD.rebuild();
+  check('a pipe end left mid-pipe by an edit is reported', PD.warns().some(w => /Pipe 2 ends part way along pipe 1 with no joint/.test(w)), JSON.stringify(PD.warns()));
+  PD.load({ pipes: [{ a: [0, 0.5, 0], b: [0, 3, 0], n: 4 }, { a: [0, 3, 0], b: [3, 3, 0], n: 4 }], instr: [{ k: 'PI', p: [0, 1.3, 0], d: [0, 1, 0], n: 4, num: 101 }, { k: 'PI', p: [1.5, 3, 0], d: [1, 0, 0], n: 4, num: 102 }] });
+  check('an instrument on vertical pipe stands off sideways, on horizontal pipe up', PD.instrDir(0)[1] === 0 && PD.instrDir(1)[1] === 1);
+  PD.load({ pipes: [] });
+}
+
+// One-line sheets where lines meet: a dashed stub of the other line keeps the tee or olet; the fitting is counted on one line only
+{
+  PD.load({ pipes: [{ a: [0, 3, 0], b: [6, 3, 0], n: 4, ln: 'L-A' }, { a: [3, 3, 0], b: [3, 3, -1.5], n: 2, ln: 'L-B' }, { a: [6, 3, 0], b: [6, 3, 2], n: 4, ln: 'L-C' }] });
+  const a = PD.iso('L-A', '0'), b = PD.iso('L-B', '0'), c = PD.iso('L-C', '0');
+  check('the header sheet lists the weldolet and its weld, no butt weld across the olet', /Weldolet/.test(a) && PD.fab().welds.length > 0 && (a.match(/class="ghost"/g) || []).length === 2);
+  check('the header sheet notes both lines that carry on', a.includes('CONT. ON ISO-L-B (L-B)') && a.includes('CONT. ON ISO-L-C (L-C)'));
+  check('the branch sheet draws the olet but does not list it', !/Weldolet/.test(b) && b.includes('CONT. ON ISO-L-A (L-A)'));
+  check('the elbow where L-A turns into L-C is listed once (on L-A, first by name)', /Elbow/.test(a) && !/Elbow/.test(c));
+  const csv = PD.bomByLine();
+  check('per-line BOM: one weldolet and one elbow in total, no stub pipe counted', (csv.match(/Weldolet/g) || []).length === 1 && (csv.match(/Elbow/g) || []).length === 1, csv);
+  check('the stub is not dimensioned and its size stays out of the size box', !a.includes('>500<') && !/>2, 4</.test(a));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

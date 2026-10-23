@@ -1066,6 +1066,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       emap[i] = o.equip.length; o.equip.push(q);
     });
     o.instr = o.instr.filter(function (q) { if (q.eq == null) return true; if (!(emap[q.eq] >= 0)) return false; q.eq = emap[q.eq]; return true; });
+    (function () {                                                   // a pipe end lying part way along another pipe is a branch: split that pipe there, as drawing does, so the tee or olet and its welds appear
+      var ends = [], n0 = o.pipes.length; if (n0 > 3000) return;
+      o.pipes.forEach(function (p) { var d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], L = Math.hypot(d[0], d[1], d[2]) || 1; d = [d[0] / L, d[1] / L, d[2] / L]; ends.push([p.a, d], [p.b, d]); });
+      ends.forEach(function (e) { splitAt(e[0], o.pipes, e[1]); });
+      if (o.pipes.length > n0) { try { toast((o.pipes.length - n0) + ' pipe' + (o.pipes.length - n0 > 1 ? 's were' : ' was') + ' split where another pipe branches off it'); } catch (e) {} }
+    })();
     if (dropped) { try { toast(dropped + ' equipment record' + (dropped > 1 ? 's' : '') + ' could not be used and ' + (dropped > 1 ? 'were' : 'was') + ' left out'); } catch (e) {} }
     return o;
   }
@@ -1380,7 +1386,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var CAT = { equip: 0, pipe: 1, stock: 2, elbow: 3, reducer: 4, tee: 5, olet: 6, cross: 7, cap: 8, flange: 9, valve: 10, item: 11, instr: 12, support: 13, weight: 14 };
   var lines = {}, warns = [], nozList = [], jointInfo = {}, pipeLen = {}, pipeTrim = {};
   var compDesc = { pipe: {}, joint: {}, valve: {}, item: {}, flange: {}, support: {}, instr: {}, equip: {} }, curRef = null;
+  var jSkip = null;                                                 // on a one-line sheet: the joint whose fitting another line owns
   function add(cat, desc, qty, unit, note) {
+    if (jSkip != null && curRef && curRef[0] === 'joint' && curRef[1] === jSkip) return;
     desc = desc.split('150#').join(std().cls);                      // the rating word follows the chosen standard
     var l = lines[cat + desc] || (lines[cat + desc] = { cat: CAT[cat], desc: desc, qty: 0, unit: unit, note: note || '' });
     l.qty += qty;
@@ -1542,8 +1550,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         ar.quaternion.setFromUnitVectors(UP, dir.clone().multiplyScalar(p.fl > 0 ? 1 : -1));
         ar.userData = { kind: 'pipe', i: i }; world.add(ar);
       }
-      add('pipe', 'Pipe, ' + sz(p.n) + ' SCH ' + s + ', ' + pipeEnd(p.n), len, 'm');
-      total += len; weight += len * lineWeight(p.n, s);
+      if (!p.ghost) { add('pipe', 'Pipe, ' + sz(p.n) + ' SCH ' + s + ', ' + pipeEnd(p.n), len, 'm'); total += len; weight += len * lineWeight(p.n, s); }   // a ghost: a stub of another line on a one-line sheet, drawn but not counted
       if (showDims) {
         var sp = label(String(Math.round(Lp * 1000)));
         sp.position.copy(a).addScaledVector(dir, Lp / 2); sp.position.y += r + 0.14; world.add(sp);
@@ -1588,6 +1595,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
 
     // 6. Fittings.
+    jSkip = null;
     Object.keys(joints).forEach(function (k) {
       var j = joints[k];
       if (j.bad) {                                                  // no fitting can be made here: a red ball shows where
@@ -1595,7 +1603,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         bm0.position.copy(V(j.pos)); world.add(bm0); return;
       }
       if (!j.type) return;
-      curRef = ['joint', k];
+      curRef = ['joint', k]; jSkip = model.onlyLine != null && jointOwner(j) !== model.onlyLine ? k : null;
       var P = V(j.pos), L = j.legs, n = j.nmax, r = OD[n] / 2000, mesh, fm = 0xf2f6f8;
       if (j.type === 'elbow') {
         var EL = j.elL || L, d1 = EL[0].d, d2 = EL[1].d;
@@ -1786,10 +1794,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Instruments: a short stem and a ball at the tapping point. Controllers link to a control valve with a line.
     model.instr.forEach(function (it, i) {
       curRef = ['instr', i];
-      var def = INSTR[it.k], base = V(it.p), dir = new T.Vector3(0, 1, 0);
-      if (it.eq != null && model.equip[it.eq]) { dir = base.clone().sub(V(model.equip[it.eq].p)); dir.y = 0; if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0); dir.normalize(); }
-      else if (it.d && Math.abs(it.d[1]) > 0.9) dir.set(1, 0, 0);
-      else if (hostOf(it.p) < 0) warns.push(instrTag(it) + ' is not on a pipe. Delete it or place it again.');
+      var def = INSTR[it.k], base = V(it.p), dir = V(instrDir(it));
+      if (it.eq == null && !(it.d && Math.abs(it.d[1]) > 0.9) && hostOf(it.p) < 0) warns.push(instrTag(it) + ' is not on a pipe. Delete it or place it again.');
       var g = new T.Group(), col = def.psv ? 0xff6b5e : def.dcs ? 0x4fd1c5 : 0xffd166;
       var stem = new T.Mesh(new T.CylinderGeometry(0.012, 0.012, 0.3, 8), mat(0xc9d6dc)); stem.position.copy(dir).multiplyScalar(0.15); stem.quaternion.setFromUnitVectors(UP, dir); g.add(stem);
       var ball = new T.Mesh(new T.SphereGeometry(0.075, 18, 12), mat(col, 0.4)); ball.position.copy(dir).multiplyScalar(0.34); g.add(ball);
@@ -1864,6 +1870,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('undo').disabled = !hist.length;
   }
 
+  function jointOwner(j) {                                          // the line a fitting belongs to where lines meet: the largest size; among those the line that runs through (a tee's header), then the first by name
+    var L = j.legs || [], nm = 0, by = {}; L.forEach(function (l) { if (l.n > nm) nm = l.n; });
+    L.forEach(function (l) { var p = model.pipes[l.i]; if (p && l.n === nm) by[p.ln] = (by[p.ln] || 0) + 1; });
+    var ks = Object.keys(by).sort(); if (!ks.length) return null;
+    var run = ks.filter(function (k) { return by[k] >= 2; }); return (run.length ? run : ks)[0];
+  }
+  function instrDir(it) {                                          // which way an instrument stands off: up from horizontal pipe, toward X from vertical pipe, outward from equipment (3D and iso alike)
+    if (it.eq != null && model.equip[it.eq]) { var v = V(it.p).sub(V(model.equip[it.eq].p)); v.y = 0; if (v.lengthSq() < 1e-6) return [1, 0, 0]; v.normalize(); return [v.x, 0, v.z]; }
+    return it.d && Math.abs(it.d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+  }
   // ---------- fabrication: cut list, weld numbers, spools ----------
   // Cut lengths are what is left of each pipe between the fittings, valves, items and flanges on it, so the total
   // equals the pipe quantity in the BOM. Welds are numbered in the order they are found. A weld is shop unless
@@ -1908,7 +1924,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     var oletEnds = {};
     model.pipes.forEach(function (p, i) {
-      var a = V(p.a), b = V(p.b), Lp = a.distanceTo(b); if (Lp < 0.001) return;
+      var a = V(p.a), b = V(p.b), Lp = a.distanceTo(b); if (Lp < 0.001 || p.ghost) return;
       var dir = b.clone().sub(a).normalize(), tr = pipeTrim[i] || [0, 0], ln = p.ln || 'L-001', ps = [];
       function at(t) { return mm3(a.clone().addScaledVector(dir, t)); }
       var list = (els[i] || []).map(function (e) { e.t = V(e.p).distanceTo(a); return e; }).sort(function (x, y) { return x.t - y.t; });
@@ -1945,6 +1961,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
         if (J.legs.length === 2) {
           var pk = 'P@' + k, w3 = byPair[pk];
+          if (!w3 && model.onlyLine != null && jointOwner(J) !== model.onlyLine) return;   // a butt weld where two lines meet is listed on one of them
           if (!w3) { w3 = byPair[pk] = mkWeld(weldKindFor(p.n), p.n, J.pos, ln, pk); w3.pcs = []; }
           w3.pcs.push(pc.id); if (w3.pcs.length === 2) link(w3, w3.pcs[0], w3.pcs[1]);
         }
@@ -1958,7 +1975,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     // An olet is welded to the header and the branch pipe is welded to the olet.
     Object.keys(jointInfo).forEach(function (k) {
-      var J = jointInfo[k]; if (J.type !== 'olet') return;
+      var J = jointInfo[k]; if (J.type !== 'olet' || (model.onlyLine != null && jointOwner(J) !== model.onlyLine)) return;
       var h = hostOf(J.pos), kind = /^(sockolet|halfcoupling)$/.test(J.oletKind) ? 'SW' : J.oletKind === 'threadolet' ? 'THD' : 'BW';
       var hp = null, tj = h >= 0 ? V(J.pos).distanceTo(V(model.pipes[h].a)) : 0;
       pieces.forEach(function (pc) { if (pc.i === h && tj >= pc.t0 - 0.001 && tj <= pc.t1 + 0.001) hp = pc; });
@@ -2184,6 +2201,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var ov = Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1));
       if (ov > 0.01) { found++; warns.push('Pipes ' + (i + 1) + ' and ' + (j + 1) + ' lie on top of each other for ' + Math.round(ov * 1000) + ' mm, so that length is counted twice. Delete one of them.'); }
     }
+    var loose = 0;                                                  // a pipe end part way along another pipe with no joint: the branch fitting and its welds are missing
+    for (var j2 = 0; j2 < P.length && loose < 4; j2++) [P[j2].a, P[j2].b].forEach(function (e) {
+      if (loose >= 4) return;
+      for (var i2 = 0; i2 < P.length; i2++) {
+        if (i2 === j2) continue;
+        var a = P[i2].a, b = P[i2].b, u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2]; if (L2 < 1e-9) continue;
+        var t = ((e[0] - a[0]) * u[0] + (e[1] - a[1]) * u[1] + (e[2] - a[2]) * u[2]) / L2; if (t <= 0.0005 || t >= 0.9995) continue;
+        if (Math.hypot(a[0] + u[0] * t - e[0], a[1] + u[1] * t - e[1], a[2] + u[2] * t - e[2]) > 0.002) continue;
+        var w = [P[j2].b[0] - P[j2].a[0], P[j2].b[1] - P[j2].a[1], P[j2].b[2] - P[j2].a[2]], wl = Math.hypot(w[0], w[1], w[2]) || 1;
+        if (Math.abs(w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) / (wl * Math.sqrt(L2)) > 0.999) continue;   // along it: the overlap check above covers that
+        loose++; warns.push('Pipe ' + (j2 + 1) + ' ends part way along pipe ' + (i2 + 1) + ' with no joint, so the tee or olet and its welds are missing. Start a pipe on that point with the Pipe tool to make the joint.'); return;
+      }
+    });
     Object.keys(lines).forEach(function (k) { if (lines[k].qty < -0.0005) warns.push('The list has a negative quantity for "' + lines[k].desc + '": a part is longer than its pipe.'); });
   }
   function spWarnings() {                                           // pipes and valves that break the class of their line
@@ -2353,16 +2383,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     pushHist(); go(i, dir); changed();
   }
-  function splitAt(pt) {                                            // make a joint where a pipe end lands on another pipe
-    var P = V(pt), did = false;
-    for (var i = 0; i < model.pipes.length; i++) {
-      var p = model.pipes[i], a = V(p.a), b = V(p.b), ab = b.clone().sub(a), L2 = ab.lengthSq();
+  function splitAt(pt, list, along) {   // along: the direction of the pipe that ends here; a host parallel to it overlaps rather than branches and is left for Check                                      // make a joint where a pipe end lands on another pipe
+    var P = pt, did = false; list = list || model.pipes;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i], a = p.a, b = p.b, ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
       if (L2 < 1e-9) continue;
-      var t = P.clone().sub(a).dot(ab) / L2;
+      var t = ((P[0] - a[0]) * ab[0] + (P[1] - a[1]) * ab[1] + (P[2] - a[2]) * ab[2]) / L2;
       if (t <= 0.0005 || t >= 0.9995) continue;
-      if (a.clone().addScaledVector(ab, t).distanceTo(P) > 0.002) continue;
-      var m = mm3(P), q = { a: m, b: p.b, n: p.n, s: p.s, ln: p.ln, fl: p.fl || 0 };
-      p.b = m; model.pipes.splice(i + 1, 0, q); did = true; i++;
+      var f = [a[0] + ab[0] * t - P[0], a[1] + ab[1] * t - P[1], a[2] + ab[2] * t - P[2]];
+      if (Math.hypot(f[0], f[1], f[2]) > 0.002) continue;
+      if (along && Math.abs(along[0] * ab[0] + along[1] * ab[1] + along[2] * ab[2]) / Math.sqrt(L2) > 0.999) continue;
+      var m = [Math.round(P[0] * 1000) / 1000, Math.round(P[1] * 1000) / 1000, Math.round(P[2] * 1000) / 1000], q = Object.assign({}, p, { a: m, b: p.b, fl: p.fl || 0 });   // the far half keeps everything the pipe had: size, line, flow, slope
+      p.b = m; list.splice(i + 1, 0, q); did = true; i++;
     }
     return did;
   }
@@ -3985,6 +4017,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Pipe: one line per run, heavier for larger sizes.
     model.pipes.forEach(function (p) {
       var a = sp(p.a), b = sp(p.b); segs.push([a, b]);
+      if (p.ghost) { body += '<line class="ghost" x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="1.1" stroke-dasharray="6 4"/>'; return; }   // another line: dashed, not dimensioned
       body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.7 + Math.sqrt(p.n) * 0.5).toFixed(2) + '" stroke-linecap="round"/>';   // keep in step with pw() below
     });
     // Crossings (ISO 6412-2, 8.2.4): where one pipe passes behind another on paper, the line behind is broken, the gap at least five line widths.
@@ -4009,7 +4042,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var offsetPipes = {};
     model.pipes.forEach(function (p, pi) {
       var d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], nz = d.map(function (v) { return Math.abs(v) > 1e-4; });
-      if (nz.filter(Boolean).length < 2) return;
+      if (p.ghost || nz.filter(Boolean).length < 2) return;
       offsetPipes[pi] = 1;
       var tri = [];                                                  // each triangle: start, corner, end, which leg axis comes first
       if (!nz[1]) tri.push([p.a, [p.b[0], p.a[1], p.a[2]], p.b, 'h']);                   // in a horizontal plane: X leg then Y (scene z) leg
@@ -4040,7 +4073,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       model.pipes.forEach(function (p, pi) {
         var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), lpx = Math.hypot(b[0] - a[0], b[1] - a[1]);
         var tp = prd([p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]]), lTrue = Math.hypot(tp[0], tp[1]) * sc;   // its paper length at true scale (a pipe off the axes is foreshortened by the projection itself)
-        if (L3 < 1e-6 || lpx < 44 || lpx > 0.75 * lTrue) return;
+        if (p.ghost || L3 < 1e-6 || lpx < 44 || lpx > 0.75 * lTrue) return;
         var ts = [0].concat(onP[pi].sort(function (x, y) { return x - y; }), [L3]), bt = L3 / 2, bg = -1;
         for (var q = 0; q + 1 < ts.length; q++) if (ts[q + 1] - ts[q] > bg) { bg = ts[q + 1] - ts[q]; bt = (ts[q] + ts[q + 1]) / 2; }
         var c = sp(lerp3(p.a, p.b, bt / L3)), ux = (b[0] - a[0]) / lpx, uy = (b[1] - a[1]) / lpx, nx = -uy, ny = ux, w = 2.8 + Math.sqrt(p.n) * 0.5;
@@ -4117,13 +4150,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
 
     model.pipes.forEach(function (p) {                              // insulation: a dashed line each side of an insulated pipe
-      var li = model.lines[p.ln] || {}; if (!insulated(li.insul)) return;
+      var li = model.lines[p.ln] || {}; if (p.ghost || !insulated(li.insul)) return;
       var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 24) return;
       var nx = -dy / L * 4.5, ny = dx / L * 4.5;
       [1, -1].forEach(function (sg) { body += '<line x1="' + f1(a[0] + nx * sg) + '" y1="' + f1(a[1] + ny * sg) + '" x2="' + f1(b[0] + nx * sg) + '" y2="' + f1(b[1] + ny * sg) + '" stroke="' + INK + '" stroke-width="0.7" stroke-dasharray="7 3"/>'; });
     });
     model.pipes.forEach(function (p) {                              // slope (ISO 6412-2, 7.7): a right-angled triangle above the line, its slope falling toward the low end, and the ratio
-      if (!p.sl || Math.abs(p.b[1] - p.a[1]) > 1e-6) return;
+      if (p.ghost || !p.sl || Math.abs(p.b[1] - p.a[1]) > 1e-6) return;
       var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 60) return;
       var sg = p.sld === -1 ? -1 : 1, ux = dx / L * sg, uy = dy / L * sg, up = prd([0, 1, 0]), upl = Math.hypot(up[0], up[1]), vx = up[0] / upl, vy = up[1] / upl;   // u: toward the low end; v: up on paper
       var pi9 = model.pipes.indexOf(p), L9 = V(p.a).distanceTo(V(p.b)), ts9 = [0, L9];   // in the widest stretch clear of the parts on the pipe
@@ -4142,7 +4175,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Flow arrows: on the longest pipes, well apart, a few for each line rather than one on every pipe.
     var fcand = [];
     model.pipes.forEach(function (p) {
-      if (!p.fl) return;
+      if (!p.fl || p.ghost) return;
       var a0 = sp(p.a), b0 = sp(p.b), dx = b0[0] - a0[0], dy = b0[1] - a0[1], L0 = Math.hypot(dx, dy);
       if (L0 >= 40) fcand.push({ p: p, a: a0, dx: dx, dy: dy, L: L0 });
     });
@@ -4206,7 +4239,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         body += isoSym('psv', it.p, d3, 26);
         want(3, q[0], q[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(q[0], q[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 14); return;
       }
-      var top3 = [it.p[0], it.p[1] + 26 / sc, it.p[2]], t = sp(top3); itop[j] = top3;
+      var od = instrDir(it), du = prd(od), dl = Math.hypot(du[0], du[1]) || 1, top3 = [it.p[0] + od[0] * 26 / (dl * sc), it.p[1] + od[1] * 26 / (dl * sc), it.p[2] + od[2] * 26 / (dl * sc)], t = sp(top3); itop[j] = top3;   // a 26 px stem standing off the pipe, never along it
       body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'i-ctrl' : /^(P|T|F)I$/.test(it.k) ? 'i-gauge' : 'i-xmtr', top3, d3, 20);
       occ.push([t[0] - 10, t[1] - 10, t[0] + 10, t[1] + 10]);
       want(3, t[0], t[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(t[0], t[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 6);
@@ -4282,6 +4315,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.valves.forEach(function (v) { locate(v.p); }); model.items.forEach(function (it) { locate(it.p); }); model.supports.forEach(function (q0) { locate(q0.p); });
     model.instr.forEach(function (it) { if (it.eq == null) locate(it.p); });
     model.pipes.forEach(function (p, pi) {
+      if (p.ghost) return;
       var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
       function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
       function room(t0, t1) { var u = scr(t0), w0 = scr(t1); return Math.hypot(w0[0] - u[0], w0[1] - u[1]) >= Math.max(18, String(Math.round(Math.abs(t1 - t0) * 1000)).length * 6 + 12); }   // a piece of the chain must fit its own number
@@ -4323,7 +4357,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     var elRun = {};
     model.pipes.forEach(function (p) {
-      if (Math.abs(p.a[1] - p.b[1]) > 1e-6) return;
+      if (p.ghost || Math.abs(p.a[1] - p.b[1]) > 1e-6) return;
       var key2 = Math.round(p.a[1] * 1000); if (elShown[key2]) return;
       var a = sp(p.a), b = sp(p.b), L = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (L >= 70 && (!elRun[key2] || L > elRun[key2].L)) elRun[key2] = { L: L, m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], el: p.a[1] };
@@ -4403,9 +4437,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     // Title block: project, drawing and line data, then who drew and checked it.
     var T0 = model.title || {}, lnSel = isoCtx.ln || '', byLn = {};
-    model.pipes.forEach(function (p) { byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
+    model.pipes.forEach(function (p) { if (!p.ghost) byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
     var lnNames = Object.keys(byLn), LD = lnSel ? (model.lines[lnSel] || {}) : {}, sizes = {};
-    model.pipes.forEach(function (p) { sizes[p.n] = 1; });
+    model.pipes.forEach(function (p) { if (!p.ghost) sizes[p.n] = 1; });
     var todayS = new Date().toISOString().slice(0, 10), pb = H - TB, bw = W - 24;
     var fabF = fabrication();
     var cells1 = [['PROJECT', T0.project || 'Untitled', 0.22], ['CLIENT', T0.client || '', 0.14], ['LINE No.', lnSel ? lineDesignation(lnSel) : lnNames.join('  ') || '-', 0.26], ['SERVICE', LD.svc || '', 0.18], ['CLASS / MATERIAL', LD.cls || (lnSel && spOf(lnSel) && (spOf(lnSel).code || spOf(lnSel).name)) || std().cls, 0.20]];
@@ -4447,8 +4481,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     m.caps = model.caps.filter(function (c) { return ends[key(c)]; }).map(function (c) { return c.slice(); });
     var nz = {}; nozList.forEach(function (z) { if (z.e >= 0 && ends[key(mm3(z.p))]) nz[z.e] = 1; });
     m.equip = model.equip.filter(function (e, i) { return nz[i]; }).map(function (e) { return JSON.parse(JSON.stringify(e)); });
-    m.contAt = {};                                                  // ends where another line continues, for the connection note
-    model.pipes.forEach(function (p, i) { if (keepP[i]) return; [p.a, p.b].forEach(function (pt) { var k = key(pt); if (ends[k] && (m.contAt[k] = m.contAt[k] || []).indexOf(p.ln) < 0) m.contAt[k].push(p.ln); }); });
+    m.contAt = {};                                                  // where another line continues: a short dashed stub of it (ghost) keeps the tee, olet or elbow there, and its far end carries the note
+    model.pipes.forEach(function (p, i) {
+      if (keepP[i]) return;
+      [['a', 'b'], ['b', 'a']].forEach(function (w) {
+        var E = p[w[0]], O = p[w[1]]; if (!ends[key(E)]) return;
+        var d = [O[0] - E[0], O[1] - E[1], O[2] - E[2]], L = Math.hypot(d[0], d[1], d[2]); if (L < 1e-6) return;
+        var l = Math.min(L, 0.5), F = [E[0] + d[0] / L * l, E[1] + d[1] / L * l, E[2] + d[2] / L * l].map(function (v) { return Math.round(v * 1000) / 1000; });
+        m.pipes.push({ a: E.slice(), b: F, n: p.n, s: p.s || 40, ln: p.ln, fl: 0, ghost: 1 });
+        var k = key(F); if ((m.contAt[k] = m.contAt[k] || []).indexOf(p.ln) < 0) m.contAt[k].push(p.ln);
+      });
+    });
     return m;
   }
   function isoSvg(ln, view, tidy, style) {
@@ -6105,7 +6148,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // Hook for the headless tests in test/.
   window.PipeDraft = {
-    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); },
+    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, instrDir: function (i) { return instrDir(model.instr[i]); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
