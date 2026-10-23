@@ -1931,5 +1931,37 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Iso tidy-up: lists inside the border, revision box clear of the title block, weld count agrees, one balloon for a valve's two flanges
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [3, 1, 2], n: 4 }], valves: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, k: 'gate', e: 'flg' }] });
+  PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+  PD.model.ndeW = {}; const sv = PD.iso('', '0'), W = 1200;
+  const vb = sv.match(/viewBox="0 0 (\d+) ([\d.]+)"/), H = +vb[2], TB = 110;
+  const xs = [...sv.matchAll(/<text x="([\d.]+)"[^>]*>(NDE|MADE|SIZE|Shop|Field)</g)].map(m => +m[1]);
+  check('the weld and cut lists stay inside the sheet border', xs.length > 0 && Math.max(...xs) + 24 < W - 12, String(Math.max(...xs)));
+  const rb = sv.match(/<rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)" fill="none" stroke="#[0-9a-fA-F]+" stroke-width="0.8"\/>/);
+  check('the revision box holds its rows and ends above the title block', rb && +rb[1] + +rb[2] < H - TB - 2, rb && String(+rb[1] + +rb[2]) + ' vs ' + (H - TB));
+  const listed = (sv.match(/>W\d+<\/text><text x="[\d.]+" y="[\d.]+" font-size="9" fill="#[0-9A-Fa-f]+">(Butt|Socket|Fillet) weld/g) || []).length;
+  check('the note counts the welds the list shows, and says where the others are', sv.includes(listed + ' welds listed') && sv.includes('more at valve flanges'));
+  const fl = PD.rows().filter(r => !/^Pipe (stock|weight)/.test(r[0])).findIndex(r => /^Weld-neck flange/.test(r[0])) + 1;   // notes carry no item number
+  const balls = [...sv.matchAll(/<g class="lb"[^>]*>(.*?)<\/g>/g)].map(m => m[1]).filter(g => g.includes('>' + fl + '</text>'));
+  check('the two flanges of one valve share one balloon with two leaders', balls.length === 1 && (balls[0].match(/<line /g) || []).length === 2, balls.length + ' balloons');
+  PD.load({ pipes: [] });
+}
+
+// Iso: a leader stops at the edge of its text label, never inside the text
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [3, 2.4, 0], n: 4 }, { a: [3, 2.4, 0], b: [3, 2.4, 1.5], n: 4 }, { a: [1, 1, 0], b: [1, 1, 1.2], n: 2 }],
+    instr: [{ k: 'TT', p: [2, 1, 0], d: [1, 0, 0], n: 4, num: 1 }], valves: [{ p: [3, 1.7, 0], d: [0, 1, 0], n: 4, k: 'gate' }] });
+  let inside = 0, n = 0;
+  [...PD.iso('', '0').matchAll(/<g class="lb"[^>]*><rect class="hit" x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"[^>]*\/>(<line x1="[-\d.]+" y1="[-\d.]+" x2="([-\d.]+)" y2="([-\d.]+)")?(.*?)<\/g>/g)].forEach(m => {
+    if (!m[5] || /<circle|<polygon/.test(m[8])) return;   // round balloons and weld hexagons stop at their own radius
+    n++; const x0 = +m[1] + 7, y0 = +m[2] + 7, x1 = +m[1] + +m[3] - 7, y1 = +m[2] + +m[4] - 7, ex = +m[6], ey = +m[7];
+    if (ex > x0 + 0.5 && ex < x1 - 0.5 && ey > y0 + 0.5 && ey < y1 - 0.5) inside++;
+  });
+  check('leaders stop at the edge of text labels', inside === 0, inside + ' of ' + n);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

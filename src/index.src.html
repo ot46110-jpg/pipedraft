@@ -3589,7 +3589,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return { lines: wrap(r[0]), std: r[2] || '', tag: t.length > PERL ? t.slice(0, PERL - 1) + '…' : t, qty: r[1] };
     });
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
-    var T1 = model.title || {}, revHist = [1, 2, 3].filter(function (k) { return T1['h' + k + 'rev'] || T1['h' + k + 'desc'] || T1['h' + k + 'date']; }), revH = 30 + 13 * (1 + revHist.length);
+    var T1 = model.title || {}, revHist = [1, 2, 3].filter(function (k) { return T1['h' + k + 'rev'] || T1['h' + k + 'desc'] || T1['h' + k + 'date']; }), revH = 38 + 13 * (1 + revHist.length);
     var TB = 110, cutRows = fabrication().pieces, weldRows = fabrication().welds.filter(function (w) { return !w.atValve || isoCtx.valveWelds; }), cutH = cutRows.length || weldRows.length ? Math.max(cutRows.length, weldRows.length) * 11 + 60 : 0;   // the two lists stand side by side
     var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100 + revH), Wd = W - MAT;
 
@@ -3718,8 +3718,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return c.concat(ring([x + 14, x + 30, x + 48, x + 68], [20, -20, 160, -160, 90, -90, 45, -45, 135, -135]));
     }
     function want(prio, ax, ay, w, h2, cands, mk, onEq) { labels.push({ prio: prio, n: labels.length, ax: ax, ay: ay, w: w, h: h2, cands: cands, mk: mk, onEq: !!onEq }); }
-    function leader(ax, ay, cx, cy, back) {
+    function leader(ax, ay, cx, cy, back) {                         // back: the radius of a round label, or [half width, half height] of a text label, so the line stops at its edge
       var dx = cx - ax, dy = cy - ay, L = Math.hypot(dx, dy); if (L < 1) return '';
+      if (Array.isArray(back)) { var ux = Math.abs(dx / L) || 1e-9, uy = Math.abs(dy / L) || 1e-9; back = Math.min(back[0] / ux, back[1] / uy) + 2; if (back >= L - 2) return ''; }
       return '<line x1="' + f1(ax) + '" y1="' + f1(ay) + '" x2="' + f1(cx - dx / L * back) + '" y2="' + f1(cy - dy / L * back) + '" stroke="' + INK + '" stroke-width="0.7"/>';
     }
     function layoutLabels() {
@@ -3869,13 +3870,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       body += eqPicture(e, i);
       var cq = sp(g.c);
       var etx = tg.equip[i], dyE = g.kind === 'vessel' ? 0 : 6;         // the tag sits on the equipment when there is room, with a leader when it has to move
-      want(2, cq[0], cq[1] + dyE, tagText(etx, 11), 13, [[0, 0]].concat(sides(tagText(etx, 11), 13)), function (cx, cy, d) { return (d > 26 ? leader(cq[0], cq[1] + dyE, cx, cy, 8) : '') + svgText(cx, cy + 4, etx, 11, 'middle', 600); }, true);
+      want(2, cq[0], cq[1] + dyE, tagText(etx, 11), 13, [[0, 0]].concat(sides(tagText(etx, 11), 13)), function (cx, cy, d) { return (d > 26 ? leader(cq[0], cq[1] + dyE, cx, cy, [tagText(etx, 11) / 2, 6.5]) : '') + svgText(cx, cy + 4, etx, 11, 'middle', 600); }, true);
     });
     nozList.forEach(function (z) {
       if (z.e == null || z.e < 0) return;
       var q = sp(A(z.p));
       var nt = 'N' + (z.idx + 1);
-      want(3, q[0], q[1], tagText(nt, 8.5), 10, ring([12, 18, 26, 36], [-45, 45, -135, 135, 0, 180, 90, -90]), function (cx, cy, d) { return (d > 24 ? leader(q[0], q[1], cx, cy, 6) : '') + svgText(cx, cy + 3, nt, 8.5, 'middle'); }, true);
+      want(3, q[0], q[1], tagText(nt, 8.5), 10, ring([12, 18, 26, 36], [-45, 45, -135, 135, 0, 180, 90, -90]), function (cx, cy, d) { return (d > 24 ? leader(q[0], q[1], cx, cy, [tagText(nt, 8.5) / 2, 5]) : '') + svgText(cx, cy + 3, nt, 8.5, 'middle'); }, true);
     });
 
     // Pipe: one line per run, heavier for larger sizes.
@@ -3962,74 +3963,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var big = s.pieces.slice().sort(function (a, b) { return b.len - a.len; })[0]; if (!big) return;
       var q = sp([(big.pa[0] + big.pb[0]) / 2, (big.pa[1] + big.pb[1]) / 2, (big.pa[2] + big.pb[2]) / 2]);
       want(2, q[0], q[1], 34, 13, sides(34, 13), function (cx, cy, d) {
-        return (d > 24 ? leader(q[0], q[1], cx, cy, 8) : '') + '<rect x="' + f1(cx - 15) + '" y="' + f1(cy - 6.5) + '" width="30" height="13" rx="2" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>' + svgText(cx, cy + 3.2, s.id, 8.5, 'middle', 600);
+        return (d > 24 ? leader(q[0], q[1], cx, cy, [15, 6.5]) : '') + '<rect x="' + f1(cx - 15) + '" y="' + f1(cy - 6.5) + '" width="30" height="13" rx="2" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>' + svgText(cx, cy + 3.2, s.id, 8.5, 'middle', 600);
       });
     });
 
-    // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
-    function dimPick(a, b, label, only, stag) {                          // the side and distance where a dimension line crosses the least
-      var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 12) return null;
-      var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
-      if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
-      var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
-      var tw = label.length * 6 + 6, best = null, offs = only != null ? [only] : [20, -20, 34, -34, 48, -48, 62, -62, 78, -78];
-      for (var oi = 0; oi < offs.length; oi++) {
-        var off = offs[oi], a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
-        var mx0 = (a2[0] + b2[0]) / 2, my0 = (a2[1] + b2[1]) / 2, hw = (Math.abs(Math.cos(ang * Math.PI / 180)) * tw + Math.abs(Math.sin(ang * Math.PI / 180)) * 11) / 2, hh = (Math.abs(Math.sin(ang * Math.PI / 180)) * tw + Math.abs(Math.cos(ang * Math.PI / 180)) * 11) / 2;
-        var sh = stag != null && tw > len - 12 && stag % 2 ? 11 : 0, osg = off < 0 ? -1 : 1;   // a text wider than its segment goes to the outer side on every second one
-        mx0 += nx * osg * sh; my0 += ny * osg * sh;
-        var bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
-        if (TIDY) {
-          cost = boxCost(bx);
-          segs.forEach(function (s) { if (s[0] === a && s[1] === b) return; if (segDist2(a2, b2, s[0], s[1]) < 7) cost += 12; });
-          cost += oi * 0.3;
-        }
-        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: a2, b2: b2, bx: bx, tx: tx, ty: ty, nx: nx, ny: ny, ang: ang, len: len, sh: sh };
-        if (!TIDY || cost < 1) break;
-      }
-      return best;
-    }
-    var lastDim = null;
-    function dimLine(a, b, label, only, stag) {                           // a line parallel to the pipe with arrowheads and the centreline length; short ones get outside arrows
-      var best = dimPick(a, b, label, only, stag); lastDim = best; if (!best) return '';
-      var a2 = best.a2, b2 = best.b2, tx = best.tx, ty = best.ty, ang = best.ang, sg = best.off < 0 ? -1 : 1, nx = best.nx * sg, ny = best.ny * sg, inside = best.len >= 34;
-      segs.push([a2, b2]); occ.push(best.bx);
-      var mx = (a2[0] + b2[0]) / 2 - nx * 4 + nx * best.sh, my = (a2[1] + b2[1]) / 2 - ny * 4 + ny * best.sh, ext = inside ? 0 : 10;
-      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
-      return '<g class="dim" stroke="' + INK + '" stroke-width="0.8" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0] - tx * ext) + '" y1="' + f1(a2[1] - ty * ext) + '" x2="' + f1(b2[0] + tx * ext) + '" y2="' + f1(b2[1] + ty * ext) + '"/></g>'
-        + (inside ? arrow(a2, 1) + arrow(b2, -1) : arrow(a2, -1) + arrow(b2, 1))
-        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>'
-        + '<line class="hit" x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '" stroke="transparent" stroke-width="16"/>';
-    }
-    function segDist2(p1, p2, q1, q2) {                             // distance between two screen segments
-      function ccw(a, b, c) { return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0]); }
-      if (ccw(p1, q1, q2) !== ccw(p2, q1, q2) && ccw(p1, p2, q1) !== ccw(p1, p2, q2)) return 0;
-      function pd(p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
-      return Math.min(pd(p1, q1, q2), pd(p2, q1, q2), pd(q1, p1, p2), pd(q2, p1, p2));
-    }
-    var onPipe = model.pipes.map(function () { return []; });        // distances (m) from the start of each pipe to the valves, inline parts, supports and instruments on it
-    function locate(pt) { var hi = hostOf(pt); if (hi >= 0) onPipe[hi].push(V(model.pipes[hi].a).distanceTo(V(pt))); }
-    model.valves.forEach(function (v) { locate(v.p); }); model.items.forEach(function (it) { locate(it.p); }); model.supports.forEach(function (q0) { locate(q0.p); });
-    model.instr.forEach(function (it) { if (it.eq == null) locate(it.p); });
-    model.pipes.forEach(function (p, pi) {
-      var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
-      function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
-      onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { var c0 = scr(t); if (Math.hypot(c0[0] - scr(last)[0], c0[1] - scr(last)[1]) >= 18 && Math.hypot(c0[0] - b[0], c0[1] - b[1]) >= 18) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
-      var total = String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
-      function wrapD(pk) {                                            // the dimensions of one pipe move together, across the pipe
-        if (!pk) return; if (dov != null) isoCtx.layN++;
-        body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';
-      }
-      if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); return; }
-      var pick = dimPick(a, b, total, dov); if (!pick) return;          // the chain shares one side and distance, so it reads as one line of dimensions
-      var ts = [0].concat(kept, [L3]);
-      for (var q = 0; q + 1 < ts.length; q++) {
-        var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
-        body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
-      }
-      body += dimLine(a, b, total, pick.off + (pick.off < 0 ? -22 : 22));   // the overall length on the next tier out
-      wrapD(pick);
-    });
     model.pipes.forEach(function (p) {                              // insulation: a dashed line each side of an insulated pipe
       var li = model.lines[p.ln] || {}; if (!insulated(li.insul)) return;
       var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 24) return;
@@ -4064,13 +4001,23 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
     // Item balloons point at the material list.
     var bi = 0;
-    function balloon(desc, p3, lift) {
-      var n = numOf[desc]; if (!n) return;
-      var q = sp(p3), par = bi % 2; bi++;
+    var balls = [];
+    function balloon(desc, p3, lift, grp) { var n = numOf[desc]; if (n) balls.push({ n: n, q: sp(p3), lift: lift || 0, g: grp }); }   // grp: parts that may share one balloon (the flanges of one valve)
+    function placeBalloons() {                                      // the same item number on parts close together (the flanges either side of a valve) is one balloon with a leader to each
+      var used = {};
+      balls.forEach(function (b0, i) {
+        if (used[i]) return; var grp = [b0];
+        balls.forEach(function (b1, j) { if (j > i && !used[j] && b0.g != null && b1.g === b0.g && b1.n === b0.n && grp.some(function (g) { return Math.hypot(g.q[0] - b1.q[0], g.q[1] - b1.q[1]) < 90; })) { grp.push(b1); used[j] = 1; } });
+        var cx = grp.reduce(function (s0, g) { return s0 + g.q[0]; }, 0) / grp.length, cy = grp.reduce(function (s0, g) { return s0 + g.q[1]; }, 0) / grp.length;
+        balloon1(b0.n, grp.length > 1 ? [cx, cy] : b0.q, grp.map(function (g) { return g.q; }), Math.max.apply(null, grp.map(function (g) { return g.lift; })));
+      });
+    }
+    function balloon1(n, q, ends, lift) {
+      var par = bi % 2; bi++;
       var angs = par ? [60, 120, 30, 150, 90, 0, 180, -60, -120, -90] : [120, 60, 150, 30, 90, 180, 0, -120, -60, -90];
       var base = 26 + (lift || 0) * 0.5;
       want(4, q[0], q[1], 20, 20, ring([base, base + 14, base + 28, base + 44], angs), function (cx, cy) {
-        return leader(q[0], q[1], cx, cy, 9.5) + '<circle cx="' + f1(cx) + '" cy="' + f1(cy) + '" r="9.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
+        return ends.map(function (e0) { return leader(e0[0], e0[1], cx, cy, 9.5); }).join('') + '<circle cx="' + f1(cx) + '" cy="' + f1(cy) + '" r="9.5" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1"/>'
           + '<text x="' + f1(cx) + '" y="' + f1(cy + 3.6) + '" font-size="10" font-weight="600" text-anchor="middle" fill="' + INK + '">' + n + '</text>';
       });
     }
@@ -4085,7 +4032,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.flanges.forEach(function (f, i) {
       var fp = flAt[i] || f.p;
       if (!(flOf[i] && vFlgBars(flOf[i]))) body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20);   // a valve's own symbol already carries its flange bars
-      balloon(compDesc.flange[i], fp);
+      balloon(compDesc.flange[i], fp, 0, flOf[i] ? 'v' + model.valves.indexOf(flOf[i]) : null);
     });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, iLpx(it)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
@@ -4099,12 +4046,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var def = INSTR[it.k], d3 = it.d || [1, 0, 0], q = sp(it.p);
       if (def.psv) {
         body += isoSym('psv', it.p, d3, 26);
-        want(3, q[0], q[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(q[0], q[1], cx, cy, 8) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 14); return;
+        want(3, q[0], q[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(q[0], q[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 14); return;
       }
       var top3 = [it.p[0], it.p[1] + 26 / sc, it.p[2]], t = sp(top3); itop[j] = top3;
       body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'i-ctrl' : /^(P|T|F)I$/.test(it.k) ? 'i-gauge' : 'i-xmtr', top3, d3, 20);
       occ.push([t[0] - 10, t[1] - 10, t[0] + 10, t[1] + 10]);
-      want(3, t[0], t[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(t[0], t[1], cx, cy, 8) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 6);
+      want(3, t[0], t[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(t[0], t[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 6);
     });
     model.instr.forEach(function (it, j) {
       if (it.link == null || !itop[j] || !model.valves[it.link]) return;
@@ -4121,9 +4068,76 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (kk) body += isoSym(kk, j.pos, d3, 20);
       if (j.type === 'reducer' && j.ecc) {
         var q9 = sp(j.pos), ft = { top: 'FOT', bottom: 'FOB', side: 'FOS' }[j.flatEff || 'bottom'];
-        want(1, q9[0], q9[1], 24, 10, sides(24, 10), function (cx, cy, d) { return (d > 20 ? leader(q9[0], q9[1], cx, cy, 6) : '') + svgText(cx, cy + 3, ft, 8.5, 'middle', 600); });
+        want(1, q9[0], q9[1], 24, 10, sides(24, 10), function (cx, cy, d) { return (d > 20 ? leader(q9[0], q9[1], cx, cy, [12, 5]) : '') + svgText(cx, cy + 3, ft, 8.5, 'middle', 600); });
       }
       if (j.type && (j.type !== 'elbow' || j.retMain || j.corner)) balloon(compDesc.joint[k], j.pos, 4);
+    });
+    // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
+    function dimPick(a, b, label, only, stag) {                          // the side and distance where a dimension line crosses the least
+      var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 12) return null;
+      var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
+      if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
+      var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
+      var tw = label.length * 6 + 6, best = null, offs = only != null ? [only] : [20, -20, 34, -34, 48, -48, 62, -62, 78, -78];
+      for (var oi = 0; oi < offs.length; oi++) {
+        var off = offs[oi], a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
+        var mx0 = (a2[0] + b2[0]) / 2, my0 = (a2[1] + b2[1]) / 2, hw = (Math.abs(Math.cos(ang * Math.PI / 180)) * tw + Math.abs(Math.sin(ang * Math.PI / 180)) * 11) / 2, hh = (Math.abs(Math.sin(ang * Math.PI / 180)) * tw + Math.abs(Math.cos(ang * Math.PI / 180)) * 11) / 2;
+        var sh = stag != null && tw > len - 12 && stag % 2 ? 11 : 0, osg = off < 0 ? -1 : 1;   // a text wider than its segment goes to the outer side on every second one
+        mx0 += nx * osg * sh; my0 += ny * osg * sh;
+        var bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
+        if (TIDY) {
+          cost = boxCost(bx);
+          segs.forEach(function (s) { if (s[0] === a && s[1] === b) return; if (segDist2(a2, b2, s[0], s[1]) < 7) cost += 12; });
+          eqBoxes.forEach(function (e0) { if (segHitRect(e0, [a2, b2])) cost += 16; });   // a dimension across a pump or vessel picture is hard to read
+          cost += oi * 0.3;
+        }
+        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: a2, b2: b2, bx: bx, tx: tx, ty: ty, nx: nx, ny: ny, ang: ang, len: len, sh: sh };
+        if (!TIDY || cost < 1) break;
+      }
+      return best;
+    }
+    var lastDim = null;
+    function dimLine(a, b, label, only, stag) {                           // a line parallel to the pipe with arrowheads and the centreline length; short ones get outside arrows
+      var best = dimPick(a, b, label, only, stag); lastDim = best; if (!best) return '';
+      var a2 = best.a2, b2 = best.b2, tx = best.tx, ty = best.ty, ang = best.ang, sg = best.off < 0 ? -1 : 1, nx = best.nx * sg, ny = best.ny * sg, inside = best.len >= 34;
+      segs.push([a2, b2]); occ.push(best.bx);
+      segs.push([[a[0] + nx * 4, a[1] + ny * 4], [a2[0] + nx * 3, a2[1] + ny * 3]], [[b[0] + nx * 4, b[1] + ny * 4], [b2[0] + nx * 3, b2[1] + ny * 3]]);   // the extension lines too, so no label crosses them
+      var mx = (a2[0] + b2[0]) / 2 - nx * 4 + nx * best.sh, my = (a2[1] + b2[1]) / 2 - ny * 4 + ny * best.sh, ext = inside ? 0 : 10;
+      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
+      return '<g class="dim" stroke="' + INK + '" stroke-width="0.8" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0] - tx * ext) + '" y1="' + f1(a2[1] - ty * ext) + '" x2="' + f1(b2[0] + tx * ext) + '" y2="' + f1(b2[1] + ty * ext) + '"/></g>'
+        + (inside ? arrow(a2, 1) + arrow(b2, -1) : arrow(a2, -1) + arrow(b2, 1))
+        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>'
+        + '<line class="hit" x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '" stroke="transparent" stroke-width="16"/>';
+    }
+    function segDist2(p1, p2, q1, q2) {                             // distance between two screen segments
+      function ccw(a, b, c) { return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0]); }
+      if (ccw(p1, q1, q2) !== ccw(p2, q1, q2) && ccw(p1, p2, q1) !== ccw(p1, p2, q2)) return 0;
+      function pd(p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
+      return Math.min(pd(p1, q1, q2), pd(p2, q1, q2), pd(q1, p1, p2), pd(q2, p1, p2));
+    }
+    var onPipe = model.pipes.map(function () { return []; });        // distances (m) from the start of each pipe to the valves, inline parts, supports and instruments on it
+    function locate(pt) { var hi = hostOf(pt); if (hi >= 0) onPipe[hi].push(V(model.pipes[hi].a).distanceTo(V(pt))); }
+    model.valves.forEach(function (v) { locate(v.p); }); model.items.forEach(function (it) { locate(it.p); }); model.supports.forEach(function (q0) { locate(q0.p); });
+    model.instr.forEach(function (it) { if (it.eq == null) locate(it.p); });
+    model.pipes.forEach(function (p, pi) {
+      var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
+      function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
+      function room(t0, t1) { var u = scr(t0), w0 = scr(t1); return Math.hypot(w0[0] - u[0], w0[1] - u[1]) >= Math.max(18, String(Math.round(Math.abs(t1 - t0) * 1000)).length * 6 + 12); }   // a piece of the chain must fit its own number
+      onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { if (room(last, t) && room(t, L3)) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
+      var total = String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
+      function wrapD(pk) {                                            // the dimensions of one pipe move together, across the pipe
+        if (!pk) return; if (dov != null) isoCtx.layN++;
+        body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';
+      }
+      if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); return; }
+      var pick = dimPick(a, b, total, dov); if (!pick) return;          // the chain shares one side and distance, so it reads as one line of dimensions
+      var ts = [0].concat(kept, [L3]);
+      for (var q = 0; q + 1 < ts.length; q++) {
+        var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
+        body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
+      }
+      body += dimLine(a, b, total, pick.off + (pick.off < 0 ? -22 : 22));   // the overall length on the next tier out
+      wrapD(pick);
     });
     // One balloon per pipe row, on its longest run.
     var longest = {};
@@ -4143,7 +4157,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else if (model.contAt && model.contAt[k]) et += '  CONT. ' + model.contAt[k].join(', ');      // the line that carries on from this end
       if (isoCtx.coords) et += '  E ' + Math.round(j.pos[0] * 1000) + ' N ' + Math.round(j.pos[2] * 1000);   // plant coordinates in mm, east and north
       var ew = tagText(et, 9);
-      want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(q[0], q[1], cx, cy, 6) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
+      want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(q[0], q[1], cx, cy, [ew / 2, 5.5]) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
     var elRun = {};
     model.pipes.forEach(function (p) {
@@ -4154,8 +4168,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     Object.keys(elRun).forEach(function (k2) {
       var r = elRun[k2], et = 'EL ' + (r.el >= 0 ? '+' : '') + r.el.toFixed(3), ew = tagText(et, 9);
-      want(2, r.m[0], r.m[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(r.m[0], r.m[1], cx, cy, 6) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
+      want(2, r.m[0], r.m[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(r.m[0], r.m[1], cx, cy, [ew / 2, 5.5]) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
+    placeBalloons();
     body += layoutLabels();
     o += body;
 
@@ -4168,7 +4183,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + svgText(cx + ux * 31 - (ux < -0.3 ? 4 : 0), cy + uy * 31 + 4, 'N', 11, 'middle', 600);
     })();
     (function () {                                                  // revision block: REV, DATE, DESCRIPTION, BY, CHK; the newest row first
-      var T2 = model.title || {}, x0 = Wd + 8, x1 = W - 20, y0 = H - TB - revH + 2, cols = [[0, 'REV'], [30, 'DATE'], [100, 'DESCRIPTION'], [252, 'BY'], [286, 'CHK']];
+      var T2 = model.title || {}, x0 = Wd + 8, x1 = W - 20, y0 = H - TB - revH - 6, cols = [[0, 'REV'], [30, 'DATE'], [100, 'DESCRIPTION'], [252, 'BY'], [286, 'CHK']];
       var rows = [[T2.rev || '0', T2.date || new Date().toISOString().slice(0, 10), T2.rdesc || 'Issued', T2.by || '', T2.checked || '']];
       [1, 2, 3].forEach(function (k) { if (T2['h' + k + 'rev'] || T2['h' + k + 'desc'] || T2['h' + k + 'date']) rows.push([T2['h' + k + 'rev'] || '', T2['h' + k + 'date'] || '', T2['h' + k + 'desc'] || '', T2['h' + k + 'by'] || '', T2['h' + k + 'chk'] || '']); });
       o += '<text x="' + (x0 + 6) + '" y="' + (y0 + 10) + '" font-size="9" font-weight="600" fill="' + INK + '">REVISIONS</text><line x1="' + x0 + '" y1="' + (y0 + 14) + '" x2="' + x1 + '" y2="' + (y0 + 14) + '" stroke="' + INK + '" stroke-width="0.8"/>';
@@ -4178,7 +4193,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         r.forEach(function (v, ci) { o += '<text x="' + (x0 + 6 + cols[ci][0]) + '" y="' + ry + '" font-size="' + (ci === 2 ? 8.5 : 9) + '" fill="' + INK + '">' + esc(String(v).slice(0, ci === 2 ? 26 : ci === 1 ? 11 : 6)) + '</text>'; });
         o += '<line x1="' + x0 + '" y1="' + (ry + 4) + '" x2="' + x1 + '" y2="' + (ry + 4) + '" stroke="#888" stroke-width="0.5"/>';
       });
-      o += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (14 + 12 + 13 * rows.length) + '" fill="none" stroke="' + INK + '" stroke-width="0.8"/>';
+      o += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (30 + 13 * rows.length) + '" fill="none" stroke="' + INK + '" stroke-width="0.8"/>';
     })();
     var ax = 84, ay = H - TB - 52;
     [[[1, 0, 0], 'X'], [[0, 0, 1], 'Y (N)'], [[0, 1, 0], 'Z']].forEach(function (a3) {
@@ -4204,21 +4219,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     notes.forEach(function (r) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 8) + '" font-size="8.5" fill="#555">' + esc(r[0]) + ': ' + esc(r[1]) + '</text>'; ly += 12; });
     if (cutRows.length || weldRows.length) {                        // cut list and weld list side by side under the material list, with column heads
       ly += 14;
-      var lx1 = Wd + 14, lx2 = Wd + 182, hy = ly;
+      var lx1 = Wd + 14, lx2 = Wd + 168, lxe = W - 20, hy = ly;      // two lists side by side, both inside the border
       var lhead = function (x, t, w) { return '<text x="' + x + '" y="' + hy + '" font-size="11" font-weight="600" fill="' + INK + '">' + t + '</text><line x1="' + (x - 6) + '" y1="' + (hy + 6) + '" x2="' + (x + w) + '" y2="' + (hy + 6) + '" stroke="' + INK + '" stroke-width="0.8"/>'; };
       var lcols = function (x, cs) { return cs.map(function (c) { return '<text x="' + (x + c[0]) + '" y="' + (hy + 18) + '" font-size="7.5" fill="#555">' + c[1] + '</text>'; }).join(''); };
       var cy2 = hy + 31, longPc = false;
       if (cutRows.length) {
-        o += lhead(lx1, 'CUT LIST', 164) + lcols(lx1, [[0, 'PIECE'], [58, 'LENGTH'], [122, 'SIZE']]);
+        o += lhead(lx1, 'CUT LIST', 140) + lcols(lx1, [[0, 'PIECE'], [50, 'LENGTH'], [112, 'SIZE']]);
         cutRows.slice().sort(function (p, q) { var x = String(p.label).split(/(\d+)/), y = String(q.label).split(/(\d+)/); for (var i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return i % 2 ? Number(x[i]) - Number(y[i]) : (x[i] < y[i] ? -1 : 1); } return x.length - y.length; }).forEach(function (c, ci) {
           var over = c.len > STOCK; if (over) longPc = true;
-          o += '<text x="' + lx1 + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (lx1 + 58) + '" y="' + (cy2 + ci * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + ' mm' + (over ? ' *' : '') + '</text><text x="' + (lx1 + 122) + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
+          o += '<text x="' + lx1 + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (lx1 + 50) + '" y="' + (cy2 + ci * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + ' mm' + (over ? ' *' : '') + '</text><text x="' + (lx1 + 112) + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
         });
       }
       if (weldRows.length) {
-        o += lhead(lx2, 'WELD LIST', 160) + lcols(lx2, [[0, 'NO'], [24, 'TYPE'], [88, 'SIZE'], [114, 'MADE'], [140, 'NDE']]);
+        o += lhead(lx2, 'WELD LIST', lxe - lx2) + lcols(lx2, [[0, 'NO'], [26, 'TYPE'], [84, 'SIZE'], [108, 'MADE'], [140, 'NDE']]);
         weldRows.forEach(function (w, wi) {
-          o += '<text x="' + lx2 + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">W' + w.no + '</text><text x="' + (lx2 + 24) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="' + INK + '">' + esc(WELD_NAME[w.kind]) + '</text><text x="' + (lx2 + 88) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + esc(w.n ? szs(w.n) : '') + '</text><text x="' + (lx2 + 114) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + (w.field ? 'Field' : 'Shop') + '</text>' + (w.nde ? '<text x="' + (lx2 + 140) + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + w.nde + '</text>' : '');
+          o += '<text x="' + lx2 + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">W' + w.no + '</text><text x="' + (lx2 + 26) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="' + INK + '">' + esc(WELD_NAME[w.kind]) + '</text><text x="' + (lx2 + 84) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + esc(w.n ? szs(w.n) : '') + '</text><text x="' + (lx2 + 108) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + (w.field ? 'Field' : 'Shop') + '</text>' + (w.nde ? '<text x="' + (lx2 + 140) + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + w.nde + '</text>' : '');
         });
       }
       ly = cy2 + Math.max(cutRows.length, weldRows.length) * 11;
@@ -4235,7 +4250,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.16], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.10], ['CHECKED', T0.checked || '', 0.10],
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', isoSheetTxt || '1 OF 1', 0.07], ['SCALE', 'NTS', 0.05]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + fabF.welds.length + ' welds, ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
+    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + weldRows.length + ' welds listed' + (fabF.welds.length > weldRows.length ? ' (' + (fabF.welds.length - weldRows.length) + ' more at valve flanges, in the cut list sheet)' : '') + ', ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
     var logo = cuImgOk(T0.logo) ? T0.logo : '', LW = logo ? 120 : 0;   // the company logo fills a box at the left end of both rows
     if (logo) {
       bw -= LW;
