@@ -3752,8 +3752,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         need(q.a[ai], 10); need(q.b[ai], 10);                      // a fitting or a weld at each end
       });
       ks.forEach(function (v) { u.push(r3(f1(v))); });
-      model.valves.forEach(function (v) { var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n]; need(v.p[ai], Math.max(38, Math.min(84, ff * scG)) / 2 + 9, 1); });
-      model.items.forEach(function (it) { need(it.p[ai], Math.max(34, Math.min(70, itemLen(it.t, it.n) * scG)) / 2 + 4, 1); });
+      model.valves.forEach(function (v) { var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n]; need(v.p[ai], Math.max(SYM_V[0], Math.min(SYM_V[1], ff * scG)) / 2 + 9, 1); });
+      model.items.forEach(function (it) { need(it.p[ai], Math.max(SYM_I[0], Math.min(SYM_I[1], itemLen(it.t, it.n) * scG)) / 2 + 4, 1); });
       model.supports.forEach(function (q) { need(q.p[ai], 13, 1); });
       model.instr.forEach(function (q) { if (q.eq == null && q.p) need(q.p[ai], 12, 1); });
       u = u.sort(function (x, y) { return x - y; }).filter(function (v, i, a) { return !i || v - a[i - 1] > 5e-5; });
@@ -4142,12 +4142,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     isoCtx.brkMarks = brkMarks;
     // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
     // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
-    function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84); }
+    function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], SYM_V[0], SYM_V[1]); }
     function vFlanged(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return t === 'flg' || t === 'wafer'; }
     function vHalf(v) { return v.k === 'butterfly' ? 6 : v.k === 'knife' ? 7 : isoCtx.style === 'pic' && !vFlanged(v) ? 8 : 10; }   // half the body in symbol units (20 is the face to face); a picture without its flanges ends at 8
     var IT_HALF = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };   // half of each inline part's symbol along the pipe: Symbols, Pictures
     function iHalf(t) { var h = IT_HALF[t]; return h ? h[isoCtx.style === 'pic' ? 1 : 0] : 10; }
-    function iLpx(it) { return clampPx(itemLen(it.t, it.n), 34, 70); }
+    function iLpx(it) { return clampPx(itemLen(it.t, it.n), SYM_I[0], SYM_I[1]); }
     function vFlgBars(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return isoCtx.style !== 'pic' && (t === 'flg' || t === 'wafer'); }   // the Symbols style draws the flange bars inside the valve symbol
     function symEnd(v, away, units) { return symEndP(v.p, vLpx(v), away, units); }
     function symEndP(p0, Lpx, away, units) {                        // the point along the pipe this far (symbol units, 10 = the body end) from a part's centre, on the side away points to
@@ -4695,6 +4695,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.stretch = isoOpts.stretch !== false; isoCtx.balls = isoOpts.balls === 'all' ? 'all' : 'tidy'; isoCtx.valveWelds = isoOpts.valveWelds === true;
     isoCtx.pages = []; isoCtx.deferNo = false;
   }
+  var SYM_V = [26, 44], SYM_I = [24, 42];                          // paper length of a valve and an inline part symbol, px on the 1200 px A3 sheet: about 9 to 15 mm, as on a hand-drawn iso (was 38 to 84, too big beside the pipe line)
   function isoSvg(ln, view, tidy, style) {
     ln = ln == null ? isoOpts.ln : ln; view = view == null ? isoOpts.view : view;
     if (!model.pipes.length) return null;
