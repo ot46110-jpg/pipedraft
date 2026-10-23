@@ -1779,7 +1779,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the true lengths are still dimensioned', on.includes('>20000<') && on.includes('>4000<') && on.includes('>16000<'));
   PD.isoOpts.brk = false; const off = PD.iso('', 'auto'); PD.isoOpts.brk = true;
   check('Options, Shorten long pipes off: no break marks and no note', marks(off) === 0 && !off.includes('long pipes shortened'));
-  const span = svg => { const xs = [...svg.matchAll(/<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" stroke="#[0-9a-fA-F]+" stroke-width="2\.00" stroke-linecap="round"\/>/g)].map(m => Math.hypot(m[3] - m[1], m[4] - m[2])); return xs; };
+  const span = svg => { const xs = [...svg.matchAll(/<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" stroke="#[0-9a-fA-F]+" stroke-width="2\.70" stroke-linecap="round"\/>/g)].map(m => Math.hypot(m[3] - m[1], m[4] - m[2])); return xs; };
   const lo = span(on), lf = span(off), ratio = (l) => l[1] / l[0];
   check('shortened, the 1.2 m pipe is drawn larger next to the long one than at true scale', lo.length === 4 && lf.length === 4 && ratio(lo) > ratio(lf) * 2, JSON.stringify([lo, lf]));
   PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }, { a: [2, 0, 0], b: [2, 0, 1.5], n: 4 }] });
@@ -1942,7 +1942,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const rb = sv.match(/<rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)" fill="none" stroke="#[0-9a-fA-F]+" stroke-width="0.8"\/>/);
   check('the revision box holds its rows and ends above the title block', rb && +rb[1] + +rb[2] < H - TB - 2, rb && String(+rb[1] + +rb[2]) + ' vs ' + (H - TB));
   const listed = (sv.match(/>W\d+<\/text><text x="[\d.]+" y="[\d.]+" font-size="9" fill="#[0-9A-Fa-f]+">(Butt|Socket|Fillet) weld/g) || []).length;
-  check('the note counts the welds the list shows, and says where the others are', sv.includes(listed + ' welds listed') && sv.includes('more at valve flanges'));
+  check('the note counts the welds the list shows, and says where the others are', sv.includes(listed + ' welds (+') && sv.includes('at valve flanges)'));
   const fl = PD.rows().filter(r => !/^Pipe (stock|weight)/.test(r[0])).findIndex(r => /^Weld-neck flange/.test(r[0])) + 1;   // notes carry no item number
   const balls = [...sv.matchAll(/<g class="lb"[^>]*>(.*?)<\/g>/g)].map(m => m[1]).filter(g => g.includes('>' + fl + '</text>'));
   check('the two flanges of one valve share one balloon with two leaders', balls.length === 1 && (balls[0].match(/<line /g) || []).length === 2, balls.length + ' balloons');
@@ -1960,6 +1960,34 @@ check('a size outside the list is snapped to the nearest listed size and the mod
     if (ex > x0 + 0.5 && ex < x1 - 0.5 && ey > y0 + 0.5 && ey < y1 - 0.5) inside++;
   });
   check('leaders stop at the edge of text labels', inside === 0, inside + ' of ' + n);
+  PD.load({ pipes: [] });
+}
+
+// Iso: crowded short pipes are stretched on paper so their parts do not overlap; dimensions stay true
+{
+  const m = { pipes: [{ a: [0, 0.5, 0], b: [0, 1.6, 0], n: 4 }, { a: [0, 1.6, 0], b: [6, 1.6, 0], n: 4 }, { a: [6, 1.6, 0], b: [6, 1.6, 4], n: 4 }],
+    valves: [{ p: [0, 0.95, 0], d: [0, 1, 0], n: 4, k: 'check' }, { p: [0, 1.25, 0], d: [0, 1, 0], n: 4, k: 'gate' }] };
+  const centres = svg => [...svg.matchAll(/class="sy" transform="matrix\(([^)]*)\)"/g)].map(x => x[1].split(' ').map(Number)).filter(v => Math.hypot(v[0], v[1]) > 1.5);
+  const gapOf = svg => { const c = centres(svg); return Math.hypot(c[1][4] - c[0][4], c[1][5] - c[0][5]); };
+  const halfs = svg => centres(svg).slice(0, 2).reduce((a, v) => a + 15.2 * Math.hypot(v[0], v[1]), 0);   // to the outside of each valve's flange bar
+  PD.load(JSON.parse(JSON.stringify(m))); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+  const on = PD.iso('', '0'); PD.isoOpts.stretch = false; const off = PD.iso('', '0'); PD.isoOpts.stretch = true;
+  check('stretched: two valves 300 mm apart on a short riser no longer overlap on paper', gapOf(on) >= halfs(on) - 1, gapOf(on).toFixed(1) + ' vs ' + halfs(on).toFixed(1));
+  check('without stretching they do (the option switches it off)', gapOf(off) < halfs(off) - 1 && gapOf(on) > gapOf(off) * 1.3, gapOf(off).toFixed(1) + ' vs ' + halfs(off).toFixed(1));
+  check('stretching keeps the true dimensions', on.includes('>300<') && on.includes('>1100<'));
+  PD.load({ pipes: [] });
+}
+
+// Iso balloons: tidy gives flanges, supports and fittings one balloon per item number; valves always get their own
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [8, 1, 0], n: 4 }], valves: [{ p: [2, 1, 0], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }, { p: [6, 1, 0], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }],
+    supports: [1, 3, 4, 5, 7].map(x => ({ p: [x, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' })) });
+  const num = re => PD.rows().filter(r => !/^Pipe (stock|weight)/.test(r[0])).findIndex(r => re.test(r[0])) + 1;
+  const count = (svg, n) => [...svg.matchAll(/<circle cx="[-\d.]+" cy="[-\d.]+" r="9.5"[^>]*\/><text[^>]*>(\d+)<\/text>/g)].filter(m => +m[1] === n).length;
+  const tidy = PD.iso('', '0'); PD.isoOpts.balls = 'all'; const all = PD.iso('', '0'); PD.isoOpts.balls = 'tidy';
+  check('tidy balloons: five pipe shoes share one balloon', count(tidy, num(/^Pipe shoe/)) === 1, String(count(tidy, num(/^Pipe shoe/))));
+  check('tidy balloons: each valve keeps its own', count(tidy, num(/^Gate valve/)) === 2);
+  check('Balloons: every part puts one on each shoe', count(all, num(/^Pipe shoe/)) === 5);
   PD.load({ pipes: [] });
 }
 
