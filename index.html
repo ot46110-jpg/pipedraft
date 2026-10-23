@@ -4310,55 +4310,93 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (j.type && (j.type !== 'elbow' || j.retMain || j.corner)) balloon(compDesc.joint[k], j.pos, 4, null, 'bulk');
     });
     // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
+    // Dimensions in the iso planes, the way piping isos are drawn by hand or in CAD: the dimension line is offset from the pipe along
+    // another axis of the model (a horizontal pipe along the other horizontal axis, a vertical pipe along a horizontal one), the
+    // extension lines run along that axis with a small gap at the pipe and a short overshoot, and the text stands above the unbroken
+    // line, slanted into the same plane. A pipe off the axes keeps a dimension square to it on paper.
+    var dimCtx = null;                                               // the offset directions open to the pipe being dimensioned
+    function dimDirs(p) {
+      var d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], nz = d.map(function (v) { return Math.abs(v) > 1e-4; }), out = [];
+      if (nz.filter(Boolean).length !== 1) return null;
+      var k = nz.indexOf(true);
+      [0, 1, 2].forEach(function (j) {
+        if (j === k) return;
+        [1, -1].forEach(function (sg) {
+          var e = [0, 0, 0]; e[j] = sg; var u = prd(e), ul = Math.hypot(u[0], u[1]); if (ul < 1e-6) return;
+          out.push({ u: [u[0] / ul, u[1] / ul], code: sg * (j + 1), pen: k !== 1 && j === 1 ? 4 : 0 });   // a horizontal pipe is dimensioned in plan first
+        });
+      });
+      return out;
+    }
     function dimPick(a, b, label, only, stag, chain) {                   // the side and distance where a dimension line crosses the least; chain: [[p0, p1, label], ...] of a chain, scored with its overall tier
       var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 12) return null;
       var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
       if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
-      var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
-      var ca = Math.abs(Math.cos(ang * Math.PI / 180)), sa = Math.abs(Math.sin(ang * Math.PI / 180));
+      var dirs = dimCtx && dimCtx.length ? dimCtx : [{ u: [nx, ny], code: 9, pen: 0 }, { u: [-nx, -ny], code: -9, pen: 0 }];
+      var rx = tx, ry = ty; if (rx < -0.05 || (Math.abs(rx) <= 0.05 && ry > 0)) { rx = -rx; ry = -ry; }   // the text reads left to right, or bottom to top
       function near(q, r) { return Math.hypot(q[0] - r[0], q[1] - r[1]) < 3; }
       function onLn(q) { return Math.abs((q[0] - a[0]) * ty - (q[1] - a[1]) * tx) < 1; }
       function host(s0) { return onLn(s0[0]) && onLn(s0[1]); }   // the pipe itself, or a piece of it
-      function lineCost(p0, p1, lab, off, st) {                       // one dimension line at this offset: its text, the line itself and its two extension lines
-        var l2 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), tw = lab.length * 6 + 6, a2 = [p0[0] + nx * off, p0[1] + ny * off], b2 = [p1[0] + nx * off, p1[1] + ny * off];
-        var hw = (ca * tw + sa * 11) / 2, hh = (sa * tw + ca * 11) / 2, sh = st != null && tw > l2 - 12 && st % 2 ? 11 : 0, osg = off < 0 ? -1 : 1;   // a text wider than its segment goes to the outer side on every second one
-        var mx0 = (a2[0] + b2[0]) / 2 + nx * osg * sh, my0 = (a2[1] + b2[1]) / 2 + ny * osg * sh, bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
-        if (TIDY) {
-          cost = boxCost(bx);
-          segs.forEach(function (s0) { if (host(s0)) return; if (segDist2(a2, b2, s0[0], s0[1]) < 7) cost += 12; });
-          eqBoxes.forEach(function (e0) { if (segHitRect(e0, [a2, b2])) cost += 16; });   // a dimension across a pump or vessel picture is hard to read
-          occ.forEach(function (o2) { if (segHitRect(o2, [a2, b2])) cost += 6; });     // the dimension line through a valve or other symbol
-          if (Math.abs(off) > 10) [[p0, a2], [p1, b2]].forEach(function (e) {           // the extension lines, from just clear of the pipe
-            var e0 = [e[0][0] + nx * osg * 10, e[0][1] + ny * osg * 10];
-            segs.forEach(function (s0) { if (host(s0) || near(s0[0], e[0]) || near(s0[1], e[0]) || near(s0[0], a) || near(s0[1], a) || near(s0[0], b) || near(s0[1], b)) return; if (segDist2(e0, e[1], s0[0], s0[1]) < 2) cost += 8; });
-            occ.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 10; });
-            eqBoxes.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 8; });   // or across a pump or vessel picture
-          });
-        }
-        return { cost: cost, a2: a2, b2: b2, bx: bx, sh: sh };
+      function geom(dir, off, p0, p1, lab, st) {                      // one dimension line along dir at off (px along dir)
+        var u = dir.u, cr = Math.abs(tx * u[1] - ty * u[0]) || 1, a2 = [p0[0] + u[0] * off, p0[1] + u[1] * off], b2 = [p1[0] + u[0] * off, p1[1] + u[1] * off];
+        var vu = rx * (-u[1]) - ry * (-u[0]) > 0 ? u : [-u[0], -u[1]];   // the text's up: along the offset axis, the side that keeps it readable
+        var l2 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), tw = lab.length * 6 + 4, sh = st != null && tw > l2 - 12 && st % 2 ? 11 : 0;
+        var lift = (2.5 + sh) / cr, mx = (a2[0] + b2[0]) / 2 + vu[0] * lift, my = (a2[1] + b2[1]) / 2 + vu[1] * lift, hgt = 8 / cr;
+        var cs = [[-1, 0], [1, 0], [-1, 1], [1, 1]].map(function (c) { return [mx + rx * c[0] * tw / 2 + vu[0] * c[1] * hgt, my + ry * c[0] * tw / 2 + vu[1] * c[1] * hgt]; });
+        var bx = [Math.min.apply(null, cs.map(function (c) { return c[0]; })), Math.min.apply(null, cs.map(function (c) { return c[1]; })), Math.max.apply(null, cs.map(function (c) { return c[0]; })), Math.max.apply(null, cs.map(function (c) { return c[1]; }))];
+        return { u: u, cr: cr, a2: a2, b2: b2, vu: vu, mx: mx, my: my, bx: bx, p0: p0, p1: p1, sh: sh };
       }
-      var best = null, offs = only != null ? [only] : [20, -20, 34, -34, 48, -48, 62, -62, 78, -78];
-      for (var oi = 0; oi < offs.length; oi++) {
-        var off = offs[oi], main = lineCost(a, b, label, off, stag), cost = main.cost;
-        if (chain && TIDY) { cost = 0; chain.forEach(function (c, q) { cost += lineCost(c[0], c[1], c[2], off, q).cost; }); cost += lineCost(a, b, label, off + (off < 0 ? -22 : 22)).cost; }   // the chain and the overall length on the tier outside it
-        cost += oi * 0.3;
-        if (isoCtx.dbg) isoCtx.dbg.push([label, off, Math.round(cost)]);
-        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: main.a2, b2: main.b2, bx: main.bx, tx: tx, ty: ty, nx: nx, ny: ny, ang: ang, len: len, sh: main.sh };
+      function lineCost(g0) {                                         // one dimension line: its text, the line itself and its two extension lines
+        var cost = boxCost(g0.bx), a2 = g0.a2, b2 = g0.b2, u = g0.u;
+        [a2, b2].forEach(function (q) { if (q[0] < 22 || q[0] > Wd - 10 || q[1] < 22 || q[1] > H - TB - 8) cost += 60; });   // the line must stay inside the drawing area
+        segs.forEach(function (s0) { if (host(s0)) return; if (segDist2(a2, b2, s0[0], s0[1]) < 7) cost += 12; });
+        eqBoxes.forEach(function (e0) { if (segHitRect(e0, [a2, b2])) cost += 16; });   // a dimension across a pump or vessel picture is hard to read
+        occ.forEach(function (o2) { if (segHitRect(o2, [a2, b2])) cost += 6; });     // the dimension line through a valve or other symbol
+        [[g0.p0, a2], [g0.p1, b2]].forEach(function (e) {             // the extension lines, from just clear of the pipe
+          var e0 = [e[0][0] + u[0] * 10, e[0][1] + u[1] * 10];
+          if (Math.hypot(e[1][0] - e0[0], e[1][1] - e0[1]) < 2) return;
+          segs.forEach(function (s0) { if (host(s0) || near(s0[0], e[0]) || near(s0[1], e[0]) || near(s0[0], a) || near(s0[1], a) || near(s0[0], b) || near(s0[1], b)) return; if (segDist2(e0, e[1], s0[0], s0[1]) < 2) cost += 8; });
+          occ.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 10; });
+          eqBoxes.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 8; });   // or across a pump or vessel picture
+        });
+        return cost;
+      }
+      var cands = [];
+      if (only != null) {
+        var o2 = typeof only === 'number' ? null : only, dr = o2 ? dirs.filter(function (q) { return q.code === o2.code; })[0] : null;
+        if (!dr) {                                                    // an older hand-moved offset, square to the pipe: the closest direction on that side
+          var sgo = (o2 ? o2.off : only) < 0 ? -1 : 1, dist0 = Math.abs(o2 ? o2.off : only);
+          dr = dirs.slice().sort(function (p1, p2) { return (p2.u[0] * nx + p2.u[1] * ny) * sgo - (p1.u[0] * nx + p1.u[1] * ny) * sgo; })[0];
+          cands.push({ dir: dr, off: dist0 / (Math.abs(tx * dr.u[1] - ty * dr.u[0]) || 1) });
+        } else cands.push({ dir: dr, off: o2.off });
+      } else [20, 34, 48, 62, 78].forEach(function (dist, di) { dirs.forEach(function (dr2) { cands.push({ dir: dr2, off: dist / (Math.abs(tx * dr2.u[1] - ty * dr2.u[0]) || 1), rank: di }); }); });
+      var best = null;
+      for (var oi = 0; oi < cands.length; oi++) {
+        var c = cands[oi], main = geom(c.dir, c.off, a, b, label, stag), cost = 0;
+        if (TIDY) {
+          if (chain) { chain.forEach(function (q, k) { cost += lineCost(geom(c.dir, c.off, q[0], q[1], q[2], k)); }); cost += lineCost(geom(c.dir, c.off + 22 / main.cr, a, b, label)); }   // the chain and the overall length on the tier outside it
+          else cost = lineCost(main);
+          cost += c.dir.pen + (c.rank || 0) * 1.2 + oi * 0.05;
+        }
+        if (isoCtx.dbg) isoCtx.dbg.push([label, c.dir.code, Math.round(c.off), Math.round(cost)]);
+        if (!best || cost < best.cost) best = Object.assign(main, { cost: cost, off: c.off, code: c.dir.code, tx: tx, ty: ty, rx: rx, ry: ry, len: len, nx: c.dir.u[0], ny: c.dir.u[1] });
         if (!TIDY || cost < 1) break;
       }
       return best;
     }
     var lastDim = null;
-    function dimLine(a, b, label, only, stag) {                           // a line parallel to the pipe with arrowheads and the centreline length; short ones get outside arrows
+    function dimLine(a, b, label, only, stag) {                           // a line parallel to the pipe with arrowheads, the centreline length standing on it
       var best = dimPick(a, b, label, only, stag); lastDim = best; if (!best) return '';
-      var a2 = best.a2, b2 = best.b2, tx = best.tx, ty = best.ty, ang = best.ang, sg = best.off < 0 ? -1 : 1, nx = best.nx * sg, ny = best.ny * sg, inside = best.len >= 34;
+      var a2 = best.a2, b2 = best.b2, tx = best.tx, ty = best.ty, u = best.u, inside = best.len >= 34, ext = inside ? 0 : 10, vu = best.vu;
+      var pw0 = -ty, ph0 = tx;                                        // arrowhead width is square to the line on paper
       segs.push([a2, b2]); occ.push(best.bx);
-      segs.push([[a[0] + nx * 4, a[1] + ny * 4], [a2[0] + nx * 3, a2[1] + ny * 3]], [[b[0] + nx * 4, b[1] + ny * 4], [b2[0] + nx * 3, b2[1] + ny * 3]]);   // the extension lines too, so no label crosses them
-      var mx = (a2[0] + b2[0]) / 2 - nx * 4 + nx * best.sh, my = (a2[1] + b2[1]) / 2 - ny * 4 + ny * best.sh, ext = inside ? 0 : 10;
-      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
-      return '<g class="dim" stroke="' + DIMK + '" stroke-width="0.6" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0] - tx * ext) + '" y1="' + f1(a2[1] - ty * ext) + '" x2="' + f1(b2[0] + tx * ext) + '" y2="' + f1(b2[1] + ty * ext) + '"/></g>'
+      var e1 = [[a[0] + u[0] * 3, a[1] + u[1] * 3], [a2[0] + u[0] * 3, a2[1] + u[1] * 3]], e2 = [[b[0] + u[0] * 3, b[1] + u[1] * 3], [b2[0] + u[0] * 3, b2[1] + u[1] * 3]];   // a small gap at the pipe, a short overshoot past the line
+      segs.push(e1, e2);                                              // the extension lines too, so no label crosses them
+      function ln(q) { return '<line x1="' + f1(q[0][0]) + '" y1="' + f1(q[0][1]) + '" x2="' + f1(q[1][0]) + '" y2="' + f1(q[1][1]) + '"/>'; }
+      function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 8 + pw0 * 1.7) + ',' + f1(pt[1] + sgn * ty * 8 + ph0 * 1.7) + ' ' + f1(pt[0] + sgn * tx * 8 - pw0 * 1.7) + ',' + f1(pt[1] + sgn * ty * 8 - ph0 * 1.7) + '" fill="' + INK + '"/>'; }
+      return '<g class="dim" stroke="' + DIMK + '" stroke-width="0.6" fill="none">' + ln(e1) + ln(e2) + ln([[a2[0] - tx * ext, a2[1] - ty * ext], [b2[0] + tx * ext, b2[1] + ty * ext]]) + '</g>'
         + (inside ? arrow(a2, 1) + arrow(b2, -1) : arrow(a2, -1) + arrow(b2, 1))
-        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>'
+        + '<text class="dt" transform="matrix(' + [best.rx, best.ry, -vu[0], -vu[1], best.mx, best.my].map(f3).join(' ') + ')" font-size="10" font-style="italic" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="2" paint-order="stroke">' + label + '</text>'
         + '<line class="hit" x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '" stroke="transparent" stroke-width="16"/>';
     }
     function segDist2(p1, p2, q1, q2) {                             // distance between two screen segments
@@ -4367,31 +4405,56 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       function pd(p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
       return Math.min(pd(p1, q1, q2), pd(p2, q1, q2), pd(q1, p1, p2), pd(q2, p1, p2));
     }
+    var ffwOn = {};                                                 // field fit welds by the pipe whose piece carries the allowance, as distances from its start
+    fabI.welds.forEach(function (w) { if (!w.ffw || !w.allowOn) return; var pc = w.allowOn, P = model.pipes[pc.i]; if (!P) return; (ffwOn[pc.i] = ffwOn[pc.i] || []).push({ t: V(P.a).distanceTo(V(w.pos)), mm: Math.round(pc.allow * 1000 / Math.max(1, fabI.welds.filter(function (w2) { return w2.allowOn === pc; }).length)) }); });
     var onPipe = model.pipes.map(function () { return []; });        // distances (m) from the start of each pipe to the valves, inline parts, supports and instruments on it
     function locate(pt) { var hi = hostOf(pt); if (hi >= 0) onPipe[hi].push(V(model.pipes[hi].a).distanceTo(V(pt))); }
     model.valves.forEach(function (v) { locate(v.p); }); model.items.forEach(function (it) { locate(it.p); }); model.supports.forEach(function (q0) { locate(q0.p); });
     model.instr.forEach(function (it) { if (it.eq == null) locate(it.p); });
+    // Dimension units: a straight run of pipes that carries on through tees, straight welds and reducers is dimensioned as one
+    // chain (each piece between joints and parts) with its overall length outside, as on a hand-drawn iso; any other pipe on its own.
+    var units = [], seenU = {}, byEnd = {};
+    model.pipes.forEach(function (p, i) { if (p.ghost) return; [p.a, p.b].forEach(function (e) { (byEnd[key(e)] = byEnd[key(e)] || []).push(i); }); });
+    function pdir(p) { var d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], l = Math.hypot(d[0], d[1], d[2]) || 1; return [d[0] / l, d[1] / l, d[2] / l]; }
     model.pipes.forEach(function (p, pi) {
-      if (p.ghost) return;
-      var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
-      function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
+      if (p.ghost || seenU[pi]) return;
+      var mem = [pi]; seenU[pi] = 1;
+      if (!offsetPipes[pi]) for (var qi = 0; qi < mem.length; qi++) {   // the collinear neighbours, joint by joint
+        var P0 = model.pipes[mem[qi]], d0 = pdir(P0);
+        [P0.a, P0.b].forEach(function (e) { (byEnd[key(e)] || []).forEach(function (j) { if (seenU[j] || offsetPipes[j]) return; var d1 = pdir(model.pipes[j]); if (Math.abs(d0[0] * d1[0] + d0[1] * d1[1] + d0[2] * d1[2]) > 0.9999) { seenU[j] = 1; mem.push(j); } }); });
+      }
+      var dd = pdir(p), pj = function (q) { return (q[0] - p.a[0]) * dd[0] + (q[1] - p.a[1]) * dd[1] + (q[2] - p.a[2]) * dd[2]; }, A = p.a, B = p.b;
+      mem.forEach(function (j) { var Q = model.pipes[j]; [Q.a, Q.b].forEach(function (e) { if (pj(e) < pj(A)) A = e; if (pj(e) > pj(B)) B = e; }); });
+      var t0 = pj(A), ticks = [], fw = [];
+      mem.forEach(function (j) {
+        var Q = model.pipes[j], qa = pj(Q.a) - t0, qd = pdir(Q), sg = qd[0] * dd[0] + qd[1] * dd[1] + qd[2] * dd[2] > 0 ? 1 : -1;
+        if (mem.length > 1) [Q.a, Q.b].forEach(function (e) { var t = pj(e) - t0; if (t > 1e-4 && Math.abs(t - (pj(B) - t0)) > 1e-4) ticks.push(t); });   // the joints inside the run
+        onPipe[j].forEach(function (t) { ticks.push(qa + sg * t); });
+        (ffwOn[j] || []).forEach(function (w) { fw.push({ t: qa + sg * w.t, mm: w.mm }); });
+      });
+      units.push({ pi: pi, n: mem.length, a3: mem.length > 1 ? A : p.a, b3: mem.length > 1 ? B : p.b, ticks: ticks, fw: fw, rev: mem.length === 1 ? false : false });
+    });
+    units.forEach(function (U) {
+      var pa = U.a3, pb = U.b3, pi = U.pi, a = sp(pa), b = sp(pb), L3 = V(pa).distanceTo(V(pb)), kept = [], last = 0;
+      if (U.n === 1) { var Pp = model.pipes[pi]; U.ticks = onPipe[pi].slice(); U.fw = ffwOn[pi] || []; pa = Pp.a; pb = Pp.b; a = sp(pa); b = sp(pb); }   // a pipe on its own keeps its own start and its saved layout key
+      function scr(t) { return sp(lerp3(pa, pb, t / Math.max(L3, 1e-9))); }
       function room(t0, t1) { var u = scr(t0), w0 = scr(t1); return Math.hypot(w0[0] - u[0], w0[1] - u[1]) >= Math.max(18, String(Math.round(Math.abs(t1 - t0) * 1000)).length * 6 + 12); }   // a piece of the chain must fit its own number
-      onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { if (room(last, t) && room(t, L3)) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
-      var total = offsetPipes[pi] ? '(' + Math.round(L3 * 1000) + ')' : String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
-      function wrapD(pk) {                                            // the dimensions of one pipe move together, across the pipe
+      U.ticks.sort(function (x, y) { return x - y; }).filter(function (t, k, arr) { return t > 1e-4 && t < L3 - 1e-4 && (!k || t - arr[k - 1] > 1e-4); }).forEach(function (t) { if (room(last, t) && room(t, L3)) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
+      var fw = U.fw, fwAll = fw.reduce(function (t9, w) { return t9 + w.mm; }, 0);   // field fit welds: the length to the weld carries the allowance, 2220(+100)
+      function plus(lab, t0, t1) { var n9 = fw.filter(function (w) { return w.t >= t0 - 0.02 && w.t <= t1 + 0.02; }).reduce(function (t9, w) { return t9 + w.mm; }, 0); return n9 ? lab + '(+' + n9 + ')' : lab; }
+      var total = (offsetPipes[pi] ? '(' + Math.round(L3 * 1000) + ')' : String(Math.round(L3 * 1000))) + (fwAll ? '(+' + fwAll + ')' : ''), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), lv = LAY[dk], dov = typeof lv === 'number' ? lv : Array.isArray(lv) ? { code: lv[0], off: lv[1] } : null, g0 = body.length;
+      dimCtx = dimDirs({ a: pa, b: pb });
+      function wrapD(pk) {                                            // the dimensions of one run move together, across it
         if (!pk) return; if (dov != null) isoCtx.layN++;
-        body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';
+        body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '" data-ax="' + pk.code + '">' + body.slice(g0) + '</g>';
       }
-      if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); return; }
+      if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); dimCtx = null; return; }
       var ts = [0].concat(kept, [L3]), chain = [];
-      for (var q0 = 0; q0 + 1 < ts.length; q0++) chain.push([sp(lerp3(p.a, p.b, ts[q0] / L3)), sp(lerp3(p.a, p.b, ts[q0 + 1] / L3)), String(Math.round((ts[q0 + 1] - ts[q0]) * 1000))]);
-      var pick = dimPick(a, b, total, dov, null, chain); if (!pick) return;   // the chain shares one side and distance, so it reads as one line of dimensions; the side is scored with every piece and the overall tier
-      for (var q = 0; q + 1 < ts.length; q++) {
-        var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
-        body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
-      }
-      body += dimLine(a, b, total, pick.off + (pick.off < 0 ? -22 : 22));   // the overall length on the next tier out
-      wrapD(pick);
+      for (var q0 = 0; q0 + 1 < ts.length; q0++) chain.push([scr(ts[q0]), scr(ts[q0 + 1]), plus(String(Math.round((ts[q0 + 1] - ts[q0]) * 1000)), ts[q0], ts[q0 + 1])]);   // through the shortening map, so the ticks stay on the parts
+      var pick = dimPick(a, b, total, dov, null, chain); if (!pick) { dimCtx = null; return; }   // the chain shares one side and distance, so it reads as one line of dimensions; the side is scored with every piece and the overall tier
+      chain.forEach(function (c, q) { body += dimLine(c[0], c[1], c[2], { code: pick.code, off: pick.off }, q); });
+      body += dimLine(a, b, total, { code: pick.code, off: pick.off + 22 / pick.cr });   // the overall length on the next tier out
+      wrapD(pick); dimCtx = null;
     });
     // One balloon per pipe row, on its longest run.
     var longest = {};
@@ -5814,7 +5877,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var d = dr; dr = null; d.el.classList.remove('drag');
       if (!d.moved || e.type === 'pointercancel') { d.el.removeAttribute('transform'); return; }
       var k = d.el.getAttribute('data-k');
-      if (d.el.classList.contains('dg')) layPut(k, Math.round((+d.el.getAttribute('data-off') + d.s) * 10) / 10);
+      if (d.el.classList.contains('dg')) { var off9 = Math.round((+d.el.getAttribute('data-off') + d.s) * 10) / 10, ax9 = +d.el.getAttribute('data-ax'); layPut(k, isFinite(ax9) && ax9 ? [ax9, off9] : off9); }   // which axis the dimensions stand along, and how far
       else layPut(k, [Math.round((+d.el.getAttribute('data-ox') + d.dx) * 10) / 10, Math.round((+d.el.getAttribute('data-oy') + d.dy) * 10) / 10]);
     }
     box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);

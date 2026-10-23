@@ -397,7 +397,7 @@ check('stock and weight are notes under the list, not numbered items', isoP.incl
 check('symbols are skewed into the plane of their pipe', (isoP.match(/class="sy" transform="matrix\(/g) || []).length >= 6);
 check('no P&ID bubbles on the iso sheet', !isoP.includes('r="14"') && !isoP.includes('>FT<') && !isoP.includes('SYMBOLS'));
 check('item balloons point at the material list', (isoP.match(/r="9.5"/g) || []).length >= 8 && isoP.includes('>' + rowsN + '</text>'), String((isoP.match(/r="9.5"/g) || []).length));
-check('dimension lines run along the pipe with the centreline length', (isoP.match(/class="dim"/g) || []).length >= 3 && isoP.includes('>4150<'), (isoP.match(/class="dim"/g) || []).length + '');
+check('dimension lines run along the pipe with the centreline length; a straight run through a tee is one chain with its overall length', (isoP.match(/class="dim"/g) || []).length >= 3 && isoP.includes('>7150<') && !isoP.includes('>4150<'), (isoP.match(/class="dim"/g) || []).length + '');
 check('elevations are written at free ends', /EL \+\d+\.\d{3}/.test(isoP));
 check('equipment is drawn as solid shapes with its nozzles and tag', !isoP.includes('stroke-dasharray="6 3"') && (isoP.match(/<polygon points="[^"]+" fill="#e8edef"/g) || []).length >= 8 && isoP.includes('>N1<') && isoP.includes('>V-1<') && isoP.includes('>P-1<'));
 check('the material list numbers every component row', compRows.every((r, i) => isoP.includes('>' + (i + 1) + '</text>')) && isoP.includes('QTY'));
@@ -1874,15 +1874,18 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const base = { pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [3, 1, 2], n: 4 }], valves: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, k: 'gate' }] };
   PD.load(JSON.parse(JSON.stringify(base))); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
   const lbs = svg => [...svg.matchAll(/<g class="lb" data-k="([^"]+)" data-ox="([-0-9.]+)" data-oy="([-0-9.]+)"/g)].map(m => ({ k: m[1], ox: +m[2], oy: +m[3] }));
-  const dgs = svg => [...svg.matchAll(/<g class="dg" data-k="([^"]+)" data-nx="[-0-9.]+" data-ny="[-0-9.]+" data-off="([-0-9.]+)"/g)].map(m => ({ k: m[1], off: +m[2] }));
+  const dgs = svg => [...svg.matchAll(/<g class="dg" data-k="([^"]+)" data-nx="[-0-9.]+" data-ny="[-0-9.]+" data-off="([-0-9.]+)" data-ax="([-0-9]+)"/g)].map(m => ({ k: m[1], off: +m[2], ax: +m[3] }));
   let sv = PD.iso('', '0'); const L0 = lbs(sv), D0 = dgs(sv);
   check('every label and every pipe dimension can be picked on the sheet', L0.length >= 5 && D0.length === 2 && new Set(L0.map(l => l.k)).size === L0.length, L0.length + ' ' + D0.length);
   PD.lay.show(); const bal = L0.find(l => l.k.startsWith('l4:'));
   PD.lay.put(bal.k, [bal.ox + 60, bal.oy - 40]);
   sv = PD.iso('', '0'); let b1 = lbs(sv).find(l => l.k === bal.k);
   check('a dragged balloon stays where it was dropped, with its leader', b1 && Math.abs(b1.ox - (bal.ox + 60)) < 0.2 && Math.abs(b1.oy - (bal.oy - 40)) < 0.2, JSON.stringify(b1));
+  PD.lay.put(D0[0].k, [D0[0].ax, 70]);
+  check('a dragged dimension line keeps its new distance from the pipe, along the same axis', (d => d.off === 70 && d.ax === D0[0].ax)(dgs(PD.iso('', '0')).find(d => d.k === D0[0].k)));
   PD.lay.put(D0[0].k, 70);
-  check('a dragged dimension line keeps its new distance from the pipe', dgs(PD.iso('', '0')).find(d => d.k === D0[0].k).off === 70);
+  check('an older saved distance (a plain number) still places the dimensions', dgs(PD.iso('', '0')).find(d => d.k === D0[0].k).off >= 70);
+  PD.lay.undo();                                                    // back to the move along the axis, so the undo check below sees one move
   check('the moves are saved with the project', JSON.stringify(PD.model.isoLay).includes(bal.k) && Object.keys(PD.model.isoLay)[0] === '*|0');
   check('a different view of the same line has its own layout', !lbs(PD.iso('', '1')).some(l => l.k === bal.k && Math.abs(l.ox - (bal.ox + 60)) < 0.2));
   PD.model.pipes.push({ a: [3, 1, 2], b: [3, 1, 6], n: 4, s: 40, ln: 'L-001', fl: 1 }); PD.rebuild();
@@ -2109,7 +2112,21 @@ check('a size outside the list is snapped to the nearest listed size and the mod
 {
   PD.load({ pipes: [{ a: [0, 0.5, 0], b: [0, 2.5, 0], n: 4 }, { a: [0.34, 0.3, 0], b: [0.34, 2.7, 0], n: 2 }], valves: [{ p: [0, 1.5, 0], d: [0, 1, 0], n: 4, k: 'gate', e: 'weld' }] });
   const gs = [...PD.iso('', '0').matchAll(/<g class="dg" data-k="[^"]*" data-nx="([-\d.]+)" data-ny="([-\d.]+)" data-off="([-\d.]+)"/g)].map(m => m.slice(1).map(Number));
-  check('the chain stands on the side away from the pipe its overall tier would cross', gs[0] && gs[0][0] > 0.9 && gs[0][2] < 0, JSON.stringify(gs));
+  check('the chain stands on the side away from the pipe its overall tier would cross', gs[0] && gs[0][0] * 0.866 - gs[0][1] * 0.5 < -0.5, JSON.stringify(gs));   // +X on paper is (0.866, -0.5)
+  PD.load({ pipes: [] });
+}
+
+// Dimensions in the iso planes (as on a hand-drawn iso): extension lines along a model axis, text slanted into that plane,
+// a run through tees dimensioned as one chain, and a field fit weld's allowance in the length
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 8 }, { a: [3, 1, 0], b: [5, 1, 0], n: 8 }, { a: [2, 1, 0], b: [2, 1.4, 0], n: 4 }] });
+  const sv = PD.iso('', '0'), dg = [...sv.matchAll(/<g class="dg" data-k="[^"]*" data-nx="([-\d.]+)" data-ny="([-\d.]+)" data-off="[-\d.]+" data-ax="([-\d]+)"/g)].map(m => m.slice(1).map(Number));
+  const iso = u => [[0.866, -0.5], [-0.866, -0.5], [0, -1]].some(ax => Math.abs(Math.abs(u[0] * ax[0] + u[1] * ax[1]) - 1) < 0.01);
+  check('every dimension stands off along a model axis on paper', dg.length >= 2 && dg.every(g => iso(g)), JSON.stringify(dg));
+  check('the header through the tee and the weld is one run: chain 2000, 1000, 2000, overall 5000', [...sv.matchAll(/class="dt"[^>]*>([^<]*)</g)].map(m => m[1]).join(',') === '2000,1000,2000,5000,400');
+  check('dimension text is slanted into the plane, not just turned', /<text class="dt" transform="matrix\(/.test(sv));
+  const w = PD.fab().welds.find(x => Math.abs(x.pos[0] - 3) < 0.01); PD.model.field[w.key] = 2; PD.rebuild();
+  check('a field fit weld writes its allowance after the length, 5000(+100)', PD.iso('', '0').includes('(+100)<'));
   PD.load({ pipes: [] });
 }
 
