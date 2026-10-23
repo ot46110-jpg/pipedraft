@@ -3865,7 +3865,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       up.pop(); lo.pop(); return lo.concat(up);
     }
     function pstr(pts) { return pts.map(function (q) { return f1(q[0]) + ',' + f1(q[1]); }).join(' '); }
-    function depth3(q) { var x = q[0], z = q[2]; for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; } return x + q[1] + z; }
+    function depth3(q) { var x = q[0], z = q[2]; for (var r = 0; r < rot; r++) { var t = x; x = -z; z = t; } return -x + q[1] - z; }   // nearness to the viewer: pr() puts +x and +z up the sheet (away), so the eye is at -x, +y, -z
     function eqW3(e) { var ro = (e.r || 0) * Math.PI / 2, base = V(e.p); return function (x, y, z) { return A(new T.Vector3(x, y, z).applyAxisAngle(UP, ro).add(base)); }; }
     function boxPrim(W3, x0, x1, y0, y1, z0, z1, fill) {
       var cs = [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]].map(function (q) { return W3(q[0], q[1], q[2]); });
@@ -3968,7 +3968,52 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Pipe: one line per run, heavier for larger sizes.
     model.pipes.forEach(function (p) {
       var a = sp(p.a), b = sp(p.b); segs.push([a, b]);
-      body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.7 + Math.sqrt(p.n) * 0.5).toFixed(2) + '" stroke-linecap="round"/>';
+      body += '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="' + INK + '" stroke-width="' + (1.7 + Math.sqrt(p.n) * 0.5).toFixed(2) + '" stroke-linecap="round"/>';   // keep in step with pw() below
+    });
+    // Crossings (ISO 6412-2, 8.2.4): where one pipe passes behind another on paper, the line behind is broken, the gap at least five line widths.
+    var pw = function (p) { return 1.7 + Math.sqrt(p.n) * 0.5; }, nCross = 0;
+    for (var ci = 0; ci < model.pipes.length; ci++) for (var cj = ci + 1; cj < model.pipes.length; cj++) {
+      var P = model.pipes[ci], Q = model.pipes[cj];
+      if ([P.a, P.b].some(function (e) { return [Q.a, Q.b].some(function (f) { return key(e) === key(f); }); })) continue;   // joined pipes meet, they do not cross
+      var a1 = sp(P.a), b1 = sp(P.b), a2 = sp(Q.a), b2 = sp(Q.b), r1 = [b1[0] - a1[0], b1[1] - a1[1]], r2 = [b2[0] - a2[0], b2[1] - a2[1]], den = r1[0] * r2[1] - r1[1] * r2[0];
+      if (Math.abs(den) < 1e-6) continue;
+      var t1 = ((a2[0] - a1[0]) * r2[1] - (a2[1] - a1[1]) * r2[0]) / den, t2 = ((a2[0] - a1[0]) * r1[1] - (a2[1] - a1[1]) * r1[0]) / den;
+      if (t1 <= 0.02 || t1 >= 0.98 || t2 <= 0.02 || t2 >= 0.98) continue;
+      var X1 = lerp3(P.a, P.b, t1), X2 = lerp3(Q.a, Q.b, t2), behind = depth3(X1) < depth3(X2) ? 0 : 1;
+      var rb = behind ? r2 : r1, fr = behind ? P : Q, bk = behind ? Q : P, lb = Math.hypot(rb[0], rb[1]), ux = rb[0] / lb, uy = rb[1] / lb;
+      var cx = a1[0] + r1[0] * t1, cy = a1[1] + r1[1] * t1, half = pw(fr) / 2 + Math.max(4, 2.5 * pw(bk));
+      body += '<line class="xgap" x1="' + f1(cx - ux * half) + '" y1="' + f1(cy - uy * half) + '" x2="' + f1(cx + ux * half) + '" y2="' + f1(cy + uy * half) + '" stroke="' + PAPER + '" stroke-width="' + (pw(bk) + 2).toFixed(2) + '"/>';
+      var fa = sp(fr.a), fb = sp(fr.b), fl0 = Math.hypot(fb[0] - fa[0], fb[1] - fa[1]), fx = (fb[0] - fa[0]) / fl0, fy = (fb[1] - fa[1]) / fl0, h2 = half + 4;
+      body += '<line x1="' + f1(cx - fx * h2) + '" y1="' + f1(cy - fy * h2) + '" x2="' + f1(cx + fx * h2) + '" y2="' + f1(cy + fy * h2) + '" stroke="' + INK + '" stroke-width="' + pw(fr).toFixed(2) + '"/>';   // the pipe in front stays whole
+      nCross++;
+    }
+    isoCtx.crossN = nCross;
+    // Pipes off the coordinate axes (ISO 6412-2, 6.1 to 6.5): the right-angled triangle of the offset in its plane, thin and hatched, legs dimensioned.
+    var offsetPipes = {};
+    model.pipes.forEach(function (p, pi) {
+      var d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], nz = d.map(function (v) { return Math.abs(v) > 1e-4; });
+      if (nz.filter(Boolean).length < 2) return;
+      offsetPipes[pi] = 1;
+      var tri = [];                                                  // each triangle: start, corner, end, which leg axis comes first
+      if (!nz[1]) tri.push([p.a, [p.b[0], p.a[1], p.a[2]], p.b, 'h']);                   // in a horizontal plane: X leg then Y (scene z) leg
+      else if (!nz[0] || !nz[2]) tri.push([p.a, [p.a[0], p.b[1], p.a[2]], p.b, 'v']);     // in a vertical plane: the rise, then the run
+      else { var m3 = [p.b[0], p.a[1], p.b[2]]; tri.push([p.a, [p.b[0], p.a[1], p.a[2]], m3, 'h'], [p.a, m3, p.b, 'v']); }   // skew: its plan triangle and its vertical triangle
+      tri.forEach(function (t) {
+        var A2 = sp(t[0]), C2 = sp(t[1]), B2 = sp(t[2]);
+        body += '<g class="offs" stroke="' + DIMK + '" stroke-width="0.6" fill="none"><polyline points="' + f1(A2[0]) + ',' + f1(A2[1]) + ' ' + f1(C2[0]) + ',' + f1(C2[1]) + ' ' + f1(B2[0]) + ',' + f1(B2[1]) + '"/>';
+        for (var hk = 1; hk < 6; hk++) {                             // hatching parallel to the first leg (6.5)
+          var tt = hk / 6, P1 = [C2[0] + (B2[0] - C2[0]) * tt, C2[1] + (B2[1] - C2[1]) * tt], Q1 = [A2[0] + (B2[0] - A2[0]) * tt, A2[1] + (B2[1] - A2[1]) * tt];
+          body += '<line x1="' + f1(Q1[0]) + '" y1="' + f1(Q1[1]) + '" x2="' + f1(P1[0]) + '" y2="' + f1(P1[1]) + '" stroke-width="0.4"/>';
+        }
+        var u1 = [A2[0] - C2[0], A2[1] - C2[1]], u2 = [B2[0] - C2[0], B2[1] - C2[1]], l1 = Math.hypot(u1[0], u1[1]) || 1, l2 = Math.hypot(u2[0], u2[1]) || 1, k6 = 6;
+        body += '<polyline points="' + f1(C2[0] + u1[0] / l1 * k6) + ',' + f1(C2[1] + u1[1] / l1 * k6) + ' ' + f1(C2[0] + (u1[0] / l1 + u2[0] / l2) * k6) + ',' + f1(C2[1] + (u1[1] / l1 + u2[1] / l2) * k6) + ' ' + f1(C2[0] + u2[0] / l2 * k6) + ',' + f1(C2[1] + u2[1] / l2 * k6) + '"/></g>';   // the right angle mark (6.5)
+        segs.push([A2, C2], [C2, B2]);
+        [[t[0], t[1], A2, C2], [t[1], t[2], C2, B2]].forEach(function (lg) {   // each leg carries its own length
+          var mm = Math.round(V(lg[0]).distanceTo(V(lg[1])) * 1000); if (mm < 1) return;
+          var mx = (lg[2][0] + lg[3][0]) / 2, my = (lg[2][1] + lg[3][1]) / 2, txt = String(mm);
+          want(2, mx, my, tagText(txt, 9), 11, sides(tagText(txt, 9), 11), function (cx, cy, dd) { return (dd > 20 ? leader(mx, my, cx, cy, [tagText(txt, 9) / 2, 5.5]) : '') + svgText(cx, cy + 3.2, txt, 9, 'middle'); });
+        });
+      });
     });
     // Break marks on pipes the shortening made noticeably shorter than true scale, in the widest stretch clear of parts.
     var brkMarks = 0;
@@ -3977,7 +4022,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       [model.valves, model.items, model.supports, model.flanges, model.instr].forEach(function (arr) { arr.forEach(function (q) { if (q.p && q.eq == null) { var hi = hostOf(q.p); if (hi >= 0) onP[hi].push(V(model.pipes[hi].a).distanceTo(V(q.p))); } }); });
       model.pipes.forEach(function (p, pi) {
         var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), lpx = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (L3 < 1e-6 || lpx < 44 || lpx > 0.75 * L3 * sc) return;
+        var tp = prd([p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]]), lTrue = Math.hypot(tp[0], tp[1]) * sc;   // its paper length at true scale (a pipe off the axes is foreshortened by the projection itself)
+        if (L3 < 1e-6 || lpx < 44 || lpx > 0.75 * lTrue) return;
         var ts = [0].concat(onP[pi].sort(function (x, y) { return x - y; }), [L3]), bt = L3 / 2, bg = -1;
         for (var q = 0; q + 1 < ts.length; q++) if (ts[q + 1] - ts[q] > bg) { bg = ts[q + 1] - ts[q]; bt = (ts[q] + ts[q + 1]) / 2; }
         var c = sp(lerp3(p.a, p.b, bt / L3)), ux = (b[0] - a[0]) / lpx, uy = (b[1] - a[1]) / lpx, nx = -uy, ny = ux, w = 2.8 + Math.sqrt(p.n) * 0.5;
@@ -4058,13 +4104,21 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var nx = -dy / L * 4.5, ny = dx / L * 4.5;
       [1, -1].forEach(function (sg) { body += '<line x1="' + f1(a[0] + nx * sg) + '" y1="' + f1(a[1] + ny * sg) + '" x2="' + f1(b[0] + nx * sg) + '" y2="' + f1(b[1] + ny * sg) + '" stroke="' + INK + '" stroke-width="0.7" stroke-dasharray="7 3"/>'; });
     });
-    model.pipes.forEach(function (p) {                              // slope: an arrow toward the low end and the ratio
+    model.pipes.forEach(function (p) {                              // slope (ISO 6412-2, 7.7): a right-angled triangle above the line, its slope falling toward the low end, and the ratio
       if (!p.sl || Math.abs(p.b[1] - p.a[1]) > 1e-6) return;
       var a = sp(p.a), b = sp(p.b), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 60) return;
-      var sg = p.sld === -1 ? -1 : 1, ux = dx / L * sg, uy = dy / L * sg, nx = -uy, ny = ux, cx = (a[0] + b[0]) / 2 + nx * 12, cy = (a[1] + b[1]) / 2 + ny * 12;
-      body += '<line x1="' + f1(cx - ux * 14) + '" y1="' + f1(cy - uy * 14) + '" x2="' + f1(cx + ux * 14) + '" y2="' + f1(cy + uy * 14) + '" stroke="' + INK + '" stroke-width="1.2"/><polygon points="' + f1(cx + ux * 18) + ',' + f1(cy + uy * 18) + ' ' + f1(cx + ux * 9 + nx * 3.5) + ',' + f1(cy + uy * 9 + ny * 3.5) + ' ' + f1(cx + ux * 9 - nx * 3.5) + ',' + f1(cy + uy * 9 - ny * 3.5) + '" fill="' + INK + '"/>';
-      var st = 'SLOPE 1:' + p.sl; occ.push([cx - 20, cy - 6, cx + 20, cy + 6]);
-      want(2, cx, cy, tagText(st, 8.5), 10, sides(tagText(st, 8.5), 10).map(function (c) { return [c[0], c[1] + ny * 6]; }), function (px, py) { return svgText(px, py + 3, st, 8.5, 'middle'); });
+      var sg = p.sld === -1 ? -1 : 1, ux = dx / L * sg, uy = dy / L * sg, up = prd([0, 1, 0]), upl = Math.hypot(up[0], up[1]), vx = up[0] / upl, vy = up[1] / upl;   // u: toward the low end; v: up on paper
+      var pi9 = model.pipes.indexOf(p), L9 = V(p.a).distanceTo(V(p.b)), ts9 = [0, L9];   // in the widest stretch clear of the parts on the pipe
+      [model.valves, model.items, model.supports, model.flanges, model.instr].forEach(function (arr) { arr.forEach(function (q) { if (q.p && q.eq == null && hostOf(q.p) === pi9) ts9.push(V(p.a).distanceTo(V(q.p))); }); });
+      ts9.sort(function (x, y) { return x - y; }); var tb9 = L9 / 2, gb9 = -1;
+      for (var q9 = 0; q9 + 1 < ts9.length; q9++) if (ts9[q9 + 1] - ts9[q9] > gb9) { gb9 = ts9[q9 + 1] - ts9[q9]; tb9 = (ts9[q9] + ts9[q9 + 1]) / 2; }
+      var c9 = sp(lerp3(p.a, p.b, tb9 / Math.max(L9, 1e-9)));
+      var mx = c9[0] + vx * 7, my = c9[1] + vy * 7, hb = 11, ht = 17;   // tall enough that the falling hypotenuse reads on a pipe that climbs across the sheet
+      var hi = [mx - ux * hb, my - uy * hb], lo = [mx + ux * hb, my + uy * hb], top = [hi[0] + vx * ht, hi[1] + vy * ht];
+      body += '<polygon class="slope" points="' + f1(hi[0]) + ',' + f1(hi[1]) + ' ' + f1(top[0]) + ',' + f1(top[1]) + ' ' + f1(lo[0]) + ',' + f1(lo[1]) + '" fill="none" stroke="' + INK + '" stroke-width="0.9"/>';
+      occ.push([Math.min(hi[0], lo[0], top[0]) - 2, Math.min(hi[1], lo[1], top[1]) - 2, Math.max(hi[0], lo[0], top[0]) + 2, Math.max(hi[1], lo[1], top[1]) + 2]);
+      var st = 'SLOPE 1:' + p.sl, cx0 = mx + vx * 24, cy0 = my + vy * 24;
+      want(2, cx0, cy0, tagText(st, 8.5), 10, [[0, 0]].concat(sides(tagText(st, 8.5), 10)), function (px, py) { return svgText(px, py + 3, st, 8.5, 'middle'); });
     });
 
     // Flow arrows: on the longest pipes, well apart, a few for each line rather than one on every pipe.
@@ -4152,6 +4206,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; d3 = [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]; }
       else if (j.type === 'olet') { kk = 'olet'; d3 = A(j.legs[0].d); }
       if (kk) body += isoSym(kk, j.pos, d3, 20);
+      if (j.type === 'reducer') {                                  // nominal sizes at a transition (ISO 6412-2, 8.2.2)
+        var rq = sp(j.pos), sm = j.legs[0].n >= j.legs[1].n ? j.legs[1] : j.legs[0], bg = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1], rt = szs(bg.n) + '×' + szs(sm.n);
+        want(2, rq[0], rq[1], tagText(rt, 8.5), 10, sides(tagText(rt, 8.5), 10), function (cx, cy, d) { return (d > 22 ? leader(rq[0], rq[1], cx, cy, [tagText(rt, 8.5) / 2, 5]) : '') + svgText(cx, cy + 3, rt, 8.5, 'middle'); });
+      }
       if (j.type === 'reducer' && j.ecc) {
         var q9 = sp(j.pos), ft = { top: 'FOT', bottom: 'FOB', side: 'FOS' }[j.flatEff || 'bottom'];
         want(1, q9[0], q9[1], 24, 10, sides(24, 10), function (cx, cy, d) { return (d > 20 ? leader(q9[0], q9[1], cx, cy, [12, 5]) : '') + svgText(cx, cy + 3, ft, 8.5, 'middle', 600); });
@@ -4210,7 +4268,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
       function room(t0, t1) { var u = scr(t0), w0 = scr(t1); return Math.hypot(w0[0] - u[0], w0[1] - u[1]) >= Math.max(18, String(Math.round(Math.abs(t1 - t0) * 1000)).length * 6 + 12); }   // a piece of the chain must fit its own number
       onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { if (room(last, t) && room(t, L3)) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
-      var total = String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
+      var total = offsetPipes[pi] ? '(' + Math.round(L3 * 1000) + ')' : String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
       function wrapD(pk) {                                            // the dimensions of one pipe move together, across the pipe
         if (!pk) return; if (dov != null) isoCtx.layN++;
         body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';

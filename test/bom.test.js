@@ -2011,5 +2011,25 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// ISO 6412-2 marks: offset triangles, crossing gaps, slope triangle, reducer sizes, no false break mark
+{
+  PD.load({ pipes: [
+    { a: [0, 1, 0], b: [3, 1, 0], n: 4, fl: 1, sl: 100, sld: 1 },
+    { a: [3, 1, 0], b: [4, 1, 1], n: 4, fl: 1 },
+    { a: [4, 1, 1], b: [7, 1, 1], n: 4, fl: 1 },
+    { a: [7, 1, 1], b: [7, 2.5, 1], n: 3, fl: 1 },
+    { a: [7, 2.5, 1], b: [9, 2.5, 1], n: 3, fl: 1 },
+    { a: [5.5, 0.4, -1], b: [5.5, 0.4, 3], n: 2, ln: 'L-002' }] });
+  const sv = PD.iso('', '0');
+  check('an off-axis pipe gets a hatched offset triangle', /class="offs"/.test(sv));
+  check('its legs are dimensioned and the true length is in brackets', sv.includes('>1000<') && sv.includes('>(1414)<'));
+  check('a pipe passing behind another is broken by a gap', /class="xgap"/.test(sv));
+  check('a sloped pipe gets the slope triangle and its ratio', /class="slope"/.test(sv) && sv.includes('SLOPE 1:100'));
+  check('no break mark on a pipe drawn at true length', !/class="brk"/.test(sv));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }, { a: [2, 1, 0], b: [4, 1, 0], n: 3 }] });
+  check('a reducer is labelled with both sizes', /×/.test(PD.iso('', '0')));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
