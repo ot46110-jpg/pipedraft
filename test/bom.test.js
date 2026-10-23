@@ -2161,5 +2161,17 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// The owner sets the symbol sizes on the iso: valves and every other part, saved with the project, 50 to 200 percent
+{
+  const mdl = { pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4 }], valves: [{ p: [2, 1, 0], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }], supports: [{ p: [1, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }] };
+  const scl = sv => [...sv.matchAll(/class="sy" transform="matrix\(([-\d.]+) ([-\d.]+)/g)].map(m => Math.hypot(+m[1], +m[2]));
+  PD.load(JSON.parse(JSON.stringify(mdl))); const s0 = scl(PD.iso('', '0'));
+  PD.load(Object.assign(JSON.parse(JSON.stringify(mdl)), { isoSize: { v: 150, p: 60 } })); const s1 = scl(PD.iso('', '0'));
+  check('valves follow their size setting, other parts theirs', Math.abs(s1[0] / s0[0] - 1.5) < 0.01 && Math.abs(s1[1] / s0[1] - 0.6) < 0.01, s0.join() + ' / ' + s1.join());
+  PD.load(Object.assign(JSON.parse(JSON.stringify(mdl)), { isoSize: { v: 999, p: 'x', q: 5 } }));
+  check('a project file keeps sizes within 50 to 200 percent and drops junk', JSON.stringify(PD.model.isoSize) === '{"v":200}', JSON.stringify(PD.model.isoSize));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

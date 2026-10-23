@@ -169,6 +169,9 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #iso .pop { position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: flex; flex-direction: column; min-width: 190px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 #iso .pop[hidden] { display: none; }
 #iso .pop button { border: 0; text-align: left; justify-content: flex-start; }
+#iso .pop .szrow { display: flex; align-items: center; gap: 4px; padding-left: 12px; font: 400 14px var(--font-ui); }
+#iso .pop .szrow span { flex: 1; } #iso .pop .szrow output { min-width: 48px; text-align: center; font-family: var(--font-data); }
+#iso .pop .szrow button { min-width: 48px; justify-content: center; text-align: center; border: 1px solid var(--line); }
 #iso .pop button[aria-pressed] { display: flex; justify-content: space-between; align-items: center; }
 #iso .pop button[aria-pressed="true"] { background: transparent; color: var(--fg); }
 #iso .pop button[aria-pressed="true"]::after { content: '✓'; color: var(--accent); margin-left: 16px; }
@@ -384,6 +387,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             <button id="iso-style" aria-pressed="false">Symbols</button>
             <button id="iso-info" aria-pressed="false">Title block</button>
             <button id="iso-paper" aria-label="Paper size">Paper A3</button>
+            <div class="szrow"><span>Valves</span><button data-sz="v" data-d="-10" aria-label="Smaller valves">−</button><output id="iso-szv">100%</output><button data-sz="v" data-d="10" aria-label="Larger valves">+</button></div>
+            <div class="szrow"><span>Other parts</span><button data-sz="p" data-d="-10" aria-label="Smaller parts">−</button><output id="iso-szp">100%</output><button data-sz="p" data-d="10" aria-label="Larger parts">+</button></div>
+            <button id="iso-szr">Symbol sizes back to 100%</button>
           </div></span>
         <span class="pop-wrap"><button id="iso-saveb" aria-haspopup="true" aria-expanded="false">Save</button>
           <div class="pop" id="isoSavePop" hidden>
@@ -1063,6 +1069,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (typeof v === 'number' && isFinite(v) && Math.abs(v) < 5000) { c[k] = v; n++; }
         else if (Array.isArray(v) && v.length === 2 && v.every(function (x) { return typeof x === 'number' && isFinite(x) && Math.abs(x) < 5000; })) { c[k] = [v[0], v[1]]; n++; } });
       if (n) o.isoLay[sk] = c; }); })(plain(m.isoLay));
+    o.isoSize = {}; (function (z) { ['v', 'p'].forEach(function (k) { var n = Number(z[k]); if (isFinite(n) && n !== 100) o.isoSize[k] = Math.max(50, Math.min(200, Math.round(n / 10) * 10)); }); })(plain(m.isoSize));   // symbol sizes on the iso, percent (100 when unset)
     o.title = plain(m.title); Object.keys(o.title).forEach(function (k) { if (typeof o.title[k] !== 'string' || (k === 'logo' ? !cuImgOk(o.title[k]) : o.title[k].length > 200)) delete o.title[k]; }); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, plain(m.spec));
     if (!OWN(STD, o.spec.std)) o.spec.std = 'asme';
@@ -3752,8 +3759,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         need(q.a[ai], 10); need(q.b[ai], 10);                      // a fitting or a weld at each end
       });
       ks.forEach(function (v) { u.push(r3(f1(v))); });
-      model.valves.forEach(function (v) { var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n]; need(v.p[ai], Math.max(SYM_V[0], Math.min(SYM_V[1], ff * scG)) / 2 + 9, 1); });
-      model.items.forEach(function (it) { need(it.p[ai], Math.max(SYM_I[0], Math.min(SYM_I[1], itemLen(it.t, it.n) * scG)) / 2 + 4, 1); });
+      model.valves.forEach(function (v) { var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n]; need(v.p[ai], Math.max(SYM_V[0], Math.min(SYM_V[1], ff * scG)) * szF('v') / 2 + 9, 1); });
+      model.items.forEach(function (it) { need(it.p[ai], Math.max(SYM_I[0], Math.min(SYM_I[1], itemLen(it.t, it.n) * scG)) * szF('p') / 2 + 4, 1); });
       model.supports.forEach(function (q) { need(q.p[ai], 13, 1); });
       model.instr.forEach(function (q) { if (q.eq == null && q.p) need(q.p[ai], 12, 1); });
       u = u.sort(function (x, y) { return x - y; }).filter(function (v, i, a) { return !i || v - a[i - 1] > 5e-5; });
@@ -4142,12 +4149,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     isoCtx.brkMarks = brkMarks;
     // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
     // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
-    function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], SYM_V[0], SYM_V[1]); }
+    function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], SYM_V[0], SYM_V[1]) * szF('v'); }
     function vFlanged(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return t === 'flg' || t === 'wafer'; }
     function vHalf(v) { return v.k === 'butterfly' ? 6 : v.k === 'knife' ? 7 : isoCtx.style === 'pic' && !vFlanged(v) ? 8 : 10; }   // half the body in symbol units (20 is the face to face); a picture without its flanges ends at 8
     var IT_HALF = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };   // half of each inline part's symbol along the pipe: Symbols, Pictures
     function iHalf(t) { var h = IT_HALF[t]; return h ? h[isoCtx.style === 'pic' ? 1 : 0] : 10; }
-    function iLpx(it) { return clampPx(itemLen(it.t, it.n), SYM_I[0], SYM_I[1]); }
+    function iLpx(it) { return clampPx(itemLen(it.t, it.n), SYM_I[0], SYM_I[1]) * szF('p'); }
     function vFlgBars(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return isoCtx.style !== 'pic' && (t === 'flg' || t === 'wafer'); }   // the Symbols style draws the flange bars inside the valve symbol
     function symEnd(v, away, units) { return symEndP(v.p, vLpx(v), away, units); }
     function symEndP(p0, Lpx, away, units) {                        // the point along the pipe this far (symbol units, 10 = the body end) from a part's centre, on the side away points to
@@ -4276,13 +4283,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     model.flanges.forEach(function (f, i) {
       var fp = flAt[i] || f.p;
-      if (!(flOf[i] && vFlgBars(flOf[i]))) body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20);   // a valve's own symbol already carries its flange bars
+      if (!(flOf[i] && vFlgBars(flOf[i]))) body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20 * szF('p'));   // a valve's own symbol already carries its flange bars
       balloon(compDesc.flange[i], fp, 0, flOf[i] ? 'v' + model.valves.indexOf(flOf[i]) : null, 'bulk');
     });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, iLpx(it)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {
       var up = q0.t === 'hanger' || q0.t === 'spring';
-      body += isoSym('sup-' + q0.t, q0.p, q0.d, 26); balloon(compDesc.support[i], q0.p, up ? 10 : 22, null, 'bulk');
+      body += isoSym('sup-' + q0.t, q0.p, q0.d, 26 * szF('p')); balloon(compDesc.support[i], q0.p, up ? 10 : 22, null, 'bulk');
     });
 
     // Instruments: a stem and a small circle in the plane of the pipe, tagged. The signal line is dashed.
@@ -4290,11 +4297,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.instr.forEach(function (it, j) {
       var def = INSTR[it.k], d3 = it.d || [1, 0, 0], q = sp(it.p);
       if (def.psv) {
-        body += isoSym('psv', it.p, d3, 26);
+        body += isoSym('psv', it.p, d3, 26 * szF('p'));
         want(3, q[0], q[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(q[0], q[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 14); return;
       }
-      var od = instrDir(it), du = prd(od), dl = Math.hypot(du[0], du[1]) || 1, top3 = [it.p[0] + od[0] * 26 / (dl * sc), it.p[1] + od[1] * 26 / (dl * sc), it.p[2] + od[2] * 26 / (dl * sc)], t = sp(top3); itop[j] = top3;   // a 26 px stem standing off the pipe, never along it
-      body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'i-ctrl' : /^(P|T|F)I$/.test(it.k) ? 'i-gauge' : 'i-xmtr', top3, d3, 20);
+      var od = instrDir(it), du = prd(od), dl = Math.hypot(du[0], du[1]) || 1, top3 = [it.p[0] + od[0] * 26 * szF('p') / (dl * sc), it.p[1] + od[1] * 26 * szF('p') / (dl * sc), it.p[2] + od[2] * 26 * szF('p') / (dl * sc)], t = sp(top3); itop[j] = top3;   // a 26 px stem standing off the pipe, never along it
+      body += '<line x1="' + f1(q[0]) + '" y1="' + f1(q[1]) + '" x2="' + f1(t[0]) + '" y2="' + f1(t[1]) + '" stroke="' + INK + '" stroke-width="1"/>' + isoSym(def.dcs ? 'i-ctrl' : /^(P|T|F)I$/.test(it.k) ? 'i-gauge' : 'i-xmtr', top3, d3, 20 * szF('p'));
       occ.push([t[0] - 10, t[1] - 10, t[0] + 10, t[1] + 10]);
       want(3, t[0], t[1], tagText(instrTag(it), 9.5), 12, sides(tagText(instrTag(it), 9.5), 12), function (cx, cy, d) { return (d > 18 ? leader(t[0], t[1], cx, cy, [tagText(instrTag(it), 9.5) / 2, 6]) : '') + svgText(cx, cy + 3.4, instrTag(it), 9.5, 'middle'); }); balloon(compDesc.instr[j], it.p, 6);
     });
@@ -4310,7 +4317,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (j.type === 'reducer') { var big = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1]; kk = j.ecc ? 'reducer-ecc' : 'reducer'; d3 = A(big.d); }
       else if (j.type === 'cap') { kk = j.plug ? 'plug-end' : 'cap'; d3 = [-j.legs[0].d.x, -j.legs[0].d.y, -j.legs[0].d.z]; }
       else if (j.type === 'olet') { kk = 'olet'; d3 = A(j.legs[0].d); }
-      if (kk) body += isoSym(kk, j.pos, d3, 20);
+      if (kk) body += isoSym(kk, j.pos, d3, 20 * szF('p'));
       if (j.type === 'reducer') {                                  // nominal sizes at a transition (ISO 6412-2, 8.2.2)
         var rq = sp(j.pos), sm = j.legs[0].n >= j.legs[1].n ? j.legs[1] : j.legs[0], bg = j.legs[0].n >= j.legs[1].n ? j.legs[0] : j.legs[1], rt = szs(bg.n) + '×' + szs(sm.n);
         want(2, rq[0], rq[1], tagText(rt, 8.5), 10, sides(tagText(rt, 8.5), 10), function (cx, cy, d) { return (d > 22 ? leader(rq[0], rq[1], cx, cy, [tagText(rt, 8.5) / 2, 5]) : '') + svgText(cx, cy + 3, rt, 8.5, 'middle'); });
@@ -4695,7 +4702,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.stretch = isoOpts.stretch !== false; isoCtx.balls = isoOpts.balls === 'all' ? 'all' : 'tidy'; isoCtx.valveWelds = isoOpts.valveWelds === true;
     isoCtx.pages = []; isoCtx.deferNo = false;
   }
-  var SYM_V = [26, 44], SYM_I = [24, 42];                          // paper length of a valve and an inline part symbol, px on the 1200 px A3 sheet: about 9 to 15 mm, as on a hand-drawn iso (was 38 to 84, too big beside the pipe line)
+  var SYM_V = [26, 44], SYM_I = [24, 42];
+  function szF(k) { var z = (model.isoSize || {})[k]; return z ? z / 100 : 1; }   // the owner's symbol size on the iso: 'v' valves, 'p' every other part                          // paper length of a valve and an inline part symbol, px on the 1200 px A3 sheet: about 9 to 15 mm, as on a hand-drawn iso (was 38 to 84, too big beside the pipe line)
   function isoSvg(ln, view, tidy, style) {
     ln = ln == null ? isoOpts.ln : ln; view = view == null ? isoOpts.view : view;
     if (!model.pipes.length) return null;
@@ -5868,7 +5876,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
-    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-split').setAttribute('aria-pressed', String(isoOpts.split !== false)); $('iso-str').setAttribute('aria-pressed', String(isoOpts.stretch !== false)); $('iso-ball').textContent = isoOpts.balls === 'all' ? 'Balloons: every part' : 'Balloons: tidy'; $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
+    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-split').setAttribute('aria-pressed', String(isoOpts.split !== false)); szShow(); $('iso-str').setAttribute('aria-pressed', String(isoOpts.stretch !== false)); $('iso-ball').textContent = isoOpts.balls === 'all' ? 'Balloons: every part' : 'Balloons: tidy'; $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
     $('isoInfo').innerHTML = isoInfoHtml();
     var pg0 = isoPages(); showSheet('Isometric sheet', pg0.join('') || null, 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true); isoCur = isoStack(pg0);
   }
@@ -5946,6 +5954,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-style').onclick = function () { isoOpts.style = isoOpts.style === 'pic' ? 'sym' : 'pic'; refreshIso(); };
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
+  function szShow() { $('iso-szv').textContent = Math.round(szF('v') * 100) + '%'; $('iso-szp').textContent = Math.round(szF('p') * 100) + '%'; }
+  function szSet(k, v) {                                            // a symbol size on the iso: saved with the project, undoable, the sheet redrawn at the same zoom
+    v = Math.max(50, Math.min(200, Math.round(v / 10) * 10)); var cur = Math.round(szF(k) * 100); if (v === cur) { toast(v >= 200 ? 'Largest size' : v <= 50 ? 'Smallest size' : ''); return; }
+    pushHist(); model.isoSize = model.isoSize || {}; if (v === 100) delete model.isoSize[k]; else model.isoSize[k] = v; save(); szShow(); isoRedraw();
+  }
+  $('isoOptPop').addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('button[data-sz]') : null; if (!b) return; e.stopPropagation(); var k = b.getAttribute('data-sz'); szSet(k, szF(k) * 100 + Number(b.getAttribute('data-d'))); });
+  $('iso-szr').onclick = function () { if (!model.isoSize || !Object.keys(model.isoSize).length) { toast('Symbols are already at 100%'); return; } pushHist(); model.isoSize = {}; save(); szShow(); isoRedraw(); };
   $('iso-brk').onclick = function () { isoOpts.brk = isoOpts.brk === false; refreshIso(); };
   $('iso-split').onclick = function () { isoOpts.split = isoOpts.split === false; refreshIso(); if (isoOpts.split !== false && isoCtx.split > 1) toast('The drawing is on ' + isoCtx.split + ' sheets, joined by CONT. ON SHEET notes'); };
   $('iso-str').onclick = function () { isoOpts.stretch = isoOpts.stretch === false; refreshIso(); };
