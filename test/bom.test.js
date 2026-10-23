@@ -1893,5 +1893,33 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Iso: no weld dot ever lands on a valve, its flanges or an inline part, for every valve kind, end type and item, in both styles
+{
+  const VH = { butterfly: 6, knife: 7 }, IH = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };
+  const pipe = n => [{ a: [0, 1, 0], b: [1.6, 1, 0], n }, { a: [1.6, 1, 0], b: [1.6, 1, -1.2], n }];
+  const bad = [];
+  function scan(label, m, style, clear) {
+    PD.load(m); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+    PD.isoOpts.style = style; PD.isoOpts.valveWelds = true; PD.isoOpts.brk = false;
+    const svg = PD.iso('', '0'); PD.isoOpts.style = 'sym'; PD.isoOpts.valveWelds = false; PD.isoOpts.brk = true;
+    const part = [...svg.matchAll(/class="sy" transform="matrix\(([^)]*)\)"/g)].map(x => x[1].split(' ').map(Number))[0];
+    const k = Math.hypot(part[0], part[1]);
+    [...svg.matchAll(/<circle cx="([-0-9.]+)" cy="([-0-9.]+)" r="(2.6|3.6)"/g)].forEach(x => {
+      const vx = +x[1] - part[4], vy = +x[2] - part[5], along = Math.abs(vx * part[0] + vy * part[1]) / k / k, across = Math.abs(vx * part[1] - vy * part[0]) / k / k;
+      if (across < 3 && along < 30 && along < clear) bad.push(label + ' ' + style + ' at ' + along.toFixed(1) + ' (needs ' + clear + ')');
+    });
+  }
+  for (const style of ['sym', 'pic']) {
+    for (const k of ['gate', 'globe', 'check', 'ball', 'butterfly', 'plug', 'control', 'needle', 'diaphragm', 'knife', 'threeway', 'footv', 'angle'])
+      for (const [e, n] of [['flg', 4], ['weld', 4], ['weld', 1]]) {
+        const h = VH[k] || 10, wafer = k === 'butterfly' || k === 'knife', flg = e === 'flg' || wafer;
+        scan(k + ' ' + e + ' ' + n, { pipes: pipe(n), valves: [{ p: [0.8, 1, 0], d: [1, 0, 0], n, k, e }] }, style, h + (flg ? (style === 'pic' ? 2.8 : 5.2) : 0.5));
+      }
+    for (const t of Object.keys(IH)) scan('item ' + t, { pipes: pipe(4), items: [{ t, p: [0.8, 1, 0], d: [1, 0, 0], n: 4 }] }, style, IH[t][style === 'pic' ? 1 : 0] + 0.5);
+  }
+  check('no weld dot sits on a valve, its pipe flanges or an inline part (13 valve kinds x 3 ends, 14 items, both styles)', bad.length === 0, bad.join('\n'));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
