@@ -178,6 +178,9 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 @media print { body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: fixed; inset: 0; background: #fff; overflow: visible; } #isoSheet svg { width: 100% !important; height: 100% !important; } }
 #isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 #isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
+#isoSheet.editing { touch-action: none; outline: 2px dashed var(--accent); outline-offset: -2px; }
+#isoSheet.editing .lb, #isoSheet.editing .dg { cursor: move; }
+#isoSheet .lb.drag, #isoSheet .dg.drag { opacity: .65; }
 #status { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font: 400 12px var(--font-data); color: var(--dim); }
 #status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #status #pos { color: var(--fg); flex: none; }
@@ -370,6 +373,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             <button id="iso-tidy" aria-pressed="true">Auto layout</button>
             <button id="iso-coords" aria-pressed="false">Coordinates</button>
             <button id="iso-brk" aria-pressed="true">Shorten long pipes</button>
+            <button id="iso-edit" aria-pressed="false">Move labels</button>
+            <button id="iso-lundo">Undo label move</button>
+            <button id="iso-lreset">Reset labels on this sheet</button>
             <button id="iso-vw" aria-pressed="false">Welds at valve flanges</button>
             <button id="iso-style" aria-pressed="false">Symbols</button>
             <button id="iso-info" aria-pressed="false">Title block</button>
@@ -408,7 +414,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>Parts</b>: pick a part, then tap a pipe for valves, flanges and fittings, or the floor for equipment. Branches, reducers and supports follow the same way.</li>
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
-          <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list.</li>
+          <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list. On the isometric sheet, Options, Move labels lets you drag balloons, weld numbers, tags, elevations and dimension lines; the sheet remembers them, Undo label move and Reset labels put them back.</li>
           <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
           <li><b>Keep your work</b>: backups are taken as you work, but save a project file from ⋯, File, Save project now and then. Files keep the project name, drawing number and revision.</li>
         </ul>
@@ -986,7 +992,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, msel = {}, multiMode = false, pickCyc = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -1023,7 +1029,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var d = plain(m.lines[k]), c = {}; Object.keys(d).forEach(function (f) { if (typeof d[f] === 'string' || (typeof d[f] === 'number' && isFinite(d[f]))) c[f] = d[f]; }); o.lines[k] = c;
     });
     o.fit = plain(m.fit); o.field = plain(m.field);
-    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.title = plain(m.title); Object.keys(o.title).forEach(function (k) { if (typeof o.title[k] !== 'string' || (k === 'logo' ? !cuImgOk(o.title[k]) : o.title[k].length > 200)) delete o.title[k]; }); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
+    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.isoLay = {}; (function (L0) { Object.keys(L0).slice(0, 200).forEach(function (sk) {   // labels moved by hand on the iso sheets: sheet key to label key to an offset
+      if (String(sk).length > 80) return; var d = plain(L0[sk]), c = {}, n = 0;
+      Object.keys(d).forEach(function (k) { var v = d[k]; if (n >= 2000 || k.length > 80) return;
+        if (typeof v === 'number' && isFinite(v) && Math.abs(v) < 5000) { c[k] = v; n++; }
+        else if (Array.isArray(v) && v.length === 2 && v.every(function (x) { return typeof x === 'number' && isFinite(x) && Math.abs(x) < 5000; })) { c[k] = [v[0], v[1]]; n++; } });
+      if (n) o.isoLay[sk] = c; }); })(plain(m.isoLay));
+    o.title = plain(m.title); Object.keys(o.title).forEach(function (k) { if (typeof o.title[k] !== 'string' || (k === 'logo' ? !cuImgOk(o.title[k]) : o.title[k].length > 200)) delete o.title[k]; }); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, plain(m.spec));
     if (!OWN(STD, o.spec.std)) o.spec.std = 'asme';
     (Array.isArray(m.pspecs) ? m.pspecs : []).forEach(function (r) {   // piping classes; a bad one is dropped, a missing or repeated id gets a new one
@@ -3675,6 +3687,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var y0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, pts.map(function (q) { return q[1]; }));
     var sc = Math.min((Wd - 2 * M) / Math.max(x1 - x0, 0.5), (H - TB - 2 * M) / Math.max(y1 - y0, 0.5), 160);
     var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - TB - (y1 - y0) * sc) / 2 - y0 * sc;
+    var LAYK = (isoCtx.ln || '*') + '|' + rot, LAY = (model.isoLay && model.isoLay[LAYK]) || {}; isoCtx.layKey = LAYK; isoCtx.layN = 0;   // labels moved by hand on this sheet
+    function prKey(x, y) { return Math.round((x - ox) / sc * 1000) + ',' + Math.round((y - oy) / sc * 1000); }   // the anchor in model millimetres on paper, so the key survives a change of scale
     function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
     // Auto layout: labels go where they touch neither pipes, symbols nor each other, nearest to their anchor first.
     var occ = [], segs = [], labels = [], eqBoxes = [], eqSoft = true, TIDY = isoCtx.tidy !== false;
@@ -3707,8 +3721,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return '<line x1="' + f1(ax) + '" y1="' + f1(ay) + '" x2="' + f1(cx - dx / L * back) + '" y2="' + f1(cy - dy / L * back) + '" stroke="' + INK + '" stroke-width="0.7"/>';
     }
     function layoutLabels() {
-      var out = '';
+      var out = '', seen = {};
+      labels.forEach(function (L) { var b0 = 'l' + L.prio + ':' + prKey(L.ax, L.ay); seen[b0] = (seen[b0] || 0) + 1; L.k = b0 + '#' + seen[b0]; var v = LAY[L.k]; if (Array.isArray(v)) L.ov = v; });
+      labels.forEach(function (L) { if (L.ov) { var cx = L.ax + L.ov[0], cy = L.ay + L.ov[1]; occ.push([cx - L.w / 2 - 1, cy - L.h / 2 - 1, cx + L.w / 2 + 1, cy + L.h / 2 + 1]); } });   // hand-placed labels first, so the others keep clear of them
+      function wrapL(L, cx, cy, d) {
+        return '<g class="lb" data-k="' + L.k + '" data-ox="' + f1(cx - L.ax) + '" data-oy="' + f1(cy - L.ay) + '"><rect class="hit" x="' + f1(cx - L.w / 2 - 7) + '" y="' + f1(cy - L.h / 2 - 7) + '" width="' + f1(L.w + 14) + '" height="' + f1(L.h + 14) + '" fill="transparent" stroke="none"/>' + L.mk(cx, cy, d) + '</g>';
+      }
       labels.sort(function (a, b) { return a.prio - b.prio || a.n - b.n; }).forEach(function (L) {
+        if (L.ov) { isoCtx.layN++; out += wrapL(L, L.ax + L.ov[0], L.ay + L.ov[1], Math.hypot(L.ov[0], L.ov[1])); return; }
         var best = null; eqSoft = !L.onEq;
         for (var i = 0; i < L.cands.length; i++) {
           var cx = L.ax + L.cands[i][0], cy = L.ay + L.cands[i][1], bx = [cx - L.w / 2 - 1, cy - L.h / 2 - 1, cx + L.w / 2 + 1, cy + L.h / 2 + 1];
@@ -3722,7 +3742,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             if (ec < best.c) best = { c: ec, cx: ex, cy: ey, b: eb, d: rr, raw: er };
           }
         }
-        occ.push(best.b); out += L.mk(best.cx, best.cy, best.d);
+        occ.push(best.b); out += wrapL(L, best.cx, best.cy, best.d);
       });
       return out;
     }
@@ -3956,15 +3976,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
       return best;
     }
+    var lastDim = null;
     function dimLine(a, b, label, only, stag) {                           // a line parallel to the pipe with arrowheads and the centreline length; short ones get outside arrows
-      var best = dimPick(a, b, label, only, stag); if (!best) return '';
+      var best = dimPick(a, b, label, only, stag); lastDim = best; if (!best) return '';
       var a2 = best.a2, b2 = best.b2, tx = best.tx, ty = best.ty, ang = best.ang, sg = best.off < 0 ? -1 : 1, nx = best.nx * sg, ny = best.ny * sg, inside = best.len >= 34;
       segs.push([a2, b2]); occ.push(best.bx);
       var mx = (a2[0] + b2[0]) / 2 - nx * 4 + nx * best.sh, my = (a2[1] + b2[1]) / 2 - ny * 4 + ny * best.sh, ext = inside ? 0 : 10;
       function arrow(pt, sgn) { return '<polygon points="' + f1(pt[0]) + ',' + f1(pt[1]) + ' ' + f1(pt[0] + sgn * tx * 7 + nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 + ny * 2.4) + ' ' + f1(pt[0] + sgn * tx * 7 - nx * 2.4) + ',' + f1(pt[1] + sgn * ty * 7 - ny * 2.4) + '" fill="' + INK + '"/>'; }
       return '<g class="dim" stroke="' + INK + '" stroke-width="0.8" fill="none"><line x1="' + f1(a[0] + nx * 4) + '" y1="' + f1(a[1] + ny * 4) + '" x2="' + f1(a2[0] + nx * 3) + '" y2="' + f1(a2[1] + ny * 3) + '"/><line x1="' + f1(b[0] + nx * 4) + '" y1="' + f1(b[1] + ny * 4) + '" x2="' + f1(b2[0] + nx * 3) + '" y2="' + f1(b2[1] + ny * 3) + '"/><line x1="' + f1(a2[0] - tx * ext) + '" y1="' + f1(a2[1] - ty * ext) + '" x2="' + f1(b2[0] + tx * ext) + '" y2="' + f1(b2[1] + ty * ext) + '"/></g>'
         + (inside ? arrow(a2, 1) + arrow(b2, -1) : arrow(a2, -1) + arrow(b2, 1))
-        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>';
+        + '<text transform="translate(' + f1(mx) + ' ' + f1(my) + ') rotate(' + f1(ang) + ')" font-size="10" text-anchor="middle" fill="' + INK + '" stroke="' + PAPER + '" stroke-width="3" paint-order="stroke">' + label + '</text>'
+        + '<line class="hit" x1="' + f1(a2[0]) + '" y1="' + f1(a2[1]) + '" x2="' + f1(b2[0]) + '" y2="' + f1(b2[1]) + '" stroke="transparent" stroke-width="16"/>';
     }
     function segDist2(p1, p2, q1, q2) {                             // distance between two screen segments
       function ccw(a, b, c) { return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0]); }
@@ -3980,15 +4002,20 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var a = sp(p.a), b = sp(p.b), L3 = V(p.a).distanceTo(V(p.b)), kept = [], last = 0;
       function scr(t) { return sp(lerp3(p.a, p.b, t / Math.max(L3, 1e-9))); }
       onPipe[pi].sort(function (x, y) { return x - y; }).forEach(function (t) { var c0 = scr(t); if (Math.hypot(c0[0] - scr(last)[0], c0[1] - scr(last)[1]) >= 18 && Math.hypot(c0[0] - b[0], c0[1] - b[1]) >= 18) { kept.push(t); last = t; } });   // a point too near its neighbour is left out
-      var total = String(Math.round(L3 * 1000));
-      if (!kept.length) { body += dimLine(a, b, total); return; }
-      var pick = dimPick(a, b, total); if (!pick) return;               // the chain shares one side and distance, so it reads as one line of dimensions
+      var total = String(Math.round(L3 * 1000)), dk = 'd:' + prKey(a[0], a[1]) + '>' + prKey(b[0], b[1]), dov = typeof LAY[dk] === 'number' ? LAY[dk] : null, g0 = body.length;
+      function wrapD(pk) {                                            // the dimensions of one pipe move together, across the pipe
+        if (!pk) return; if (dov != null) isoCtx.layN++;
+        body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';
+      }
+      if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); return; }
+      var pick = dimPick(a, b, total, dov); if (!pick) return;          // the chain shares one side and distance, so it reads as one line of dimensions
       var ts = [0].concat(kept, [L3]);
       for (var q = 0; q + 1 < ts.length; q++) {
         var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
         body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
       }
       body += dimLine(a, b, total, pick.off + (pick.off < 0 ? -22 : 22));   // the overall length on the next tier out
+      wrapD(pick);
     });
     model.pipes.forEach(function (p) {                              // insulation: a dashed line each side of an insulated pipe
       var li = model.lines[p.ln] || {}; if (!insulated(li.insul)) return;
@@ -5341,7 +5368,28 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('isoInfo').innerHTML = isoInfoHtml();
     showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
   }
+  var isoShowing = false, layHist = [];
+  function isoRedraw() { var svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; applyIsoZoom(0, 0); }
+  function setIsoEdit(on) {
+    isoOpts.edit = !!on; $('iso-edit').setAttribute('aria-pressed', String(isoOpts.edit));
+    $('isoSheet').classList.toggle('editing', isoOpts.edit && isoShowing);
+    if (isoOpts.edit) toast('Drag a balloon, weld number, tag, elevation or dimension line. One finger on empty paper moves the sheet.');
+  }
+  function layPut(k, v) {                                           // one hand move on the open sheet: undoable, saved with the project
+    var sk = isoCtx.layKey || '*|0';
+    pushHist(); layHist.push(JSON.stringify(model.isoLay || {})); if (layHist.length > 50) layHist.shift();
+    model.isoLay = model.isoLay || {}; var L = model.isoLay[sk] = model.isoLay[sk] || {};
+    if (v == null) delete L[k]; else L[k] = v;
+    if (!Object.keys(L).length) delete model.isoLay[sk];
+    save(); isoRedraw();
+  }
+  function layUndo() { if (!layHist.length) { toast('No label move to undo'); return; } pushHist(); model.isoLay = JSON.parse(layHist.pop()); save(); isoRedraw(); }
+  function layReset() {
+    var sk = isoCtx.layKey || '*|0'; if (!model.isoLay || !model.isoLay[sk]) { toast('Nothing has been moved on this sheet'); return; }
+    pushHist(); layHist.push(JSON.stringify(model.isoLay)); delete model.isoLay[sk]; save(); isoRedraw(); toast('Labels back to the automatic layout');
+  }
   function showSheet(title, svg, file, isIso) {
+    isoShowing = !!isIso; $('isoSheet').classList.toggle('editing', !!isoOpts.edit && isoShowing);
     $('isoTools').hidden = !isIso; $('isoOptWrap').hidden = !isIso; closeIsoPops(); $('iso-print').hidden = false; if (!isIso) $('isoInfo').hidden = true;
     isoCur = svg; isoName = file; $('isoTitle').textContent = title;
     $('isoSheet').innerHTML = svg || '<p style="padding:24px;color:#14191c">Draw some pipe first.</p>';
@@ -5392,6 +5440,43 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
   $('iso-brk').onclick = function () { isoOpts.brk = isoOpts.brk === false; refreshIso(); };
+  $('iso-edit').onclick = function () { setIsoEdit(!isoOpts.edit); closeIsoPops(); };
+  $('iso-lundo').onclick = function () { layUndo(); closeIsoPops(); };
+  $('iso-lreset').onclick = function () { layReset(); closeIsoPops(); };
+  (function () {                                                    // Move labels: drag a label or a dimension line on the iso sheet
+    var box = $('isoSheet'), dr = null, pan = null, n = 0;
+    function scale() { var sv = box.querySelector('svg'); if (!sv) return 1; var r = sv.getBoundingClientRect(), vb = sv.viewBox && sv.viewBox.baseVal; return vb && r.width ? vb.width / r.width : 1; }
+    function cancel() { if (dr) { dr.el.removeAttribute('transform'); dr.el.classList.remove('drag'); } dr = null; pan = null; }
+    box.addEventListener('pointerdown', function (e) {
+      n = e.isPrimary ? 1 : n + 1; if (!isoOpts.edit || !isoShowing) return;
+      if (n > 1) { cancel(); return; }                              // a second finger is a pinch
+      var t = e.target && e.target.closest ? e.target.closest('.lb, .dg') : null;
+      if (t) { dr = { el: t, id: e.pointerId, x: e.clientX, y: e.clientY, k: scale(), dx: 0, dy: 0, moved: false }; t.classList.add('drag'); }
+      else pan = { id: e.pointerId, x: e.clientX, y: e.clientY, sl: box.scrollLeft, st: box.scrollTop };
+      try { box.setPointerCapture(e.pointerId); } catch (x) {}
+      e.preventDefault();
+    });
+    box.addEventListener('pointermove', function (e) {
+      if (pan && pan.id === e.pointerId) { box.scrollLeft = pan.sl - (e.clientX - pan.x); box.scrollTop = pan.st - (e.clientY - pan.y); return; }
+      if (!dr || dr.id !== e.pointerId) return;
+      var dx = (e.clientX - dr.x) * dr.k, dy = (e.clientY - dr.y) * dr.k;
+      if (!dr.moved && Math.hypot(e.clientX - dr.x, e.clientY - dr.y) < 3) return;
+      dr.moved = true;
+      if (dr.el.classList.contains('dg')) { var nx = +dr.el.getAttribute('data-nx'), ny = +dr.el.getAttribute('data-ny'), s = dx * nx + dy * ny; dx = nx * s; dy = ny * s; dr.s = s; }
+      dr.dx = dx; dr.dy = dy; dr.el.setAttribute('transform', 'translate(' + dx.toFixed(1) + ' ' + dy.toFixed(1) + ')');
+    });
+    function up(e) {
+      n = Math.max(0, n - 1);
+      if (pan && pan.id === e.pointerId) pan = null;
+      if (!dr || dr.id !== e.pointerId) return;
+      var d = dr; dr = null; d.el.classList.remove('drag');
+      if (!d.moved || e.type === 'pointercancel') { d.el.removeAttribute('transform'); return; }
+      var k = d.el.getAttribute('data-k');
+      if (d.el.classList.contains('dg')) layPut(k, Math.round((+d.el.getAttribute('data-off') + d.s) * 10) / 10);
+      else layPut(k, [Math.round((+d.el.getAttribute('data-ox') + d.dx) * 10) / 10, Math.round((+d.el.getAttribute('data-oy') + d.dy) * 10) / 10]);
+    }
+    box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+  })();
   $('iso-vw').onclick = function () { isoOpts.valveWelds = isoOpts.valveWelds !== true; refreshIso(); };
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {
@@ -5830,7 +5915,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
-    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, isos: ISOS, setLogo: setLogo, isoInfoHtml: isoInfoHtml, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
+    group: { setHeight: setGroupHeight, move: function (i, dx, dy, dz) { return applyGroup(i, shiftTf(dx, dy, dz), 0, 'Moved'); }, copy: function (i, dx, dy, dz, n) { return applyGroup(i, shiftTf(dx, dy, dz), n, 'Copied'); }, mirror: function (i, axis) { return applyGroup(i, mirrorTf(axis, model.pipes[i].a), 1, 'Mirrored'); }, rotate: function (i) { return applyGroup(i, rotTf(model.pipes[i].a), 0, 'Rotated'); } }, nozzles: function () { return nozList; }, isos: ISOS, lay: { put: function (k, v) { layPut(k, v); }, undo: layUndo, reset: layReset, edit: setIsoEdit, show: function () { isoShowing = true; } }, setLogo: setLogo, isoInfoHtml: isoInfoHtml, iso: isoSvg, legend: legendSvg, pid: pidSvg, tags: assignTags, hyd: hydraulics, friction: frictionFactor, dxf: dxf, csv: csv,
     spec: { tpl: SP_TPL, add: spAdd, update: spUpdate, del: spDelete, assign: spAssign, of: spOf, html: specHtml, desig: lineDesignation, lineList: lineList },
     buildPdf: buildPdf, addValveFlanges: addValveFlanges, fname: fname, parseNum: parseNum, resizePipe: resizePipe,
     selectPart: function (kind, i) { setTool('sel'); sel = { kind: kind, i: i }; rebuild(); return egzMeshes.length; },

@@ -1867,5 +1867,31 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Iso sheet: labels and dimension lines moved by hand stay where they were put
+{
+  const base = { pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [3, 1, 2], n: 4 }], valves: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, k: 'gate' }] };
+  PD.load(JSON.parse(JSON.stringify(base))); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+  const lbs = svg => [...svg.matchAll(/<g class="lb" data-k="([^"]+)" data-ox="([-0-9.]+)" data-oy="([-0-9.]+)"/g)].map(m => ({ k: m[1], ox: +m[2], oy: +m[3] }));
+  const dgs = svg => [...svg.matchAll(/<g class="dg" data-k="([^"]+)" data-nx="[-0-9.]+" data-ny="[-0-9.]+" data-off="([-0-9.]+)"/g)].map(m => ({ k: m[1], off: +m[2] }));
+  let sv = PD.iso('', '0'); const L0 = lbs(sv), D0 = dgs(sv);
+  check('every label and every pipe dimension can be picked on the sheet', L0.length >= 5 && D0.length === 2 && new Set(L0.map(l => l.k)).size === L0.length, L0.length + ' ' + D0.length);
+  PD.lay.show(); const bal = L0.find(l => l.k.startsWith('l4:'));
+  PD.lay.put(bal.k, [bal.ox + 60, bal.oy - 40]);
+  sv = PD.iso('', '0'); let b1 = lbs(sv).find(l => l.k === bal.k);
+  check('a dragged balloon stays where it was dropped, with its leader', b1 && Math.abs(b1.ox - (bal.ox + 60)) < 0.2 && Math.abs(b1.oy - (bal.oy - 40)) < 0.2, JSON.stringify(b1));
+  PD.lay.put(D0[0].k, 70);
+  check('a dragged dimension line keeps its new distance from the pipe', dgs(PD.iso('', '0')).find(d => d.k === D0[0].k).off === 70);
+  check('the moves are saved with the project', JSON.stringify(PD.model.isoLay).includes(bal.k) && Object.keys(PD.model.isoLay)[0] === '*|0');
+  check('a different view of the same line has its own layout', !lbs(PD.iso('', '1')).some(l => l.k === bal.k && Math.abs(l.ox - (bal.ox + 60)) < 0.2));
+  PD.model.pipes.push({ a: [3, 1, 2], b: [3, 1, 6], n: 4, s: 40, ln: 'L-001', fl: 1 }); PD.rebuild();
+  b1 = lbs(PD.iso('', '0')).find(l => l.k === bal.k);
+  check('a moved balloon keeps its place when more pipe changes the scale of the sheet', b1 && Math.abs(b1.ox - (bal.ox + 60)) < 0.2, JSON.stringify(b1));
+  PD.lay.undo(); check('Undo label move takes back the last move only', typeof PD.model.isoLay['*|0'][D0[0].k] === 'undefined' && Array.isArray(PD.model.isoLay['*|0'][bal.k]));
+  PD.lay.reset(); check('Reset labels puts the sheet back to the automatic layout', !PD.model.isoLay['*|0']);
+  PD.load(Object.assign(JSON.parse(JSON.stringify(base)), { isoLay: { '*|0': { 'l4:1,2#1': [10, -5], bad: 'x', huge: [1e9, 0], d: 12 }, __proto__x: 5 } }));
+  check('a project file keeps good label moves and drops junk', JSON.stringify(PD.model.isoLay) === '{"*|0":{"l4:1,2#1":[10,-5],"d":12}}', JSON.stringify(PD.model.isoLay));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
