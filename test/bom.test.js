@@ -2104,5 +2104,17 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Dimension chains choose their side with every piece, the overall tier and the extension lines scored (pump discharge case)
+{
+  PD.load({ equip: [{ k: 'pump', p: [4, 0, 0], r: 0 }], pipes: [
+    { a: [1.5, 0.4, 0], b: [3.65, 0.4, 0], n: 4, ln: 'L-101' }, { a: [3.85, 0.7, 0], b: [3.85, 1.0, 0], n: 3, ln: 'L-102' }, { a: [3.85, 1.0, 0], b: [3.85, 3.0, 0], n: 4, ln: 'L-102' }, { a: [3.85, 3.0, 0], b: [8, 3.0, 0], n: 4, ln: 'L-102' }],
+    valves: [{ p: [2.5, 0.4, 0], d: [1, 0, 0], n: 4, k: 'gate' }, { p: [3.85, 1.6, 0], d: [0, 1, 0], n: 4, k: 'check' }, { p: [3.85, 2.3, 0], d: [0, 1, 0], n: 4, k: 'gate' }], instr: [{ k: 'PI', p: [3.85, 1.3, 0], d: [0, 1, 0], n: 4, num: 101 }] });
+  PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
+  const sv = PD.iso('', '0'), gs = [...sv.matchAll(/<g class="dg" data-k="[^"]*" data-nx="([-\d.]+)" data-ny="([-\d.]+)" data-off="([-\d.]+)"/g)].map(m => m.slice(1).map(Number));
+  const vert = gs.filter(g => Math.abs(g[0]) > 0.9 && Math.abs(g[1]) < 0.1)[1];   // pipes in order: the 3" stub, then the 2 m discharge with its chain
+  check('the discharge chain stays close to its pipe instead of reaching across the suction valve', vert && Math.abs(vert[2]) < 62, JSON.stringify(gs));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

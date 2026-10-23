@@ -4278,25 +4278,40 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (j.type && (j.type !== 'elbow' || j.retMain || j.corner)) balloon(compDesc.joint[k], j.pos, 4, null, 'bulk');
     });
     // Dimensions: a line parallel to the pipe, offset to the lower or right side, with arrowheads and the centreline length.
-    function dimPick(a, b, label, only, stag) {                          // the side and distance where a dimension line crosses the least
+    function dimPick(a, b, label, only, stag, chain) {                   // the side and distance where a dimension line crosses the least; chain: [[p0, p1, label], ...] of a chain, scored with its overall tier
       var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 12) return null;
       var tx = dx / len, ty = dy / len, nx = -ty, ny = tx;
       if (ny < -1e-6 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
       var ang = Math.atan2(ty, tx) * 180 / Math.PI; if (ang > 90 || ang < -90) ang += 180;
-      var tw = label.length * 6 + 6, best = null, offs = only != null ? [only] : [20, -20, 34, -34, 48, -48, 62, -62, 78, -78];
-      for (var oi = 0; oi < offs.length; oi++) {
-        var off = offs[oi], a2 = [a[0] + nx * off, a[1] + ny * off], b2 = [b[0] + nx * off, b[1] + ny * off];
-        var mx0 = (a2[0] + b2[0]) / 2, my0 = (a2[1] + b2[1]) / 2, hw = (Math.abs(Math.cos(ang * Math.PI / 180)) * tw + Math.abs(Math.sin(ang * Math.PI / 180)) * 11) / 2, hh = (Math.abs(Math.sin(ang * Math.PI / 180)) * tw + Math.abs(Math.cos(ang * Math.PI / 180)) * 11) / 2;
-        var sh = stag != null && tw > len - 12 && stag % 2 ? 11 : 0, osg = off < 0 ? -1 : 1;   // a text wider than its segment goes to the outer side on every second one
-        mx0 += nx * osg * sh; my0 += ny * osg * sh;
-        var bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
+      var ca = Math.abs(Math.cos(ang * Math.PI / 180)), sa = Math.abs(Math.sin(ang * Math.PI / 180));
+      function near(q, r) { return Math.hypot(q[0] - r[0], q[1] - r[1]) < 3; }
+      function onLn(q) { return Math.abs((q[0] - a[0]) * ty - (q[1] - a[1]) * tx) < 1; }
+      function host(s0) { return onLn(s0[0]) && onLn(s0[1]); }   // the pipe itself, or a piece of it
+      function lineCost(p0, p1, lab, off, st) {                       // one dimension line at this offset: its text, the line itself and its two extension lines
+        var l2 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), tw = lab.length * 6 + 6, a2 = [p0[0] + nx * off, p0[1] + ny * off], b2 = [p1[0] + nx * off, p1[1] + ny * off];
+        var hw = (ca * tw + sa * 11) / 2, hh = (sa * tw + ca * 11) / 2, sh = st != null && tw > l2 - 12 && st % 2 ? 11 : 0, osg = off < 0 ? -1 : 1;   // a text wider than its segment goes to the outer side on every second one
+        var mx0 = (a2[0] + b2[0]) / 2 + nx * osg * sh, my0 = (a2[1] + b2[1]) / 2 + ny * osg * sh, bx = [mx0 - hw, my0 - hh, mx0 + hw, my0 + hh], cost = 0;
         if (TIDY) {
           cost = boxCost(bx);
-          segs.forEach(function (s) { if (s[0] === a && s[1] === b) return; if (segDist2(a2, b2, s[0], s[1]) < 7) cost += 12; });
+          segs.forEach(function (s0) { if (host(s0)) return; if (segDist2(a2, b2, s0[0], s0[1]) < 7) cost += 12; });
           eqBoxes.forEach(function (e0) { if (segHitRect(e0, [a2, b2])) cost += 16; });   // a dimension across a pump or vessel picture is hard to read
-          cost += oi * 0.3;
+          occ.forEach(function (o2) { if (segHitRect(o2, [a2, b2])) cost += 6; });     // the dimension line through a valve or other symbol
+          if (Math.abs(off) > 10) [[p0, a2], [p1, b2]].forEach(function (e) {           // the extension lines, from just clear of the pipe
+            var e0 = [e[0][0] + nx * osg * 10, e[0][1] + ny * osg * 10];
+            segs.forEach(function (s0) { if (host(s0) || near(s0[0], e[0]) || near(s0[1], e[0]) || near(s0[0], a) || near(s0[1], a) || near(s0[0], b) || near(s0[1], b)) return; if (segDist2(e0, e[1], s0[0], s0[1]) < 2) cost += 8; });
+            occ.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 10; });
+            eqBoxes.forEach(function (o2) { if (segHitRect(o2, [e0, e[1]])) cost += 8; });   // or across a pump or vessel picture
+          });
         }
-        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: a2, b2: b2, bx: bx, tx: tx, ty: ty, nx: nx, ny: ny, ang: ang, len: len, sh: sh };
+        return { cost: cost, a2: a2, b2: b2, bx: bx, sh: sh };
+      }
+      var best = null, offs = only != null ? [only] : [20, -20, 34, -34, 48, -48, 62, -62, 78, -78];
+      for (var oi = 0; oi < offs.length; oi++) {
+        var off = offs[oi], main = lineCost(a, b, label, off, stag), cost = main.cost;
+        if (chain && TIDY) { cost = 0; chain.forEach(function (c, q) { cost += lineCost(c[0], c[1], c[2], off, q).cost; }); cost += lineCost(a, b, label, off + (off < 0 ? -22 : 22)).cost; }   // the chain and the overall length on the tier outside it
+        cost += oi * 0.3;
+        if (isoCtx.dbg) isoCtx.dbg.push([label, off, Math.round(cost)]);
+        if (!best || cost < best.cost) best = { cost: cost, off: off, a2: main.a2, b2: main.b2, bx: main.bx, tx: tx, ty: ty, nx: nx, ny: ny, ang: ang, len: len, sh: main.sh };
         if (!TIDY || cost < 1) break;
       }
       return best;
@@ -4336,8 +4351,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         body = body.slice(0, g0) + '<g class="dg" data-k="' + dk + '" data-nx="' + f3(pk.nx) + '" data-ny="' + f3(pk.ny) + '" data-off="' + f1(pk.off) + '">' + body.slice(g0) + '</g>';
       }
       if (!kept.length) { body += dimLine(a, b, total, dov); wrapD(lastDim); return; }
-      var pick = dimPick(a, b, total, dov); if (!pick) return;          // the chain shares one side and distance, so it reads as one line of dimensions
-      var ts = [0].concat(kept, [L3]);
+      var ts = [0].concat(kept, [L3]), chain = [];
+      for (var q0 = 0; q0 + 1 < ts.length; q0++) chain.push([sp(lerp3(p.a, p.b, ts[q0] / L3)), sp(lerp3(p.a, p.b, ts[q0 + 1] / L3)), String(Math.round((ts[q0 + 1] - ts[q0]) * 1000))]);
+      var pick = dimPick(a, b, total, dov, null, chain); if (!pick) return;   // the chain shares one side and distance, so it reads as one line of dimensions; the side is scored with every piece and the overall tier
       for (var q = 0; q + 1 < ts.length; q++) {
         var s0 = sp(lerp3(p.a, p.b, ts[q] / L3)), s1 = sp(lerp3(p.a, p.b, ts[q + 1] / L3));   // through the shortening map, so the ticks stay on the parts
         body += dimLine(s0, s1, String(Math.round((ts[q + 1] - ts[q]) * 1000)), pick.off, q);
