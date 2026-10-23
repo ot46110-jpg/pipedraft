@@ -3425,6 +3425,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // The symbols used on most isometric drawings: the bow-tie for a valve with its stem and a mark that says which valve it is,
   // two bars for a flange. Flanged valves get their flange bars from the flanges fitted against them. Parts without a symbol of
   // their own here (strainers, expansion joints and so on) use the pictures above.
+  var FL_GAP_S = 4, FL_GAP_P = 1.6;                                // symbol units from the valve's end to the middle of the pipe flange: Symbols (a clear gap, as on the reference chart), Pictures (the picture already has the valve's own flange: gasket gap plus half the flange)
   var ISOS = (function () {
     var DK = '#14191c', W = '#ffffff';
     function P(d, f) { return '<path d="' + d + '" fill="' + (f || 'none') + '"/>'; }
@@ -3473,7 +3474,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     s.endSW = Ln(-10, -7, -10, 7) + Ln(-10.5, -3.5, -15.5, -3.5) + Ln(-10.5, 3.5, -15.5, 3.5) + Ln(10, -7, 10, 7) + Ln(10.5, -3.5, 15.5, -3.5) + Ln(10.5, 3.5, 15.5, 3.5);   // socket weld ends: the socket face and two short lines over the pipe
     s.psv = Ln(-7, -1.5, 7, -1.5, 2.6) + P('M-6,-3 L6,-3 L0,-15Z', W) + P('M13,-21 L13,-9 L0,-15Z', W) + Ln(15.6, -22, 15.6, -8, 2.6)   // inlet up from the pipe, outlet to the side, each with its flange bar
       + Ln(0, -15, 0, -25) + Ln(-3, -20, 3, -20) + Ln(-3, -22.5, 3, -22.5) + Ln(-3, -25, 3, -25);                                          // spring bonnet
-    s.endFL = function (hw) { var x = hw + 2.6; return Ln(-x, -11.5, -x, 11.5, 2.6) + Ln(x, -11.5, x, 11.5, 2.6); };   // flanged ends: a bar each side, taller than the body, a little apart
+    s.endFL = function (hw) { var x = hw + FL_GAP_S; return Ln(-x, -11.5, -x, 11.5, 2.4) + Ln(x, -11.5, x, 11.5, 2.4); };   // flanged ends: the pipe flange a bar each side, taller than the body, clear of its tip
     s.endTHD = Ln(-11.5, -4, -13.5, 4) + Ln(-14, -4, -16, 4) + Ln(11.5, -4, 13.5, 4) + Ln(14, -4, 16, 4);   // threaded ends
     var pair = R(-4.2, -7, 2.4, 14) + R(1.8, -7, 2.4, 14);
     ['wn', 'so', 'lj', 'sw'].forEach(function (t) { s['fl-' + t] = pair; });
@@ -3923,7 +3924,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       });
       if (!best) return null;
       flOf[model.flanges.indexOf(f)] = best;
-      return symEnd(best, fd.clone().negate(), vFlgBars(best) ? vHalf(best) + 2.6 : 10);
+      return symEnd(best, fd.clone().negate(), vHalf(best) + (isoCtx.style === 'pic' ? FL_GAP_P : FL_GAP_S));   // outside the valve, never on it
     });
     function flShift(pos) {                                         // a weld behind a moved valve flange moves with it
       for (var fi = 0; fi < model.flanges.length; fi++) if (flAt[fi] && V(pos).distanceTo(V(model.flanges[fi].p)) < 0.25) return A(V(pos).add(V(flAt[fi]).sub(V(model.flanges[fi].p))));
@@ -4073,7 +4074,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var fp = flAt[i] || f.p;
       if (!(flOf[i] && vFlgBars(flOf[i]))) body += isoSym(isOne(f) ? 'fl-end' : 'fl-' + (f.t || 'wn'), fp, f.d, 20);   // a valve's own symbol already carries its flange bars
       balloon(compDesc.flange[i], fp);
-      if (f.m && isoCtx.style === 'pic') body += isoSym('fl-end', A(V(fp).addScaledVector(V(f.d).normalize(), 5 / sc)), f.d, 20);   // pictures show the valve's own flange too; symbols use one bar a side   // the flange cast on the valve beside the one on the pipe: two bars at each end, four on the valve
     });
     model.items.forEach(function (it, i) { body += isoSym(it.t, it.p, it.d, clampPx(itemLen(it.t, it.n), 34, 70)); balloon(compDesc.item[i], it.p); });
     model.supports.forEach(function (q0, i) {

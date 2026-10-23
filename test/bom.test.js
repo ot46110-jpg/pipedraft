@@ -1836,10 +1836,10 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   ];
   for (const [label, m] of cases) {
     PD.load(m); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild();
-    PD.isoOpts.style = 'pic'; const ss = syms(PD.iso('', 'auto')).filter((x, i) => i !== 2 && i !== 4); PD.isoOpts.style = 'sym';   // Pictures: the valve, then each flange and its second bar
-    const v = ss[0], half = 10 * Math.hypot(v[0], v[1]);
+    PD.isoOpts.style = 'pic'; const ss = syms(PD.iso('', 'auto')); PD.isoOpts.style = 'sym';   // Pictures: the valve, then one pipe flange each side
+    const v = ss[0], k = Math.hypot(v[0], v[1]), half = ((m.valves[0].k === 'butterfly' ? 6 : 10) + 1.6) * k;   // just outside the valve picture's own flange
     const fl = [ss[1], ss[2]].map(f => Math.hypot(f[2] - v[2], f[3] - v[3]));
-    check('iso, ' + label + ': both valve flanges touch the ends of the valve symbol', ss.length === 3 && fl.every(d => Math.abs(d - half) < 1.2), JSON.stringify({ half, fl, n: ss.length }));
+    check('iso, ' + label + ': both pipe flanges sit just outside the valve, not on it', ss.length === 3 && fl.every(d => Math.abs(d - half) < 1.2), JSON.stringify({ half, fl, n: ss.length }));
   }
   PD.load({ pipes: [] });
 }
@@ -1851,10 +1851,10 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const sw = one(1, 'weld'), bw = one(4, 'weld'), fl = one(4, 'flg');
   check('a socket welded valve shows socket marks and no weld dots at its ends', sw.includes('x1="-10.5" y1="-3.5"') && dots(sw) === 2, String(dots(sw)));   // the two left are the elbow's
   check('a butt welded valve shows a weld dot at each end and no socket marks', !bw.includes('x1="-10.5" y1="-3.5"') && dots(bw) === 4, String(dots(bw)));   // two at the valve, two at the elbow
-  check('a flanged valve shows one flange bar a side, drawn in its own symbol', (fl.match(/class="sy"/g) || []).length === 1 && (fl.match(/x1="-12.6" y1="-11.5"/g) || []).length === 1 && (fl.match(/x1="12.6" y1="-11.5"/g) || []).length === 1);
+  check('a flanged valve shows one flange bar a side, drawn in its own symbol', (fl.match(/class="sy"/g) || []).length === 1 && (fl.match(/x1="-14" y1="-11.5"/g) || []).length === 1 && (fl.match(/x1="14" y1="-11.5"/g) || []).length === 1);
   check('the flange balloons still point at the flanges', (fl.match(/>5</g) || []).length >= 1);
   PD.isoOpts.style = 'pic'; const flp = one(4, 'flg'); PD.isoOpts.style = 'sym';
-  check('the Pictures style still shows the valve\'s own flanges too', (flp.match(/class="sy"/g) || []).length === 5);
+  check('the Pictures style draws one pipe flange a side, outside the valve picture (which has its own flanges)', (flp.match(/class="sy"/g) || []).length === 3);
   check('globe and ball follow the chart: filled ball, open ball with a cross, no stem', PD.isos.globe.includes('r="5.4" fill="#14191c"') && !PD.isos.globe.includes('y2="-15"') && PD.isos.ball.includes('r="5.5" fill="#ffffff"'));
   PD.load({ pipes: [] });
 }
