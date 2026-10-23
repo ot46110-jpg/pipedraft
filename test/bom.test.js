@@ -728,10 +728,10 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
   PD.load(old);
   const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
-  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","",""'), csvRow);
+  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","","",""'), csvRow);
 }
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
-check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 18);
+check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 20);
 check('from and to reach the csv and the foot note of that line sheet', (PD.model.lines['L-001'].from = 'Tank T-101', PD.model.lines['L-001'].to = 'Pump <P-101>', PD.lineCsv()).includes('"Tank T-101","Pump <P-101>"') && (s => s.includes('FROM Tank T-101  TO Pump &lt;P-101&gt;') && !s.includes('<P-101>'))(PD.iso('L-001', 'auto', true)) && !PD.iso('L-002', 'auto', true).includes('FROM '));
 check('a short iso sheet has at least the A3 landscape shape (1200 x 849)', (m => m && +m[1] === 1200 && +m[2] >= 849)(/viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(PD.iso('L-001', 'auto', true))));
 const bomBefore = JSON.stringify(PD.rows()), bomPipes0 = PD.model.pipes.length, bl = PD.bomByLine();
@@ -1340,8 +1340,10 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   ctx.document.getElementById('iso-coords').onclick();
   check('a one-line sheet names the line that continues from a cut end', (() => {
     PD.load({ pipes: [{ a: [0, 0.5, 0], b: [2, 0.5, 0], n: 4, ln: 'L-1' }, { a: [2, 0.5, 0], b: [2, 0.5, 2], n: 4, ln: 'L-2' }] });
-    return PD.iso('L-1').includes('CONT. L-2');
+    return PD.iso('L-1').includes('CONT. ON ISO-L-2 (L-2)');
   })());
+  check('the continuation names the drawing typed for the other line', (() => { PD.model.lines['L-2'] = { dwg: 'DWG-77' }; return PD.iso('L-1').includes('CONT. ON DWG-77 (L-2)'); })());
+  check('the line sheet title block shows its own drawing number', (() => { PD.model.lines['L-2'] = { dwg: 'DWG-77' }; return PD.iso('L-2').includes('>DWG-77<'); })());
 }
 
 // the audit items: strict numbers, resizing a pipe with its parts, BOM integrity warnings, file names
@@ -2028,6 +2030,32 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('no break mark on a pipe drawn at true length', !/class="brk"/.test(sv));
   PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }, { a: [2, 1, 0], b: [4, 1, 0], n: 3 }] });
   check('a reducer is labelled with both sizes', /×/.test(PD.iso('', '0')));
+  PD.load({ pipes: [] });
+}
+
+// Field fit weld: Shop, Field, Field fit; the longest piece at the weld is cut long by the allowance; FFW on the iso
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }, { a: [2, 1, 0], b: [3, 1, 0], n: 4 }] });
+  const w0 = PD.fab().welds[0]; PD.model.field[w0.key] = 2;
+  const f = PD.fab(), w = f.welds.find(x => x.key === w0.key), big = f.pieces.slice().sort((a, b) => b.len - a.len)[0];
+  check('a field fit weld is a field weld and breaks the spool', w.field && w.ffw && f.spools.length === 2);
+  check('the longer piece gets the 100 mm allowance, the other none', Math.abs(big.allow - 0.1) < 1e-9 && f.pieces.filter(p => p.allow).length === 1);
+  check('the cut list csv carries the allowance and Field fit', /,100\n/.test(PD.fabCsv()) && PD.fabCsv().includes('Field fit'));
+  const sv = PD.iso('', '0');
+  check('the iso marks it FFW and notes the allowance', sv.includes('>FFW<') && /field fit weld, \+100 in cut list/.test(sv));
+  PD.model.spec.ffw = 150; check('the allowance follows the project spec', Math.abs(PD.fab().pieces.find(p => p.allow).allow - 0.15) < 1e-9);
+  PD.load({ pipes: [] });
+}
+
+// An elevation note moved away from its point stands on a shoulder, with the leader to the shoulder end
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }] });
+  const sv = PD.iso('', '0'), m = sv.match(/<g class="lb" data-k="([^"]+)"[^>]*>(?:(?!<\/g>).)*?EL \+1\.000/);
+  check('an EL label is a movable label', !!m);
+  check('next to its point it has no shoulder', !/class="shd"/.test(sv));
+  PD.model.isoLay = { '*|0': { [m[1]]: [0, -90] } };
+  const sv2 = PD.iso('', '0');
+  check('moved away it stands on a shoulder line', /class="shd"/.test(sv2));
   PD.load({ pipes: [] });
 }
 

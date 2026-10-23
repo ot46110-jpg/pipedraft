@@ -105,4 +105,4 @@
 
 ## ISO 6412-2 check of the iso sheet
 - Done: offset triangles with bracketed true length, crossing gaps, slope triangle, reducer size label, false break mark on off-axis pipes removed, `depth3` paint order fixed (equipment pictures were painted near to far).
-- Possible next: EL leader shoulder along the flow (cl. 7.6), "continued on drawing" references, field fit weld (FFW) mark.
+- Done next: EL shoulder, "CONT. ON <drawing>" with per-line drawing numbers, field fit weld (FFW) with a cut allowance.

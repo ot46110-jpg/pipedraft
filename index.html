@@ -315,6 +315,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <div class="row"><label class="field">Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
         <div class="row"><label class="field">Olet type<select id="sp-olet"><option value="weldolet">Weldolet BW</option><option value="sockolet">Sockolet SW</option><option value="threadolet">Threadolet THD</option><option value="sweepolet">Sweepolet BW</option><option value="halfcoupling">Half coupling SW</option><option value="nippolet">Nippolet BW</option></select></label></div>
         <div class="row"><label class="field">Weld gap per joint, taken off cut lengths<select id="sp-gap"><option value="0">None</option><option value="1.5">1.5 mm</option><option value="2">2 mm</option><option value="3">3 mm</option></select></label></div>
+        <div class="row"><label class="field">Field fit weld allowance, added to one piece<select id="sp-ffw"><option value="50">50 mm</option><option value="100">100 mm</option><option value="150">150 mm</option><option value="200">200 mm</option></select></label></div>
         <div class="row"><label class="field">Small bore ends, NPS 1-1/2 and below<select id="sp-small"><option value="SW">Socket weld, 3000#</option><option value="THD">Threaded, 3000#</option><option value="BW">Butt weld</option></select></label></div>
       <p class="empty" style="margin:0;font-size:12px">Applies to every joint. Select a fitting to change just that one.</p>
       </div>
@@ -1033,7 +1034,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.lines = {}; Object.keys(plain(m.lines)).forEach(function (k) {   // one record per line number, strings and numbers only
       var d = plain(m.lines[k]), c = {}; Object.keys(d).forEach(function (f) { if (typeof d[f] === 'string' || (typeof d[f] === 'number' && isFinite(d[f]))) c[f] = d[f]; }); o.lines[k] = c;
     });
-    o.fit = plain(m.fit); o.field = plain(m.field);
+    o.fit = plain(m.fit); o.field = {}; (function (fd) { Object.keys(fd).forEach(function (k) { if (fd[k]) o.field[k] = fd[k] === 2 ? 2 : 1; }); })(plain(m.field));   // 1 field weld, 2 field fit weld
     o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.isoLay = {}; (function (L0) { Object.keys(L0).slice(0, 200).forEach(function (sk) {   // labels moved by hand on the iso sheets: sheet key to label key to an offset
       if (String(sk).length > 80) return; var d = plain(L0[sk]), c = {}, n = 0;
       Object.keys(d).forEach(function (k) { var v = d[k]; if (n >= 2000 || k.length > 80) return;
@@ -1882,13 +1883,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function isOne(f) { return f.t === 'bl' || !!f.e || !!f.m; }       // one flange: blind, at a pipe end, or against a valve. Its face is at p and its body runs back along the pipe
   function flangeSpan(f) { var ft = FL[f.n][1], gap = 0.004; return isOne(f) ? ft + gap : 2 * (ft + gap); }
   function insulated(t) { return !!t && !/^\s*(none|no|n\/a|-|—|0)\s*$/i.test(String(t)); }
+  function ffwAllow() { var a = Number((model.spec || {}).ffw); return [50, 100, 150, 200].indexOf(a) >= 0 ? a : 100; }   // mm of extra pipe left on a piece at a field fit weld, cut to fit on site
+  function madeText(w) { return w.ffw ? 'Field fit' : w.field ? 'Field' : 'Shop'; }
   var NDE_M = ['RT', 'PT', 'MT', 'VT', 'UT'];                         // radiography, dye penetrant, magnetic particle, visual, ultrasonic
   function fabrication() {
     var field = model.field || {}, welds = [], pieces = [], joints = [], parent = {}, byPair = {}, jpos = {};
     function find(x) { if (parent[x] == null) parent[x] = x; while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
     function union(a, b) { a = find(a); b = find(b); if (a !== b) parent[a] = b; }
     function mkWeld(kind, n, pos, ln, wkey) {
-      var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey], nde: (model.ndeW || {})[wkey] || '' };
+      var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey], ffw: field[wkey] === 2, nde: (model.ndeW || {})[wkey] || '' };
       if (kind === 'BW' || kind === 'SW' || kind === 'FW') welds.push(w); else joints.push(w);
       return w;
     }
@@ -1972,6 +1975,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       A0.len += B0.len; A0.pb = B0.pb; A0.t1 = A0.t0 + A0.len; A0.merged = (A0.merged || []).concat([B0.id]);
       pieces.splice(pieces.indexOf(B0), 1);
     });
+    welds.forEach(function (w) {                                    // a field fit weld: the longest piece that ends there is cut long by the allowance
+      if (!w.ffw) return; var best = null;
+      pieces.forEach(function (pc) { if ((V(pc.pa).distanceTo(V(w.pos)) < 0.02 || V(pc.pb).distanceTo(V(w.pos)) < 0.02) && (!best || pc.len > best.len)) best = pc; });
+      if (best) { best.allow = (best.allow || 0) + ffwAllow() / 1000; w.allowOn = best; }
+    });
     // Spools: parts still joined by shop welds.
     var sp = {}, order = [];
     pieces.forEach(function (pc) { var r = find(pc.id); if (!sp[r]) { sp[r] = { id: 'S' + String(order.length + 1).padStart(2, '0'), pieces: [], ln: pc.ln, len: 0, welds: 0 }; order.push(r); } pc.spool = sp[r].id; sp[r].pieces.push(pc); sp[r].len += pc.len; });
@@ -1985,14 +1993,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function fabHtml() {
     var f = fabrication(), h = '';
     if (!f.pieces.length) return '<p class="empty">No pipe to cut yet.</p>';
-    var tot = f.pieces.reduce(function (a, p) { return a + p.len; }, 0), field = f.welds.filter(function (w) { return w.field; }).length;
-    h += '<p class="empty">' + f.spools.length + ' spool' + (f.spools.length === 1 ? '' : 's') + ', ' + f.pieces.length + ' pipe pieces, ' + tot.toFixed(2) + ' m of pipe to cut, ' + f.welds.length + ' welds (' + field + ' field), ' + f.joints.length + ' bolted or threaded joints. Cut lengths are to the faces of the parts they join, with no allowance for gaps or saw cuts. Mark a weld as Field to break a spool there.</p>';
-    h += '<h3>Cut list</h3><div class="scroll"><table class="tbl"><thead><tr><th>Piece</th><th>Line</th><th>Pipe</th><th>Cut length mm</th></tr></thead><tbody>'
-      + f.pieces.map(function (p) { return '<tr><td>' + esc(p.label) + '</td><td>' + esc(p.ln) + '</td><td>' + esc(compDesc.pipe[p.i] || '') + '</td><td><b>' + Math.round(p.len * 1000) + '</b></td></tr>'; }).join('') + '</tbody></table></div>';
+    var tot = f.pieces.reduce(function (a, p) { return a + p.len; }, 0), field = f.welds.filter(function (w) { return w.field; }).length, ffwN = f.welds.filter(function (w) { return w.ffw; }).length;
+    h += '<p class="empty">' + f.spools.length + ' spool' + (f.spools.length === 1 ? '' : 's') + ', ' + f.pieces.length + ' pipe pieces, ' + tot.toFixed(2) + ' m of pipe to cut, ' + f.welds.length + ' welds (' + field + ' field' + (ffwN ? ', ' + ffwN + ' of them field fit' : '') + '), ' + f.joints.length + ' bolted or threaded joints. Cut lengths are to the faces of the parts they join, with no allowance for gaps or saw cuts. A field fit weld leaves ' + ffwAllow() + ' mm extra on one piece, to be cut to fit on site; the extra is not in the BOM pipe quantity. Tap Made to switch Shop, Field, Field fit. Mark a weld as Field to break a spool there.</p>';
+    h += '<h3>Cut list</h3><div class="scroll"><table class="tbl"><thead><tr><th>Piece</th><th>Line</th><th>Pipe</th><th>Cut length mm</th><th>FFW extra mm</th></tr></thead><tbody>'
+      + f.pieces.map(function (p) { return '<tr><td>' + esc(p.label) + '</td><td>' + esc(p.ln) + '</td><td>' + esc(compDesc.pipe[p.i] || '') + '</td><td><b>' + Math.round(p.len * 1000) + '</b></td><td>' + (p.allow ? '+' + Math.round(p.allow * 1000) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
     h += '<h3>Welds</h3><div class="scroll"><table class="tbl"><thead><tr><th>No.</th><th>Type</th><th>Size</th><th>Line</th><th>Where, mm (X, Y, Z)</th><th>Made</th><th>NDE</th></tr></thead><tbody>'
       + f.welds.map(function (w) {
         var c = [w.pos[0], w.pos[2], w.pos[1]].map(function (v) { return Math.round(v * 1000); }).join(', ');
-        return '<tr><td>W' + w.no + '</td><td>' + WELD_NAME[w.kind] + '</td><td>' + (w.n ? szs(w.n) : '') + '</td><td>' + esc(w.ln) + '</td><td>' + c + '</td><td><button data-wk="' + esc(w.key) + '" aria-pressed="' + w.field + '">' + (w.field ? 'Field' : 'Shop') + '</button></td><td><select data-nde="' + esc(w.key) + '" aria-label="NDE for weld ' + w.no + '"><option value="">None</option>' + NDE_M.map(function (m) { return '<option' + (w.nde === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select></td></tr>';
+        return '<tr><td>W' + w.no + '</td><td>' + WELD_NAME[w.kind] + '</td><td>' + (w.n ? szs(w.n) : '') + '</td><td>' + esc(w.ln) + '</td><td>' + c + '</td><td><button data-wk="' + esc(w.key) + '" aria-pressed="' + w.field + '">' + madeText(w) + '</button></td><td><select data-nde="' + esc(w.key) + '" aria-label="NDE for weld ' + w.no + '"><option value="">None</option>' + NDE_M.map(function (m) { return '<option' + (w.nde === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select></td></tr>';
       }).join('') + '</tbody></table></div>';
     h += '<h3>Spools</h3><div class="scroll"><table class="tbl"><thead><tr><th>Spool</th><th>Line</th><th>Pieces</th><th>Pipe m</th></tr></thead><tbody>'
       + f.spools.map(function (s) { return '<tr><td>' + s.id + '</td><td>' + esc(s.ln) + '</td><td>' + s.pieces.length + '</td><td>' + s.len.toFixed(2) + '</td></tr>'; }).join('') + '</tbody></table></div>';
@@ -2001,8 +2009,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function showFab() { $('fabBody').innerHTML = fabHtml(); $('fab').hidden = false; }
   function fabCsv() {
     var f = fabrication(), q = csvq;
-    var o = 'Piece,Spool,Line,Pipe,Cut length (mm)\n' + f.pieces.map(function (p) { return [q(p.label), q(p.spool), q(p.ln), q(compDesc.pipe[p.i] || ''), Math.round(p.len * 1000)].join(','); }).join('\n');
-    o += '\n\nWeld,Type,Size,Line,X (mm),Y (mm),Z (mm),Made,NDE\n' + f.welds.map(function (w) { return ['W' + w.no, q(WELD_NAME[w.kind]), q(w.n ? szs(w.n) : ''), q(w.ln), Math.round(w.pos[0] * 1000), Math.round(w.pos[2] * 1000), Math.round(w.pos[1] * 1000), w.field ? 'Field' : 'Shop', q(w.nde)].join(','); }).join('\n');
+    var o = 'Piece,Spool,Line,Pipe,Cut length (mm),FFW extra (mm)\n' + f.pieces.map(function (p) { return [q(p.label), q(p.spool), q(p.ln), q(compDesc.pipe[p.i] || ''), Math.round(p.len * 1000), p.allow ? Math.round(p.allow * 1000) : ''].join(','); }).join('\n');
+    o += '\n\nWeld,Type,Size,Line,X (mm),Y (mm),Z (mm),Made,NDE\n' + f.welds.map(function (w) { return ['W' + w.no, q(WELD_NAME[w.kind]), q(w.n ? szs(w.n) : ''), q(w.ln), Math.round(w.pos[0] * 1000), Math.round(w.pos[2] * 1000), Math.round(w.pos[1] * 1000), madeText(w), q(w.nde)].join(','); }).join('\n');
     return o + '\n';
   }
 
@@ -2193,7 +2201,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (sp && sp.noValve.indexOf(v.k) >= 0 && !seen[model.pipes[i].ln + 'v' + v.k] && (seen[model.pipes[i].ln + 'v' + v.k] = 1)) warns.push((VALVE_NAME[v.k] || v.k) + ' on line ' + model.pipes[i].ln + ' is not allowed by class ' + sp.name + '.');
     });
   }
-  var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['code', 'Fluid code', 'e.g. CW'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none'], ['nde', 'NDE extent', 'e.g. RT 10%, PT 100%'], ['from', 'From', 'e.g. Tank T-101'], ['to', 'To', 'e.g. Pump P-101']];
+  var LL_FIELDS = [['svc', 'Service / fluid', 'e.g. Cooling water'], ['code', 'Fluid code', 'e.g. CW'], ['cls', 'Class / material', ''], ['pdes', 'Design pressure', 'e.g. 10 bar g'], ['tdes', 'Design temp.', 'e.g. 60 °C'], ['insul', 'Insulation', 'none'], ['nde', 'NDE extent', 'e.g. RT 10%, PT 100%'], ['dwg', 'Iso drawing No.', 'ISO-…'], ['from', 'From', 'e.g. Tank T-101'], ['to', 'To', 'e.g. Pump P-101']];
   function lineDesignation(ln, nSel) {                              // size"-fluid code-line number-class, e.g. 2"-P-1001-A1A (empty parts are left out)
     var n = nSel, d = model.lines[ln] || {};
     if (n == null) model.pipes.forEach(function (p) { if (p.ln === ln && (n == null || p.n > n)) n = p.n; });
@@ -2212,8 +2220,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     f.pieces.forEach(function (pc) { if (L[pc.ln]) L[pc.ln].pieces++; });
     return Object.keys(L).sort().map(function (k) {
       var d = model.lines[k] || {}, r = L[k];
-      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', spec: d.spec || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
+      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', spec: d.spec || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', dwg: d.dwg || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces };
     });
+  }
+  function dwgOf(ln) {                                              // the iso drawing number of a line: typed for the line, else the default ISO-<line> unless one project number is typed for every sheet
+    var d = (model.lines[ln] || {}).dwg; if (d) return d;
+    return (model.title || {}).drawing ? '' : 'ISO-' + ln;
   }
   var spOpen = null;
   function specHtml() {
@@ -2235,14 +2247,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return specHtml() + '<p class="empty">Service, class, pressure, temperature and insulation are typed by you and appear in the title block of that line\'s isometric sheet. Class defaults to ' + esc(std().cls) + '. The other columns come from the drawing.</p>'
       + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Designation</th><th>Size</th><th>Piping class</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
       + rows.map(function (r) {
-        return '<tr><td><input type="text" data-llname="' + esc(r.ln) + '" value="' + esc(r.ln) + '" maxlength="12" style="min-width:84px" aria-label="Line number"></td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td><td><select data-llspec="' + esc(r.ln) + '"><option value="">None</option>' + model.pspecs.map(function (s) { return '<option value="' + esc(s.id) + '"' + (r.spec === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[2]) + '"></td>'; }).join('')
+        return '<tr><td><input type="text" data-llname="' + esc(r.ln) + '" value="' + esc(r.ln) + '" maxlength="12" style="min-width:84px" aria-label="Line number"></td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td><td><select data-llspec="' + esc(r.ln) + '"><option value="">None</option>' + model.pspecs.map(function (s) { return '<option value="' + esc(s.id) + '"' + (r.spec === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[0] === 'dwg' ? ((model.title || {}).drawing || 'ISO-' + r.ln) : f[2]) + '"></td>'; }).join('')
           + '<td>' + (r.q || '–') + '</td><td>' + r.len.toFixed(2) + '</td><td>' + r.valves + '</td><td>' + r.welds + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
   function lineCsv() {
     var q = csvq;
-    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation,From,To\n'
-      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || (spOf(r.ln) && (spOf(r.ln).code || spOf(r.ln).name)) || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to)].join(','); }).join('\n') + '\n';
+    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation,From,To,Drawing\n'
+      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || (spOf(r.ln) && (spOf(r.ln).code || spOf(r.ln).name)) || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to), q(r.dwg)].join(','); }).join('\n') + '\n';
   }
 
   function bomByLineCsv() {                                         // the material list of each line number on its own, rows tagged with the line designation
@@ -3812,6 +3824,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (Array.isArray(back)) { var ux = Math.abs(dx / L) || 1e-9, uy = Math.abs(dy / L) || 1e-9; back = Math.min(back[0] / ux, back[1] / uy) + 2; if (back >= L - 2) return ''; }
       return '<line x1="' + f1(ax) + '" y1="' + f1(ay) + '" x2="' + f1(cx - dx / L * back) + '" y2="' + f1(cy - dy / L * back) + '" stroke="' + DIMK + '" stroke-width="0.6"/>';
     }
+    function shoulder(ax, ay, cx, cy, w, txt) {                     // an elevation note: text standing on a short horizontal shoulder, the leader meets the end of the shoulder nearer the point
+      var yb = cy + 5.5, xa = cx - w / 2 - 2, xb = cx + w / 2 + 2, xe = Math.abs(ax - xa) < Math.abs(ax - xb) ? xa : xb;
+      if (ax > xa && ax < xb) xe = ax < cx ? xa : xb;
+      return '<line x1="' + f1(ax) + '" y1="' + f1(ay) + '" x2="' + f1(xe) + '" y2="' + f1(yb) + '" stroke="' + DIMK + '" stroke-width="0.6"/><line class="shd" x1="' + f1(xa) + '" y1="' + f1(yb) + '" x2="' + f1(xb) + '" y2="' + f1(yb) + '" stroke="' + DIMK + '" stroke-width="0.6"/>' + svgText(cx, cy + 3.2, txt, 9, 'middle');
+    }
     function layoutLabels() {
       var out = '', seen = {};
       labels.forEach(function (L) { var b0 = 'l' + L.prio + ':' + prKey(L.ax, L.ay); seen[b0] = (seen[b0] || 0) + 1; L.k = b0 + '#' + seen[b0]; var v = LAY[L.k]; if (Array.isArray(v)) L.ov = v; });
@@ -4086,11 +4103,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       function hex(cx, cy, r0) { var pts = []; for (var hi = 0; hi < 6; hi++) { var ha = Math.PI / 6 + hi * Math.PI / 3; pts.push(f1(cx + Math.cos(ha) * r0) + ',' + f1(cy + Math.sin(ha) * r0)); } return pts.join(' '); }
       if (!noDot) body += w.field && isoCtx.style !== 'pic' ? '<g transform="translate(' + f1(q[0]) + ' ' + f1(q[1]) + ')" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round">' + ISOS.fieldweld + '</g>'
         : '<circle cx="' + f1(q[0]) + '" cy="' + f1(q[1]) + '" r="' + rD + '" fill="' + (w.field ? PAPER : INK) + '" stroke="' + INK + '" stroke-width="1"/>';
-      want(1, q[0], q[1], rr * 2 + 1, rr * 2 + 1, ring([rr + 6, rr + 12, rr + 20, rr + 30], [-45, 45, -135, 135, -90, 90, 0, 180]),
+      want(1, q[0], q[1], rr * 2 + 1, w.ffw ? rr * 2 + 22 : rr * 2 + 1, ring([rr + 6, rr + 12, rr + 20, rr + 30], [-45, 45, -135, 135, -90, 90, 0, 180]),
         function (cx, cy) {
           return leader(q[0], q[1], cx, cy, 8) + '<polygon points="' + hex(cx, cy, 9) + '" fill="' + PAPER + '" stroke="' + INK + '" stroke-width="0.9"/>'
             + (w.field ? '<polygon points="' + hex(cx, cy, 11.5) + '" fill="none" stroke="' + INK + '" stroke-width="0.9"/>' : '')
-            + svgText(cx, cy + 2.6, tx, tx.length > 3 ? 5.5 : 7, 'middle', 600);
+            + svgText(cx, cy + 2.6, tx, tx.length > 3 ? 5.5 : 7, 'middle', 600)
+            + (w.ffw ? svgText(cx, cy + 22, 'FFW', 7.5, 'middle', 600) : '');
         });
     });
     fabI.spools.forEach(function (s) {                              // the spool number, on the longest piece of the spool
@@ -4301,10 +4319,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var q = sp(j.pos), el = j.pos[1]; elShown[Math.round(el * 1000)] = 1;
       var et = 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), nzE = nozList.filter(function (z) { return z.e >= 0 && key(mm3(z.p)) === k; })[0];
       if (nzE && tg.equip[nzE.e]) et += '  TO ' + tg.equip[nzE.e] + '/N' + (nzE.idx + 1);      // connection note: which nozzle the pipe ends on
-      else if (model.contAt && model.contAt[k]) et += '  CONT. ' + model.contAt[k].join(', ');      // the line that carries on from this end
+      else if (model.contAt && model.contAt[k]) et += '  ' + model.contAt[k].map(function (l2) { var d2 = dwgOf(l2); return d2 ? 'CONT. ON ' + d2 + ' (' + l2 + ')' : 'CONT. ' + l2; }).join(', ');   // continuation: the drawing that carries the other line on      // the line that carries on from this end
       if (isoCtx.coords) et += '  E ' + Math.round(j.pos[0] * 1000) + ' N ' + Math.round(j.pos[2] * 1000);   // plant coordinates in mm, east and north
       var ew = tagText(et, 9);
-      want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(q[0], q[1], cx, cy, [ew / 2, 5.5]) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
+      want(2, q[0], q[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return d > ew / 2 + 14 ? shoulder(q[0], q[1], cx, cy, ew, et) : svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
     var elRun = {};
     model.pipes.forEach(function (p) {
@@ -4315,7 +4333,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     Object.keys(elRun).forEach(function (k2) {
       var r = elRun[k2], et = 'EL ' + (r.el >= 0 ? '+' : '') + r.el.toFixed(3), ew = tagText(et, 9);
-      want(2, r.m[0], r.m[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return (d > ew / 2 + 14 ? leader(r.m[0], r.m[1], cx, cy, [ew / 2, 5.5]) : '') + svgText(cx, cy + 3.2, et, 9, 'middle'); });
+      want(2, r.m[0], r.m[1], ew, 11, sides(ew, 11), function (cx, cy, d) { return d > ew / 2 + 14 ? shoulder(r.m[0], r.m[1], cx, cy, ew, et) : svgText(cx, cy + 3.2, et, 9, 'middle'); });
     });
     placeBalloons();
     body += layoutLabels();
@@ -4374,13 +4392,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         o += lhead(lx1, 'CUT LIST', 140) + lcols(lx1, [[0, 'PIECE'], [50, 'LENGTH'], [112, 'SIZE']]);
         cutRows.slice().sort(function (p, q) { var x = String(p.label).split(/(\d+)/), y = String(q.label).split(/(\d+)/); for (var i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return i % 2 ? Number(x[i]) - Number(y[i]) : (x[i] < y[i] ? -1 : 1); } return x.length - y.length; }).forEach(function (c, ci) {
           var over = c.len > STOCK; if (over) longPc = true;
-          o += '<text x="' + lx1 + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (lx1 + 50) + '" y="' + (cy2 + ci * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + ' mm' + (over ? ' *' : '') + '</text><text x="' + (lx1 + 112) + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
+          o += '<text x="' + lx1 + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (lx1 + 50) + '" y="' + (cy2 + ci * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + (c.allow ? '+' + Math.round(c.allow * 1000) : ' mm') + (over ? ' *' : '') + '</text><text x="' + (lx1 + 112) + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
         });
       }
       if (weldRows.length) {
         o += lhead(lx2, 'WELD LIST', lxe - lx2) + lcols(lx2, [[0, 'NO'], [26, 'TYPE'], [84, 'SIZE'], [108, 'MADE'], [140, 'NDE']]);
         weldRows.forEach(function (w, wi) {
-          o += '<text x="' + lx2 + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">W' + w.no + '</text><text x="' + (lx2 + 26) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="' + INK + '">' + esc(WELD_NAME[w.kind]) + '</text><text x="' + (lx2 + 84) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + esc(w.n ? szs(w.n) : '') + '</text><text x="' + (lx2 + 108) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + (w.field ? 'Field' : 'Shop') + '</text>' + (w.nde ? '<text x="' + (lx2 + 140) + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + w.nde + '</text>' : '');
+          o += '<text x="' + lx2 + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">W' + w.no + '</text><text x="' + (lx2 + 26) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="' + INK + '">' + esc(WELD_NAME[w.kind]) + '</text><text x="' + (lx2 + 84) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + esc(w.n ? szs(w.n) : '') + '</text><text x="' + (lx2 + 108) + '" y="' + (cy2 + wi * 11) + '" font-size="9" fill="#555">' + (w.ffw ? 'FFW' : w.field ? 'Field' : 'Shop') + '</text>' + (w.nde ? '<text x="' + (lx2 + 140) + '" y="' + (cy2 + wi * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + w.nde + '</text>' : '');
         });
       }
       ly = cy2 + Math.max(cutRows.length, weldRows.length) * 11;
@@ -4394,10 +4412,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var todayS = new Date().toISOString().slice(0, 10), pb = H - TB, bw = W - 24;
     var fabF = fabrication();
     var cells1 = [['PROJECT', T0.project || 'Untitled', 0.22], ['CLIENT', T0.client || '', 0.14], ['LINE No.', lnSel ? lineDesignation(lnSel) : lnNames.join('  ') || '-', 0.26], ['SERVICE', LD.svc || '', 0.18], ['CLASS / MATERIAL', LD.cls || (lnSel && spOf(lnSel) && (spOf(lnSel).code || spOf(lnSel).name)) || std().cls, 0.20]];
-    var cells2 = [['DRAWING No.', T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.16], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.10], ['CHECKED', T0.checked || '', 0.10],
+    var cells2 = [['DRAWING No.', (lnSel && (model.lines[lnSel] || {}).dwg) || T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.16], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.10], ['CHECKED', T0.checked || '', 0.10],
       ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', isoSheetTxt || '1 OF 1', 0.07], ['SCALE', 'NTS', 0.05]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555">Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + weldRows.length + ' welds' + (fabF.welds.length > weldRows.length ? ' (+' + (fabF.welds.length - weldRows.length) + ' at valve flanges)' : '') + ', ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '') + '</text>';
+    var noteT = 'Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld' + (fabI.welds.some(function (w) { return w.ffw; }) ? '; FFW: field fit weld, +' + ffwAllow() + ' in cut list' : '') + '). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + weldRows.length + ' welds' + (fabF.welds.length > weldRows.length ? ' (+' + (fabF.welds.length - weldRows.length) + ' at valve flanges)' : '') + ', ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '');
+    var noteW = W - 48, noteFit = noteT.replace(/&[a-z#0-9]+;/g, 'x').length * 8.5 * 0.6 > noteW;   // squeeze a long note to the sheet width rather than run past the border
+    o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555"' + (noteFit ? ' textLength="' + noteW + '" lengthAdjust="spacingAndGlyphs"' : '') + '>' + noteT + '</text>';
     var logo = cuImgOk(T0.logo) ? T0.logo : '', LW = logo ? 120 : 0;   // the company logo fills a box at the left end of both rows
     if (logo) {
       bw -= LW;
@@ -5315,7 +5335,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('flowBtn').setAttribute('aria-pressed', String(showFlow));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
     $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden));
-    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-flat').value = model.spec.eccFlat || 'bottom'; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-gap').value = String(model.spec.gap || 0); $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
+    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-flat').value = model.spec.eccFlat || 'bottom'; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-gap').value = String(model.spec.gap || 0); $('sp-ffw').value = String(ffwAllow()); $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
     curMark.visible = !!cursor && tool === 'pipe'; syncLevelViz();
     if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
     var hints = {
@@ -5367,6 +5387,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('sp-std').onchange = function () { pushHist(); model.spec.std = this.value; model.spec.sizeMode = { asme: 'NPS', jis: 'A', en: 'DN' }[this.value]; changed(); fillSizes(); };
   $('sp-size').onchange = function () { setSpec('sizeMode', this.value); fillSizes(); };
   $('sp-gap').onchange = function () { setSpec('gap', this.value); };
+  $('sp-ffw').onchange = function () { setSpec('ffw', Number(this.value)); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
   $('lenAdd').onclick = addTyped;
   $('lenIn').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addTyped(); } });
@@ -5527,7 +5548,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       + '<button type="button" data-logo-pick="1" style="min-height:44px">' + (lg ? 'Change logo' : 'Choose a logo picture') + '</button><input type="file" accept="image/*" data-logo="1" hidden>'
       + (lg ? '<button type="button" data-logo-del="1" style="min-height:44px">Remove</button>' : '') + '</div>' + f('project', 'Project', T0.project, 'Untitled') + f('client', 'Client', T0.client) + f('drawing', 'Drawing No.', T0.drawing, 'ISO-' + (ln || 'ALL')) + f('rev', 'Revision', T0.rev, '0') + f('date', 'Date', T0.date, new Date().toISOString().slice(0, 10)) + f('by', 'Drawn by', T0.by) + f('checked', 'Checked by', T0.checked) + f('rdesc', 'Revision description', T0.rdesc, 'Issued');
     o += '<h3>Earlier revisions</h3>' + [1, 2, 3].map(function (k) { return f('h' + k + 'rev', 'Rev ' + k, T0['h' + k + 'rev']) + f('h' + k + 'date', 'Date', T0['h' + k + 'date']) + f('h' + k + 'desc', 'Description', T0['h' + k + 'desc']) + f('h' + k + 'by', 'By', T0['h' + k + 'by']) + f('h' + k + 'chk', 'Checked', T0['h' + k + 'chk']); }).join('');
-    if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('from', 'From', LD.from, 'e.g. Tank T-101') + f('to', 'To', LD.to, 'e.g. Pump P-101') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none') + f('nde', 'NDE extent', LD.nde, 'e.g. RT 10%');
+    if (LD) o += '<h3>Line ' + esc(ln) + '</h3>' + f('svc', 'Service / fluid', LD.svc, 'e.g. Cooling water') + f('code', 'Fluid code', LD.code, 'e.g. CW') + f('from', 'From', LD.from, 'e.g. Tank T-101') + f('to', 'To', LD.to, 'e.g. Pump P-101') + f('cls', 'Class / material', LD.cls, std().cls) + f('pdes', 'Design pressure', LD.pdes, 'e.g. 10 bar g') + f('tdes', 'Design temperature', LD.tdes, 'e.g. 60 °C') + f('insul', 'Insulation', LD.insul, 'e.g. none') + f('nde', 'NDE extent', LD.nde, 'e.g. RT 10%') + f('dwg', 'Drawing No. of this line', LD.dwg, T0.drawing || 'ISO-' + ln);
     else o += '<p class="empty" style="grid-column:1/-1;margin:0">Pick a line number above to set its service, class, pressure, temperature and insulation. A sheet for one line also lists only that line\'s parts, cuts and welds.</p>';
     return o;
   }
@@ -5690,7 +5711,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     var k = t && t.getAttribute ? t.getAttribute('data-t') : null; if (!k) return;
     var v = String(t.value).trim();
-    if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'nde', 'from', 'to'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
+    if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'nde', 'from', 'to', 'dwg'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
     else model.title[k] = v;
     save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open; applyIsoZoom(0, 0);
   });
@@ -5730,7 +5751,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('f-fab').onclick = function () { saveBlob(fname('cut-list', 'csv'), new Blob([fabCsv()], { type: 'text/csv' })); };
   $('fabBody').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-wk]') : null; if (!b) return;
-    var k = b.getAttribute('data-wk'); if (model.field[k]) delete model.field[k]; else model.field[k] = 1;
+    var k = b.getAttribute('data-wk'), v0 = model.field[k] || 0; pushHist(); if (v0 === 2) delete model.field[k]; else model.field[k] = v0 + 1;   // Shop, Field, Field fit
     save(); rebuild(); $('fabBody').innerHTML = fabHtml();
   });
   $('fabBody').addEventListener('change', function (e) {          // NDE method of one weld
