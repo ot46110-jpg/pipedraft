@@ -3564,7 +3564,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     s.nipple = R(-10, -2, 20, 4);
     s.sight = R(-8, -5, 16, 10) + C(0, 0, 3.2);
     s.flowmeter = R(-8, -5, 16, 10) + Ln(0, -5, 0, -10) + R(-5, -15, 10, 5);
-    s['sup-shoe'] = Ln(-8, -6, 8, -6) + Ln(-8, 6, 8, 6);
+    s['sup-shoe'] = R(-6, 2.5, 12, 4.5) + Ln(-9, 7, 9, 7, 1.6) + Ln(-6, 7, -8.5, 10) + Ln(0, 7, -2.5, 10) + Ln(6, 7, 3.5, 10);   // a shoe plate under the pipe on its steel, hatched; never two bars across the pipe, which read as a flange pair
     s['sup-guide'] = P('M-4.5,8 L4.5,8 L0,1Z', DK) + Ln(-7, -1, 7, -1) + Ln(0, 8, 0, 14) + Ln(-7, 14, 7, 14, 2);
     s['sup-anchor'] = Ln(-7, 0, 7, 0) + Ln(0, -7, 0, 7) + Ln(-5, -5, 5, 5) + Ln(-5, 5, 5, -5) + C(0, 0, 1.6, DK);
     s['sup-hanger'] = P('M-3.5,-9 L3.5,-9 L0,-4Z', DK) + Ln(0, -9, 0, -19) + Ln(-7, -19, 7, -19, 2) + Ln(-5, -19, -7, -22) + Ln(0, -19, -2, -22) + Ln(5, -19, 3, -22);
@@ -4119,11 +4119,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var ts = [0].concat(onP[pi].sort(function (x, y) { return x - y; }), [L3]), bt = L3 / 2, bg = -1;
         for (var q = 0; q + 1 < ts.length; q++) if (ts[q + 1] - ts[q] > bg) { bg = ts[q + 1] - ts[q]; bt = (ts[q] + ts[q + 1]) / 2; }
         var c = sp(lerp3(p.a, p.b, bt / L3)), ux = (b[0] - a[0]) / lpx, uy = (b[1] - a[1]) / lpx, nx = -uy, ny = ux, w = 2.8 + Math.sqrt(p.n) * 0.5;
-        body += '<line x1="' + f1(c[0] - ux * 4) + '" y1="' + f1(c[1] - uy * 4) + '" x2="' + f1(c[0] + ux * 4) + '" y2="' + f1(c[1] + uy * 4) + '" stroke="' + PAPER + '" stroke-width="' + (w + 2).toFixed(2) + '"/>';
-        [-4, 4].forEach(function (o2) {
-          var mx = c[0] + ux * o2, my = c[1] + uy * o2;
-          body += '<line class="brk" x1="' + f1(mx - nx * 7 - ux * 2.5) + '" y1="' + f1(my - ny * 7 - uy * 2.5) + '" x2="' + f1(mx + nx * 7 + ux * 2.5) + '" y2="' + f1(my + ny * 7 + uy * 2.5) + '" stroke="' + INK + '" stroke-width="1.1" stroke-linecap="round"/>';
-        });
+        body += '<line x1="' + f1(c[0] - ux * 3) + '" y1="' + f1(c[1] - uy * 3) + '" x2="' + f1(c[0] + ux * 3) + '" y2="' + f1(c[1] + uy * 3) + '" stroke="' + PAPER + '" stroke-width="' + (w + 2).toFixed(2) + '"/>';
+        var zz = [[-11, 0], [-3.5, 0], [-1.5, -3], [1.5, 3], [3.5, 0], [11, 0]].map(function (q) { return f1(c[0] + nx * q[0] + ux * q[1]) + ',' + f1(c[1] + ny * q[0] + uy * q[1]); }).join(' ');
+        body += '<polyline class="brk" points="' + zz + '" fill="none" stroke="' + INK + '" stroke-width="0.9" stroke-linejoin="round"/>';   // the drafting break line: a thin line across the gap with one zigzag, not two strokes that read as a flange pair
         occ.push([c[0] - 10, c[1] - 10, c[0] + 10, c[1] + 10]); brkMarks++;
       });
     }

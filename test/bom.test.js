@@ -1774,7 +1774,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
     { a: [0, 1, 0], b: [20, 1, 0], n: 4 }, { a: [20, 1, 0], b: [20, 1, 1.2], n: 4 }, { a: [20, 1, 1.2], b: [20, 3, 1.2], n: 4 },
     { a: [20, 3, 1.2], b: [21.5, 3, 1.2], n: 4 } ],
     valves: [{ p: [20.6, 3, 1.2], d: [1, 0, 0], n: 4, k: 'gate' }], supports: [{ p: [4, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }] });
-  const marks = svg => (svg.match(/class="brk"/g) || []).length / 2;
+  const marks = svg => (svg.match(/class="brk"/g) || []).length;
   const on = PD.iso('', 'auto');
   check('a 20 m pipe next to a short spool gets one break mark', marks(on) === 1, String(marks(on)));
   check('the sheet says long pipes are shortened', on.includes('long pipes shortened at break marks'));
