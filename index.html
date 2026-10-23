@@ -3498,7 +3498,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     function Ln(x1, y1, x2, y2, sw) { return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"' + (sw ? ' stroke-width="' + sw + '"' : '') + '/>'; }
     function C(cx, cy, r, f) { return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + (f || 'none') + '"/>'; }
     function E(cx, cy, rx, ry, f) { return '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="' + (f || 'none') + '"/>'; }
-    function FL(x) { return R(x - 1, -7, 2, 14, BD); }
+    function FL(x) { return R(x - 1, -7, 2, 14, BD).replace('<rect ', '<rect class="vfl" '); }   // a flange on a picture: a valve with welded or threaded ends drops these
     function HW(y) { return E(0, y, 7, 2.2) + Ln(-7, y, 7, y); }
     function GR(y) { return Ln(-9, y, 9, y, 1.2) + Ln(-7, y, -9, y + 3, 0.8) + Ln(-3, y, -5, y + 3, 0.8) + Ln(1, y, -1, y + 3, 0.8) + Ln(5, y, 3, y + 3, 0.8); }
     var BONNET = R(-3, -12, 6, 6, BD) + R(-4.5, -13.5, 9, 2, BD);
@@ -3759,8 +3759,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var body = '';
 
     // A symbol drawn in the plane of its pipe: local x along the pipe, local up is the pipe's perpendicular (world up, or X for a vertical pipe).
-    function isoSym(key, p3, d3, Lpx, flip, down, more) {
+    function isoSym(key, p3, d3, Lpx, flip, down, more, noFl) {
       var s0 = SYM[key], own = isoCtx.style === 'pic' ? null : ISOS[key], pic = own || ISOA[key]; if (!s0 && !pic) return '';
+      if (noFl && pic && !own) pic = pic.replace(/<rect class="vfl"[^>]*\/>/g, '');
       var oc = sp(p3); occ.push([oc[0] - Lpx / 2 - 2, oc[1] - Lpx / 2 - 2, oc[0] + Lpx / 2 + 2, oc[1] + Lpx / 2 + 2]);
       var d = V(d3).normalize(); if (flip) d.negate();
       var wv = Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0], ex = prd(A(d)), ey = prd(wv), k = Lpx / 20, q = sp(p3);
@@ -3908,7 +3909,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
     // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
     function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], 38, 84); }
-    function vHalf(v) { return v.k === 'butterfly' ? 6 : v.k === 'knife' ? 7 : 10; }   // half the body in symbol units (20 is the face to face)
+    function vFlanged(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return t === 'flg' || t === 'wafer'; }
+    function vHalf(v) { return v.k === 'butterfly' ? 6 : v.k === 'knife' ? 7 : isoCtx.style === 'pic' && !vFlanged(v) ? 8 : 10; }   // half the body in symbol units (20 is the face to face); a picture without its flanges ends at 8
     var IT_HALF = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };   // half of each inline part's symbol along the pipe: Symbols, Pictures
     function iHalf(t) { var h = IT_HALF[t]; return h ? h[isoCtx.style === 'pic' ? 1 : 0] : 10; }
     function iLpx(it) { return clampPx(itemLen(it.t, it.n), 34, 70); }
@@ -4080,7 +4082,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.valves.forEach(function (v, i) {
       var kk = SYM[v.k] ? v.k : 'gate';
       var et = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e), marks = isoCtx.style === 'pic' ? '' : et === 'sw' ? ISOS.endSW : et === 'thd' ? ISOS.endTHD : vFlgBars(v) ? ISOS.endFL(vHalf(v)) : '';
-      body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248, marks);
+      body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248, marks, !vFlanged(v));
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
     model.flanges.forEach(function (f, i) {

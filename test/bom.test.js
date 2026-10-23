@@ -1895,7 +1895,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
 
 // Iso: no weld dot ever lands on a valve, its flanges or an inline part, for every valve kind, end type and item, in both styles
 {
-  const VH = { butterfly: 6, knife: 7 }, IH = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };
+  const VH = { butterfly: 6, knife: 7 }, VHP = 8, IH = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };
   const pipe = n => [{ a: [0, 1, 0], b: [1.6, 1, 0], n }, { a: [1.6, 1, 0], b: [1.6, 1, -1.2], n }];
   const bad = [];
   function scan(label, m, style, clear) {
@@ -1912,12 +1912,22 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   for (const style of ['sym', 'pic']) {
     for (const k of ['gate', 'globe', 'check', 'ball', 'butterfly', 'plug', 'control', 'needle', 'diaphragm', 'knife', 'threeway', 'footv', 'angle'])
       for (const [e, n] of [['flg', 4], ['weld', 4], ['weld', 1]]) {
-        const h = VH[k] || 10, wafer = k === 'butterfly' || k === 'knife', flg = e === 'flg' || wafer;
+        const wafer0 = k === 'butterfly' || k === 'knife', h = VH[k] || (style === 'pic' && e !== 'flg' && !wafer0 ? VHP : 10), wafer = k === 'butterfly' || k === 'knife', flg = e === 'flg' || wafer;
         scan(k + ' ' + e + ' ' + n, { pipes: pipe(n), valves: [{ p: [0.8, 1, 0], d: [1, 0, 0], n, k, e }] }, style, h + (flg ? (style === 'pic' ? 2.8 : 5.2) : 0.5));
       }
     for (const t of Object.keys(IH)) scan('item ' + t, { pipes: pipe(4), items: [{ t, p: [0.8, 1, 0], d: [1, 0, 0], n: 4 }] }, style, IH[t][style === 'pic' ? 1 : 0] + 0.5);
   }
   check('no weld dot sits on a valve, its pipe flanges or an inline part (13 valve kinds x 3 ends, 14 items, both styles)', bad.length === 0, bad.join('\n'));
+  PD.load({ pipes: [] });
+}
+
+// Pictures: a valve picture shows its flanges only when the valve has flanged (or wafer) ends
+{
+  const one = (k, e, n) => { PD.load({ pipes: [{ a: [0, 1, 0], b: [1.6, 1, 0], n }, { a: [1.6, 1, 0], b: [1.6, 1, -1.2], n }], valves: [{ p: [0.8, 1, 0], d: [1, 0, 0], n, k, e }] }); PD.model.valves.forEach(v => PD.addValveFlanges(v)); PD.rebuild(); PD.isoOpts.style = 'pic'; const sv = PD.iso('', '0'); PD.isoOpts.style = 'sym'; return (sv.match(/class="vfl"/g) || []).length; };
+  check('Pictures: a flanged gate valve keeps its two flanges', one('gate', 'flg', 4) === 2);
+  check('Pictures: a butt welded gate valve has none', one('gate', 'weld', 4) === 0);
+  check('Pictures: a socket welded and a threaded valve have none', one('ball', 'weld', 1) === 0 && one('globe', 'thd', 1) === 0);
+  check('Pictures: a wafer butterfly valve keeps its flanges', one('butterfly', null, 4) === 2);
   PD.load({ pipes: [] });
 }
 
