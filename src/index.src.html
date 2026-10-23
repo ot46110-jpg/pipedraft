@@ -781,7 +781,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (def && def.custom) return (def.shape === 'cyl' ? Math.hypot(l.x, l.z) < def.W / 2 - m : Math.abs(l.x) < def.W / 2 - m && Math.abs(l.z) < def.D / 2 - m) && l.y > m && l.y < def.H - m;
     var ev = def && def.env;
     if (ev) return ev.t === 'cylx' ? l.x > ev.x0 + m && l.x < ev.x1 - m && Math.hypot(l.y - ev.cy, l.z) < ev.r - m : l.x > ev.x0 + m && l.x < ev.x1 - m && l.y > ev.y0 + m && l.y < ev.y1 - m && l.z > ev.z0 + m && l.z < ev.z1 - m;
-    return k === 'vessel' ? Math.hypot(l.x, l.z) < VES_R - m && l.y > VES_Y0 - VES_HD + m && l.y < VES_Y1 + VES_HD - m : l.x > -0.55 + m && l.x < 0.95 - m && l.y > m && l.y < 0.7 - m && Math.abs(l.z) < 0.3 - m;
+    return k === 'vessel' ? Math.hypot(l.x, l.z) < VES_R - m && l.y > VES_Y0 - VES_HD + m && l.y < VES_Y1 + VES_HD - m : l.x > -0.46 + m && l.x < 0.54 - m && l.y > m && l.y < 0.66 - m && Math.abs(l.z) < 0.27 - m;
   }
   function eqLabel(k) { var d = eqDef(k) || EQUIP.pump; return (d.custom ? d.short : d.name).toLowerCase(); }
   function eqIsVessel(e) { var d = eqDef(e.k); return e.k === 'vessel' || !!(d && d.vesselPid) || !!(d && d.custom && d.shape === 'cyl'); }
@@ -846,40 +846,64 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var EQ_CHIPS = [['pump', 'Centrifugal pump'], ['vpump', 'Vertical in-line pump'], ['vessel', 'Vertical vessel'], ['hvessel', 'Horizontal vessel'], ['hx', 'Shell & tube exchanger']];
   var VES_R = 0.5, VES_Y0 = 0.3, VES_Y1 = 2.3, VES_HD = 0.17;   // built-in vertical vessel: shell radius, tangent lines, head depth (m); nozzle points stay where they always were
   var EQUIP = {
-    pump: {                                                         // end suction, top discharge (ANSI style) on a steel baseplate, driven by a foot-mounted motor
-      name: 'Centrifugal pump', short: 'Pump',
+    pump: {                                                         // end suction, top centreline discharge (ANSI B73.1 style), bare shaft: casing, seal chamber, bearing frame, shaft end with key; no motor
+      name: 'Centrifugal pump', short: 'Pump', note: 'End suction, bare shaft, driver not included',
       noz: [{ p: [-0.35, 0.4, 0], d: [-1, 0, 0], n: 4 }, { p: [-0.15, 0.7, 0], d: [0, 1, 0], n: 3 }],
       build: function (g, m) {
-        var mBase = mat(0x2e3a42, 0.7), mMot = mat(0x3d5361, 0.55), mCowl = mat(0x4a6272, 0.5), mGuard = mat(0xffb21f, 0.5), mSteel = mat(0xc9d6dc, 0.3);
+        var mBase = mat(0x2e3a42, 0.7), mSteel = mat(0xc9d6dc, 0.3), mDark = mat(0x1d262c, 0.8), mGlass = mat(0x8fd3ff, 0.15), mBolt = mat(0x9aa7ae, 0.35);
+        var CY = 0.4, VX = -0.185;                                  // shaft centreline height; the plane of the volute
         function box(w, h, d, x, y, z, mm) { var o = new T.Mesh(new T.BoxGeometry(w, h, d), mm); o.position.set(x, y, z); g.add(o); return o; }
-        function cx(r, len, x, y, z, mm, seg, r2) { var o = new T.Mesh(new T.CylinderGeometry(r2 == null ? r : r2, r, len, seg || 24), mm); o.rotation.z = Math.PI / 2; o.position.set(x, y, z); g.add(o); return o; }
-        function cy(r, len, x, y, z, mm, seg) { var o = new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 20), mm); o.position.set(x, y, z); g.add(o); return o; }
-        box(1.5, 0.06, 0.55, 0.2, 0.05, 0, mBase);                 // baseplate: a deck on two channel side rails
-        [-0.25, 0.25].forEach(function (z) { box(1.5, 0.08, 0.05, 0.2, 0.04, z, mBase); });
-        [[-0.48, -0.22], [-0.48, 0.22], [0.88, -0.22], [0.88, 0.22]].forEach(function (a) { cy(0.018, 0.05, a[0], 0.1, a[1], mSteel, 8); });   // anchor bolts
-        cx(0.24, 0.2, -0.2, 0.4, 0, m, 32);                         // volute casing
-        cx(0.25, 0.03, -0.2, 0.4, 0, m, 32);                        // the casing joint
-        var sc = new T.Mesh(new T.TorusGeometry(0.2, 0.065, 10, 28, Math.PI * 1.25), m);   // the scroll swelling round toward the discharge
-        sc.rotation.y = Math.PI / 2; sc.rotation.x = -Math.PI * 0.12; sc.position.set(-0.2, 0.42, 0); g.add(sc);
-        cy(0.065, 0.14, -0.15, 0.58, 0, m);                         // discharge neck up to the nozzle flange
-        cx(0.075, 0.08, -0.29, 0.4, 0, m, 24, 0.06);                // suction neck, tapering to the casing
-        box(0.12, 0.12, 0.3, -0.2, 0.14, 0, m);                     // casing foot
-        cx(0.19, 0.05, -0.07, 0.4, 0, m, 28);                       // back cover
-        cx(0.1, 0.27, 0.07, 0.4, 0, m, 22);                         // bearing frame
-        box(0.1, 0.22, 0.24, 0.14, 0.19, 0, m);                     // bearing frame foot
-        cy(0.012, 0.03, 0.12, 0.5, 0.0, mSteel, 8);                 // oil filler
-        cx(0.025, 0.2, 0.28, 0.4, 0, mSteel, 12);                   // shaft through the coupling
-        var gd = new T.Mesh(new T.CylinderGeometry(0.13, 0.13, 0.17, 20, 1, true, -Math.PI / 2, Math.PI), mGuard);   // coupling guard over the top half
-        gd.rotation.z = Math.PI / 2; gd.position.set(0.285, 0.4, 0); gd.material.side = T.DoubleSide; g.add(gd);
-        box(0.17, 0.02, 0.26, 0.285, 0.4, 0, mGuard);
-        cx(0.2, 0.46, 0.6, 0.4, 0, mMot, 32);                       // motor frame
-        for (var fi = 0; fi < 8; fi++) cx(0.214, 0.014, 0.4 + fi * 0.055, 0.4, 0, mMot, 32);   // cooling fins
-        cx(0.205, 0.035, 0.375, 0.4, 0, mMot, 32);                  // drive end shield
-        cx(0.19, 0.11, 0.885, 0.4, 0, mCowl, 28);                   // fan cowl
-        cx(0.15, 0.012, 0.946, 0.4, 0, mat(0x1d262c, 0.8), 24);     // its grille
-        box(0.13, 0.08, 0.13, 0.58, 0.64, 0, mMot);                 // terminal box
-        box(0.03, 0.04, 0.03, 0.75, 0.62, 0, mSteel);               // lifting eye
-        [-0.12, 0.12].forEach(function (z) { box(0.38, 0.13, 0.07, 0.6, 0.145, z, mMot); });   // motor feet
+        function cx(r, len, x, y, z, mm, seg, r2) { var o = new T.Mesh(new T.CylinderGeometry(r2 == null ? r : r2, r, len, seg || 24), mm); o.rotation.z = Math.PI / 2; o.position.set(x, y, z); g.add(o); return o; }   // along x; r at +x, r2 at -x
+        function cy(r, len, x, y, z, mm, seg, r2) { var o = new T.Mesh(new T.CylinderGeometry(r2 == null ? r : r2, r, len, seg || 20), mm); o.position.set(x, y, z); g.add(o); return o; }   // along y; r2 at the top
+        function cz(r, len, x, y, z, mm, seg) { var o = new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 16), mm); o.rotation.x = Math.PI / 2; o.position.set(x, y, z); g.add(o); return o; }
+        // Volute: a tube swept round the shaft, its section growing from the cutwater to the throat under the discharge.
+        (function () {
+          var N = 48, M = 14, pos = [], idx = [], a0 = 0.35, a1 = 2 * Math.PI;   // angle from the top, round toward +z and down
+          for (var i = 0; i <= N; i++) {
+            var t = i / N, th = a0 + (a1 - a0) * t, rt = 0.03 + 0.05 * Math.pow(t, 1.15), R = 0.155 + rt * 0.75, uy = Math.cos(th), uz = Math.sin(th);
+            for (var k = 0; k <= M; k++) { var ph = k / M * 2 * Math.PI, rr = R + rt * Math.cos(ph); pos.push(VX + rt * 1.15 * Math.sin(ph), CY + rr * uy, rr * uz); }
+          }
+          for (var i2 = 0; i2 < N; i2++) for (var k2 = 0; k2 < M; k2++) { var q = i2 * (M + 1) + k2, r = q + M + 1; idx.push(q, r, q + 1, r, r + 1, q + 1); }
+          var geo = new T.BufferGeometry(); geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+          var mv = new T.Mesh(geo, m); mv.material.side = T.DoubleSide; g.add(mv);
+        })();
+        cx(0.168, 0.15, VX, CY, 0, m, 36);                          // the casing wall inside the scroll
+        cx(0.12, 0.03, VX - 0.075, CY, 0, m, 32, 0.105);           // front face round the eye
+        cx(0.075, 0.09, -0.3, CY, 0, m, 24, 0.062);                 // suction neck into the eye, narrowing to the flange
+        cx(0.114, 0.024, -0.336, CY, 0, m, 32);                     // suction flange, 4 in class 150 (its face 2 mm behind the nozzle point, where the connection stub shows)
+        for (var b1 = 0; b1 < 8; b1++) { var ab = (b1 + 0.5) / 8 * 2 * Math.PI; cx(0.009, 0.05, -0.34, CY + 0.095 * Math.cos(ab), 0.095 * Math.sin(ab), mBolt, 8); }
+        cy(0.08, 0.16, -0.17, 0.585, 0, m, 24, 0.062);              // discharge neck from the throat, tapering to 3 in
+        box(0.02, 0.12, 0.012, -0.17, 0.57, 0, m);                  // its rib
+        cy(0.095, 0.024, -0.15, 0.686, 0, m, 32);                   // discharge flange, 3 in class 150
+        for (var b2 = 0; b2 < 4; b2++) { var a2 = (b2 + 0.5) / 4 * 2 * Math.PI; cy(0.009, 0.05, -0.15 + 0.076 * Math.cos(a2), 0.69, 0.076 * Math.sin(a2), mBolt, 8); }
+        cy(0.012, 0.03, VX, CY - 0.245, 0.06, mBolt, 8);           // casing drain plug
+        // Casing feet: two pads under the volute down to the base.
+        [-0.13, 0.13].forEach(function (z) { box(0.12, 0.2, 0.06, VX, 0.16, z, m); box(0.16, 0.025, 0.1, VX, 0.067, z, m); });
+        // Back cover and casing joint with its bolts.
+        cx(0.215, 0.032, -0.095, CY, 0, m, 40);
+        for (var b3 = 0; b3 < 12; b3++) { var a3 = b3 / 12 * 2 * Math.PI; cx(0.011, 0.06, -0.095, CY + 0.198 * Math.cos(a3), 0.198 * Math.sin(a3), mBolt, 8); }
+        cx(0.085, 0.07, -0.045, CY, 0, m, 28);                      // seal chamber
+        cx(0.075, 0.018, -0.003, CY, 0, mSteel, 6);                 // gland plate
+        cx(0.026, 0.06, 0.03, CY, 0, mSteel, 14);                   // shaft through the frame adapter window
+        // Frame adapter: a cone with an open window over the seal.
+        cx(0.13, 0.03, -0.065, CY, 0, m, 32);
+        [-1, 1].forEach(function (sd) { box(0.09, 0.02, 0.05, 0.02, CY + sd * 0.1, 0, m); box(0.09, 0.05, 0.02, 0.02, CY, sd * 0.1, m); });   // the adapter's ribs round the window
+        cx(0.135, 0.04, 0.08, CY, 0, m, 32, 0.12);                  // its flange onto the bearing frame
+        // Bearing frame with cooling fins, oil sight glass, oil fill, breather and the frame foot.
+        cx(0.11, 0.25, 0.225, CY, 0, m, 32);
+        for (var f = 0; f < 5; f++) cx(0.124, 0.012, 0.135 + f * 0.045, CY, 0, m, 32);
+        cz(0.026, 0.02, 0.2, CY - 0.05, 0.112, mBolt, 16); cz(0.018, 0.022, 0.2, CY - 0.05, 0.114, mGlass, 16);   // sight glass, oil level at the centre
+        cy(0.016, 0.04, 0.17, CY + 0.12, 0, mBolt, 8); cy(0.02, 0.012, 0.17, CY + 0.143, 0, mBolt, 6);   // oil fill plug
+        cy(0.01, 0.05, 0.29, CY + 0.13, 0, mBolt, 8); cy(0.018, 0.02, 0.29, CY + 0.16, 0, mBolt, 10);    // breather
+        cx(0.09, 0.03, 0.365, CY, 0, m, 28); cx(0.05, 0.02, 0.39, CY, 0, mDark, 20);   // outboard bearing cover and lip seal
+        box(0.07, 0.24, 0.16, 0.25, 0.19, 0, m); box(0.16, 0.2, 0.02, 0.25, 0.17, 0, m); box(0.18, 0.025, 0.24, 0.25, 0.067, 0, m);   // frame foot: a bracket with a web, on a pad
+        // Shaft end with its key, for the coupling hub.
+        cx(0.024, 0.13, 0.465, CY, 0, mSteel, 18);
+        box(0.08, 0.012, 0.012, 0.48, CY + 0.026, 0, mDark);
+        // Baseplate under the pump only (the driver is not drawn).
+        box(0.95, 0.055, 0.5, 0.02, 0.0275, 0, mBase);
+        [-0.24, 0.24].forEach(function (z) { box(0.95, 0.08, 0.04, 0.02, 0.04, z, mBase); });
+        [[-0.4, -0.2], [-0.4, 0.2], [0.44, -0.2], [0.44, 0.2]].forEach(function (a) { cy(0.016, 0.05, a[0], 0.08, a[1], mSteel, 8); });   // anchor bolts
       }
     },
     vessel: {                                                       // 1 m vertical drum, 2 m between tangent lines, dished heads, four pipe legs, side manway
@@ -3794,8 +3818,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var r0 = ring(0), r1 = ring(VES_Y1);
         return { kind: 'vessel', r0: r0, r1: r1, pts: r0.concat(r1, [W3(0, 2.55, 0), W3(0.6, 1.8, 0), W3(0, 0.4, 0.6), W3(-VES_R - 0.2, 1.25, 0)]), c: W3(0, 1.3, 0) };
       }
-      var c = [[-0.55, 0, -0.3], [0.95, 0, -0.3], [0.95, 0, 0.3], [-0.55, 0, 0.3], [-0.55, 0.7, -0.3], [0.95, 0.7, -0.3], [0.95, 0.7, 0.3], [-0.55, 0.7, 0.3]].map(function (q) { return W3(q[0], q[1], q[2]); });
-      return { kind: 'pump', cs: c, pts: c, c: W3(0.2, 0.35, 0) };
+      var c = [[-0.46, 0, -0.27], [0.54, 0, -0.27], [0.54, 0, 0.27], [-0.46, 0, 0.27], [-0.46, 0.7, -0.27], [0.54, 0.7, -0.27], [0.54, 0.7, 0.27], [-0.46, 0.7, 0.27]].map(function (q) { return W3(q[0], q[1], q[2]); });
+      return { kind: 'pump', cs: c, pts: c, c: W3(0.2, 0.4, 0) };
     }
     var geo = model.equip.map(eqGeom), pts = [];
     model.pipes.forEach(function (p) { pts.push(pr(p.a), pr(p.b)); });
@@ -3991,14 +4015,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         prims.push(domePrim(W3, 0, VES_Y1, 0, VES_R, VES_HD, true));
         prims.push(domePrim(W3, 0, VES_Y0, 0, VES_R, VES_HD, false));
         prims.push(cylPrim(W3, 'x', -VES_R - 0.06, 1.25, 0, 0.24, 0.16)); prims.push(cylPrim(W3, 'x', -VES_R - 0.16, 1.25, 0, 0.3, 0.045, EAC));   // manway and its cover
-      } else {                                                      // centrifugal pump: base, volute, coupling guard, motor
-        prims.push(boxPrim(W3, -0.55, 0.95, 0, 0.07, -0.3, 0.3, '#cfd7db'));
-        prims.push(boxPrim(W3, -0.25, 0.15, 0.07, 0.2, -0.2, 0.2));
-        prims.push(boxPrim(W3, 0.4, 0.9, 0.07, 0.2, -0.2, 0.2));
-        prims.push(cylPrim(W3, 'x', -0.05, 0.4, 0, 0.3, 0.22, EBD));
-        prims.push(cylPrim(W3, 'x', 0.2, 0.4, 0, 0.12, 0.3, EAC));
-        prims.push(cylPrim(W3, 'x', 0.65, 0.42, 0, 0.24, 0.6, EAC));
-        [0.45, 0.55, 0.65, 0.75, 0.85].forEach(function (fx) { prims.push(cylPrim(W3, 'x', fx, 0.42, 0, 0.255, 0.02, EAC)); });
+      } else {                                                      // centrifugal pump, bare shaft: base, feet, volute, back cover, frame adapter, bearing frame, shaft end
+        prims.push(boxPrim(W3, -0.455, 0.495, 0, 0.055, -0.25, 0.25, '#cfd7db'));
+        [-0.13, 0.13].forEach(function (z) { prims.push(boxPrim(W3, -0.245, -0.125, 0.055, 0.26, z - 0.03, z + 0.03)); });
+        prims.push(boxPrim(W3, 0.17, 0.33, 0.055, 0.31, -0.06, 0.06));
+        prims.push(cylPrim(W3, 'x', -0.3, 0.4, 0, 0.07, 0.09, EBD));
+        prims.push(cylPrim(W3, 'x', -0.185, 0.4, 0, 0.245, 0.16));
+        prims.push(cylPrim(W3, 'x', -0.095, 0.4, 0, 0.215, 0.032, EAC));
+        prims.push(cylPrim(W3, 'x', 0.0, 0.4, 0, 0.12, 0.16, EBD));
+        prims.push(cylPrim(W3, 'x', 0.225, 0.4, 0, 0.115, 0.25, EAC));
+        [0.135, 0.18, 0.225, 0.27, 0.315].forEach(function (fx) { prims.push(cylPrim(W3, 'x', fx, 0.4, 0, 0.124, 0.012, EAC)); });
+        prims.push(cylPrim(W3, 'x', 0.365, 0.4, 0, 0.09, 0.03, EAC));
+        prims.push(cylPrim(W3, 'x', 0.465, 0.4, 0, 0.024, 0.13, ELT));
+        prims.push(cylPrim(W3, 'y', -0.17, 0.585, 0, 0.075, 0.16, EBD));
       }
       nozList.forEach(function (z) {                                // nozzle stubs with a flange face
         if (z.e !== ei) return;
@@ -6221,7 +6250,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // Hook for the headless tests in test/.
   window.PipeDraft = {
-    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, isoPages: isoPages, isoStack: isoStack, instrDir: function (i) { return instrDir(model.instr[i]); },
+    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, look: function (th, ph, d, t) { theta = th; phi = ph; if (d) dist = d; if (t) target.set(t[0], t[1], t[2]); }, isoPages: isoPages, isoStack: isoStack, instrDir: function (i) { return instrDir(model.instr[i]); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,
