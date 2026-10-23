@@ -175,7 +175,7 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #isoInfo { background: var(--panel2, var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 #isoInfo[hidden] { display: none; }
 #isoInfo h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
-@media print { body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: fixed; inset: 0; background: #fff; overflow: visible; } #isoSheet svg { width: 100% !important; height: 100% !important; } }
+@media print { html, body { height: auto !important; overflow: visible !important; position: static !important; } #app, #stage, #iso { position: static !important; inset: auto !important; display: block !important; overflow: visible !important; } body * { visibility: hidden; } #isoSheet, #isoSheet * { visibility: visible; } #isoSheet { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; background: #fff; overflow: visible !important; } #isoSheet > svg { width: 100% !important; height: 100vh !important; break-after: page; page-break-after: always; } #isoSheet > svg:last-child { break-after: auto; page-break-after: auto; } }
 #isoSheet { flex: 1; min-height: 0; background: var(--paper); border-radius: 8px; overflow: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 #isoSheet svg { display: block; width: 100%; height: 100%; min-height: 320px; }
 #isoSheet.editing { touch-action: none; outline: 2px dashed var(--accent); outline-offset: -2px; }
@@ -3667,7 +3667,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var listH = list.reduce(function (a, r) { return a + r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }, 0);
     var T1 = model.title || {}, revHist = [1, 2, 3].filter(function (k) { return T1['h' + k + 'rev'] || T1['h' + k + 'desc'] || T1['h' + k + 'date']; }), revH = 38 + 13 * (1 + revHist.length);
     var TB = 110, cutRows = fabrication().pieces, weldRows = fabrication().welds.filter(function (w) { return !w.atValve || isoCtx.valveWelds; }), cutH = cutRows.length || weldRows.length ? Math.max(cutRows.length, weldRows.length) * 11 + 60 : 0;   // the two lists stand side by side
-    var H = Math.max(849, listH + cutH + notes.length * 12 + TB + 100 + revH), Wd = W - MAT;
+    (function () {                                                  // insulation and NDE extent of each line on the sheet
+      var seen = {}; model.pipes.forEach(function (p) { if (p.ghost || seen[p.ln]) return; seen[p.ln] = 1; var li = model.lines[p.ln] || {}; if (insulated(li.insul)) notes.push(['Insulation ' + p.ln + ' (dashed)', li.insul]); if (li.nde) notes.push(['NDE ' + p.ln, li.nde]); });
+    })();
+    var H = 849, Wd = W - MAT;                                      // always A3 landscape; lists that do not fit go on continuation sheets
+    function rowH(r) { return r.lines.length * 12 + (r.std ? 11 : 0) + (r.tag ? 11 : 0) + 9; }
+    var colRoom = H - TB - revH - 14 - 82, keepN = list.length, more = null;
+    if (listH + notes.length * 12 + cutH > colRoom) {
+      var room1 = colRoom - notes.length * 12 - 30, acc1 = 0; keepN = 0;
+      while (keepN < list.length && acc1 + rowH(list[keepN]) <= room1) { acc1 += rowH(list[keepN]); keepN++; }
+      more = { mat: list.slice(keepN), from: keepN };
+    }
 
     // Projection. Every axis keeps its true length in an isometric view, so a direction vector projects to a screen vector directly.
     var c30 = Math.cos(Math.PI / 6);
@@ -4402,6 +4412,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o += '<line x1="' + (Wd + 8) + '" y1="66" x2="' + (W - 20) + '" y2="66" stroke="' + INK + '" stroke-width="0.8"/>';
     var ly = 82;
     list.forEach(function (r, i) {
+      if (i >= keepN) return;
       o += '<text x="' + (Wd + 14) + '" y="' + ly + '" font-size="9.5" font-weight="600" fill="' + INK + '">' + (i + 1) + '</text><text x="' + (Wd + 44) + '" y="' + ly + '" font-size="9.5" fill="' + INK + '">' + esc(r.qty) + '</text>';
       r.lines.forEach(function (ln, li) { o += '<text x="' + (Wd + 108) + '" y="' + (ly + li * 12) + '" font-size="9" fill="' + INK + '">' + esc(ln) + '</text>'; });
       ly += r.lines.length * 12;
@@ -4409,11 +4420,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (r.tag) { o += '<text x="' + (Wd + 108) + '" y="' + (ly - 1) + '" font-size="8" fill="#555">' + esc(r.tag) + '</text>'; ly += 11; }
       ly += 9;
     });
-    (function () {                                                  // insulation and NDE extent of each line on the sheet
-      var seen = {}; model.pipes.forEach(function (p) { if (seen[p.ln]) return; seen[p.ln] = 1; var li = model.lines[p.ln] || {}; if (insulated(li.insul)) notes.push(['Insulation ' + p.ln + ' (dashed)', li.insul]); if (li.nde) notes.push(['NDE ' + p.ln, li.nde]); });
-    })();
+    if (more) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 4) + '" font-size="9" font-weight="600" fill="' + INK + '">' + (more.mat.length ? 'ITEMS ' + (keepN + 1) + ' TO ' + list.length + ', CUT LIST AND WELD LIST: SHEET 2' : 'CUT LIST AND WELD LIST: SHEET 2') + '</text>'; ly += 20; }
     notes.forEach(function (r) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 8) + '" font-size="8.5" fill="#555">' + esc(r[0]) + ': ' + esc(r[1]) + '</text>'; ly += 12; });
-    if (cutRows.length || weldRows.length) {                        // cut list and weld list side by side under the material list, with column heads
+    var cutSorted = cutRows.slice().sort(function (p, q) { var x = String(p.label).split(/(\d+)/), y = String(q.label).split(/(\d+)/); for (var i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return i % 2 ? Number(x[i]) - Number(y[i]) : (x[i] < y[i] ? -1 : 1); } return x.length - y.length; });
+    if (!more && (cutRows.length || weldRows.length)) {             // cut list and weld list side by side under the material list, with column heads
       ly += 14;
       var lx1 = Wd + 14, lx2 = Wd + 168, lxe = W - 20, hy = ly;      // two lists side by side, both inside the border
       var lhead = function (x, t, w) { return '<text x="' + x + '" y="' + hy + '" font-size="11" font-weight="600" fill="' + INK + '">' + t + '</text><line x1="' + (x - 6) + '" y1="' + (hy + 6) + '" x2="' + (x + w) + '" y2="' + (hy + 6) + '" stroke="' + INK + '" stroke-width="0.8"/>'; };
@@ -4421,7 +4431,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var cy2 = hy + 31, longPc = false;
       if (cutRows.length) {
         o += lhead(lx1, 'CUT LIST', 140) + lcols(lx1, [[0, 'PIECE'], [50, 'LENGTH'], [112, 'SIZE']]);
-        cutRows.slice().sort(function (p, q) { var x = String(p.label).split(/(\d+)/), y = String(q.label).split(/(\d+)/); for (var i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return i % 2 ? Number(x[i]) - Number(y[i]) : (x[i] < y[i] ? -1 : 1); } return x.length - y.length; }).forEach(function (c, ci) {
+        cutSorted.forEach(function (c, ci) {
           var over = c.len > STOCK; if (over) longPc = true;
           o += '<text x="' + lx1 + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="' + INK + '">' + esc(c.label) + '</text><text x="' + (lx1 + 50) + '" y="' + (cy2 + ci * 11) + '" font-size="9" font-weight="600" fill="' + INK + '">' + Math.round(c.len * 1000) + (c.allow ? '+' + Math.round(c.allow * 1000) : ' mm') + (over ? ' *' : '') + '</text><text x="' + (lx1 + 112) + '" y="' + (cy2 + ci * 11) + '" font-size="9" fill="#555">' + esc(szs(c.n)) + '</text>';
         });
@@ -4435,7 +4445,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ly = cy2 + Math.max(cutRows.length, weldRows.length) * 11;
       if (longPc) { o += '<text x="' + lx1 + '" y="' + (ly + 8) + '" font-size="7.5" fill="#555">* longer than the ' + STOCK + ' m stock length: needs a shop weld</text>'; ly += 12; }
     }
-    // Title block: project, drawing and line data, then who drew and checked it.
+    // Title block: project, drawing and line data, then who drew and checked it. Built once with a placeholder for the sheet number, so the continuation sheets carry the same block.
+    var oSheet = o; o = '';
     var T0 = model.title || {}, lnSel = isoCtx.ln || '', byLn = {};
     model.pipes.forEach(function (p) { if (!p.ghost) byLn[p.ln] = (byLn[p.ln] || 0) + V(p.a).distanceTo(V(p.b)); });
     var lnNames = Object.keys(byLn), LD = lnSel ? (model.lines[lnSel] || {}) : {}, sizes = {};
@@ -4444,9 +4455,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var fabF = fabrication();
     var cells1 = [['PROJECT', T0.project || 'Untitled', 0.22], ['CLIENT', T0.client || '', 0.14], ['LINE No.', lnSel ? lineDesignation(lnSel) : lnNames.join('  ') || '-', 0.26], ['SERVICE', LD.svc || '', 0.18], ['CLASS / MATERIAL', LD.cls || (lnSel && spOf(lnSel) && (spOf(lnSel).code || spOf(lnSel).name)) || std().cls, 0.20]];
     var cells2 = [['DRAWING No.', (lnSel && (model.lines[lnSel] || {}).dwg) || T0.drawing || ('ISO-' + (lnSel || 'ALL')), 0.16], ['REV', T0.rev || '0', 0.06], ['DATE', T0.date || todayS, 0.11], ['DRAWN', T0.by || '', 0.10], ['CHECKED', T0.checked || '', 0.10],
-      ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', isoSheetTxt || '1 OF 1', 0.07], ['SCALE', 'NTS', 0.05]];
+      ['DESIGN P / T', (LD.pdes || '-') + ' / ' + (LD.tdes || '-'), 0.13], ['SIZE', Object.keys(sizes).map(function (k) { return szs(Number(k)); }).join(', '), 0.10], ['INSULATION', LD.insul || '-', 0.12], ['SHEET', '§SHEET§', 0.07], ['SCALE', 'NTS', 0.05]];
     o += '<line x1="12" y1="' + pb + '" x2="' + (W - 12) + '" y2="' + pb + '" stroke="' + INK + '" stroke-width="1.5"/>';
-    var noteT = 'Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld' + (fabI.welds.some(function (w) { return w.ffw; }) ? '; FFW: field fit weld, +' + ffwAllow() + ' in cut list' : '') + '). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + weldRows.length + ' welds' + (fabF.welds.length > weldRows.length ? ' (+' + (fabF.welds.length - weldRows.length) + ' at valve flanges)' : '') + ', ' + fabF.spools.length + ' spools.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '');
+    var noteT = 'Dimensions in mm along the centreline, elevations in m, not to scale' + (brkMarks ? ', long pipes shortened at break marks' : '') + '. ' + esc(std().name) + ': ' + esc(std().pipe) + '. W = weld (open circle: field weld' + (fabI.welds.some(function (w) { return w.ffw; }) ? '; FFW: field fit weld, +' + ffwAllow() + ' in cut list' : '') + '). ' + ((model.spec || {}).gap > 0 ? 'Cut lengths are net of a ' + model.spec.gap + ' mm weld gap at each end. ' : '') + weldRows.length + ' weld' + (weldRows.length === 1 ? '' : 's') + (fabF.welds.length > weldRows.length ? ' (+' + (fabF.welds.length - weldRows.length) + ' at valve flanges)' : '') + ', ' + fabF.spools.length + ' spool' + (fabF.spools.length === 1 ? '' : 's') + '.' + (LD.from || LD.to ? '  FROM ' + esc(LD.from || '-') + '  TO ' + esc(LD.to || '-') + '.' : '');
     var noteW = W - 48, noteFit = noteT.replace(/&[a-z#0-9]+;/g, 'x').length * 8.5 * 0.6 > noteW;   // squeeze a long note to the sheet width rather than run past the border
     o += '<text x="24" y="' + (pb + 12) + '" font-size="8.5" fill="#555"' + (noteFit ? ' textLength="' + noteW + '" lengthAdjust="spacingAndGlyphs"' : '') + '>' + noteT + '</text>';
     var logo = cuImgOk(T0.logo) ? T0.logo : '', LW = logo ? 120 : 0;   // the company logo fills a box at the left end of both rows
@@ -4466,7 +4477,45 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         x += w;
       });
     });
-    return o + '</svg>';
+    var tbStr = o, pages = more ? contSheets(more) : [], nP = 1 + pages.length;
+    function sheetNo(k) { return isoSheetTxt && nP === 1 ? isoSheetTxt : k + ' OF ' + nP; }
+    o = oSheet + tbStr.split('§SHEET§').join(sheetNo(1)) + '</svg>';
+    isoCtx.pages = pages.map(function (pg, k) {
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/><rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>'
+        + pg + tbStr.split('§SHEET§').join(sheetNo(k + 2)) + '</svg>';
+    });
+    return o;
+
+    function contSheets(mr) {                                       // the rest of the material list, then the cut list and the weld list, in columns, page after page
+      var X0 = 30, XE = W - 30, Y0 = 44, YE = H - TB - 18, pg = [], cur = '', x = X0, y = Y0, colW = 0, secs = [];
+      var t9 = function (xx, yy, t, w, f) { return '<text x="' + xx + '" y="' + yy + '" font-size="' + (f || 9) + '"' + (w === 1 ? ' font-weight="600"' : '') + ' fill="' + (w === 2 ? '#555' : INK) + '">' + t + '</text>'; };
+      if (mr.mat.length) secs.push({ t: 'MATERIAL LIST (CONTINUED)', w: 340, cols: [[0, 'NO'], [30, 'QTY'], [94, 'DESCRIPTION']], rows: mr.mat.map(function (r, i) {
+        return { h: rowH(r), s: function (xx, yy) { var q = t9(xx, yy, mr.from + i + 1, 1, 9.5) + t9(xx + 30, yy, esc(r.qty), 0, 9.5), y2 = yy; r.lines.forEach(function (l, li) { q += t9(xx + 94, yy + li * 12, esc(l)); }); y2 += r.lines.length * 12; if (r.std) { q += t9(xx + 94, y2 - 1, esc(r.std), 2, 8); y2 += 11; } if (r.tag) q += t9(xx + 94, y2 - 1, esc(r.tag), 2, 8); return q; } };
+      }) });
+      if (cutRows.length) secs.push({ t: 'CUT LIST', w: 160, cols: [[0, 'PIECE'], [50, 'LENGTH'], [118, 'SIZE']], rows: cutSorted.map(function (c) {
+        return { h: 11, s: function (xx, yy) { return t9(xx, yy, esc(c.label)) + t9(xx + 50, yy, Math.round(c.len * 1000) + (c.allow ? '+' + Math.round(c.allow * 1000) : ' mm') + (c.len > STOCK ? ' *' : ''), 1) + t9(xx + 118, yy, esc(szs(c.n)), 2); } };
+      }) });
+      if (weldRows.length) secs.push({ t: 'WELD LIST', w: 190, cols: [[0, 'NO'], [30, 'TYPE'], [90, 'SIZE'], [118, 'MADE'], [154, 'NDE']], rows: weldRows.map(function (w) {
+        return { h: 11, s: function (xx, yy) { return t9(xx, yy, 'W' + w.no, 1) + t9(xx + 30, yy, esc(WELD_NAME[w.kind])) + t9(xx + 90, yy, esc(w.n ? szs(w.n) : ''), 2) + t9(xx + 118, yy, w.ffw ? 'FFW' : w.field ? 'Field' : 'Shop', 2) + (w.nde ? t9(xx + 154, yy, w.nde, 1) : ''); } };
+      }) });
+      function head(sec, cont) {
+        return t9(x, y, sec.t + (cont ? ' (CONT.)' : ''), 1, 11) + '<line x1="' + (x - 6) + '" y1="' + (y + 6) + '" x2="' + (x + sec.w) + '" y2="' + (y + 6) + '" stroke="' + INK + '" stroke-width="0.8"/>'
+          + sec.cols.map(function (c) { return t9(x + c[0], y + 20, c[1], 2, 7.5); }).join('');
+      }
+      function newCol(w) { x += colW + 26; y = Y0; colW = 0; if (x + w > XE) { pg.push(cur); cur = ''; x = X0; } }
+      secs.forEach(function (sec, si) {
+        if (si) newCol(sec.w);
+        if (x + sec.w > XE) newCol(sec.w);
+        colW = sec.w; cur += head(sec, false); y += 36;
+        sec.rows.forEach(function (r) {
+          if (y + r.h > YE) { newCol(sec.w); colW = sec.w; cur += head(sec, true); y += 36; }
+          cur += r.s(x, y); y += r.h;
+        });
+      });
+      if (cutRows.some(function (c) { return c.len > STOCK; })) cur += t9(X0, YE + 6, '* longer than the ' + STOCK + ' m stock length: needs a shop weld', 2, 7.5);
+      pg.push(cur);
+      return pg;
+    }
   }
   // The isometric sheet for everything, or for one line number, and the view that reads best.
   var isoSheetTxt = '';
@@ -4500,10 +4549,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
     isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.stretch = isoOpts.stretch !== false; isoCtx.balls = isoOpts.balls === 'all' ? 'all' : 'tidy'; isoCtx.valveWelds = isoOpts.valveWelds === true;
+    isoCtx.pages = [];
     if (!ln) return isoCore(rot);
     var sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode; model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }
     return svg;
+  }
+  function isoPages(ln, view, tidy, style) { var s1 = isoSvg(ln, view, tidy, style); return s1 ? [s1].concat(isoCtx.pages || []) : []; }   // the sheet and its continuation sheets
+  function isoStack(pg) {                                           // several sheets as one svg, one under another (screen and SVG file)
+    if (pg.length < 2) return pg[0] || null;
+    var y = 0, inner = pg.map(function (s1) { var m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s1), h = m ? +m[2] : 849, r = s1.replace('<svg ', '<svg x="0" y="' + y + '" width="1200" height="' + h + '" '); y += h + 24; return r; }).join('');
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 ' + (y - 24) + '" class="stack">' + inner + '</svg>';
   }
   function legendSvg() {                                            // every symbol, for reference
     var W = 1000, H = 700, s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/>';
@@ -5601,10 +5657,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
     $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-str').setAttribute('aria-pressed', String(isoOpts.stretch !== false)); $('iso-ball').textContent = isoOpts.balls === 'all' ? 'Balloons: every part' : 'Balloons: tidy'; $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
     $('isoInfo').innerHTML = isoInfoHtml();
-    showSheet('Isometric sheet', isoSvg(), 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true);
+    var pg0 = isoPages(); showSheet('Isometric sheet', pg0.join('') || null, 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true); isoCur = isoStack(pg0);
   }
   var isoShowing = false, layHist = [];
-  function isoRedraw() { var svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; applyIsoZoom(0, 0); }
+  function isoShowNow() { var pg = isoPages(); isoCur = isoStack(pg); $('isoSheet').innerHTML = pg.join(''); }   // the sheet and its continuation sheets, one under another
+  function isoRedraw() { isoShowNow(); applyIsoZoom(0, 0); }
   function setIsoEdit(on) {
     isoOpts.edit = !!on; $('iso-edit').setAttribute('aria-pressed', String(isoOpts.edit));
     $('isoSheet').classList.toggle('editing', isoOpts.edit && isoShowing);
@@ -5636,7 +5693,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function applyIsoZoom(cx, cy) {                                   // cx, cy: the point (in window pixels) that stays still while zooming
     var box = $('isoSheet'), svg = box.querySelector ? box.querySelector('svg') : null; if (!svg) return;
     var w0 = box.scrollWidth || 1, h0 = box.scrollHeight || 1, fx = (box.scrollLeft + (cx || 0)) / w0, fy = (box.scrollTop + (cy || 0)) / h0;
-    svg.style.width = (isoZ * 100) + '%'; svg.style.height = (isoZ * 100) + '%';
+    Array.prototype.forEach.call(box.querySelectorAll(':scope > svg'), function (sv) { sv.style.width = (isoZ * 100) + '%'; sv.style.height = (isoZ * 100) + '%'; });   // a continuation sheet sits under the first, the same size
     if (cx != null) { box.scrollLeft = fx * box.scrollWidth - cx; box.scrollTop = fy * box.scrollHeight - cy; }
     else { box.scrollLeft = 0; box.scrollTop = 0; }
     var z = $('iso-zf'); if (z) z.textContent = isoZ === 1 ? 'Fit' : Math.round(isoZ * 100) + '%';
@@ -5718,7 +5775,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-info').onclick = function () { $('isoInfo').hidden = !$('isoInfo').hidden; this.setAttribute('aria-pressed', String(!$('isoInfo').hidden)); };
   $('iso-pdf').onclick = function () {
     if (!isoCur) { toast('Nothing to save'); return; }
-    pdfPages([isoCur], function (pg) {
+    pdfPages(isoPages(), function (pg) {
       if (!pg) { toast('This browser could not draw the sheet. Use Print and Save as PDF.'); return; }
       saveBlob(fname('iso' + (isoOpts.ln ? '-' + isoOpts.ln : ''), 'pdf'), new Blob([buildPdf(pg, isoOpts.paper === 'a4' ? 'a4' : 'a3')], { type: 'application/pdf' }));
     });
@@ -5728,14 +5785,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var names = {}; model.pipes.forEach(function (p) { names[p.ln] = 1; }); var lns = Object.keys(names).sort();
     if (!lns.length) { toast('Nothing to save'); return; }
     var svgs = [];
-    try { lns.forEach(function (ln, k) { isoSheetTxt = (k + 1) + ' OF ' + lns.length; var s = isoSvg(ln); if (s) svgs.push(s); }); } finally { isoSheetTxt = ''; isoSvg(); }
+    try { lns.forEach(function (ln) { isoPages(ln).forEach(function (s) { svgs.push(s); }); }); } finally { isoSvg(); }   // each line is its own drawing, numbered 1 OF n with its continuation sheets
     pdfPages(svgs, function (pg) {
       if (!pg) { toast('This browser could not draw the sheets'); return; }
       saveBlob(fname('iso-all-lines', 'pdf'), new Blob([buildPdf(pg, isoOpts.paper === 'a4' ? 'a4' : 'a3')], { type: 'application/pdf' }));
     });
   };
   $('iso-print').onclick = function () { try { window.print(); } catch (e) { toast('Use the browser Share or Print menu'); } };
-  function isoInfoRedraw() { save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').innerHTML = isoInfoHtml(); $('isoInfo').hidden = !open; applyIsoZoom(0, 0); }
+  function isoInfoRedraw() { save(); var open = !$('isoInfo').hidden; isoShowNow(); $('isoInfo').innerHTML = isoInfoHtml(); $('isoInfo').hidden = !open; applyIsoZoom(0, 0); }
   function setLogo(u) { if (u && !cuImgOk(u)) return false; pushHist(); if (u) model.title.logo = u; else delete model.title.logo; isoInfoRedraw(); return true; }
   $('isoInfo').addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target : null; if (!t) return;
@@ -5753,7 +5810,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var v = String(t.value).trim();
     if (['svc', 'code', 'cls', 'pdes', 'tdes', 'insul', 'nde', 'from', 'to', 'dwg'].indexOf(k) >= 0) { if (!isoOpts.ln) return; model.lines[isoOpts.ln] = model.lines[isoOpts.ln] || {}; model.lines[isoOpts.ln][k] = v; }
     else model.title[k] = v;
-    save(); var open = !$('isoInfo').hidden, svg = isoSvg(); isoCur = svg; $('isoSheet').innerHTML = svg || ''; $('isoInfo').hidden = !open; applyIsoZoom(0, 0);
+    save(); var open = !$('isoInfo').hidden; isoShowNow(); $('isoInfo').hidden = !open; applyIsoZoom(0, 0);
   });
   $('hydBtn').onclick = showHyd;
   $('hyd-close').onclick = function () { $('hyd').hidden = true; };
@@ -6148,7 +6205,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // Hook for the headless tests in test/.
   window.PipeDraft = {
-    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, instrDir: function (i) { return instrDir(model.instr[i]); },
+    load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, isoPages: isoPages, isoStack: isoStack, instrDir: function (i) { return instrDir(model.instr[i]); },
     get model() { return model; },
     addPipe: addPipe, rebuild: rebuild, rows: bomRows, warns: function () { return warns; },
     setRunFlow: setRunFlow, isoCtx2: isoCtx, setLevel: setLevel, levelList: levelList, elevNow: function () { return elev; }, viz: function () { return { drop: dropLine.visible, label: dropTxt }; }, removeItem: removeItem, valveFlanges: valveFaceFlanges, addValveFlanges: addValveFlanges, clashes: clashes, lineList: lineList, lineDesignation: lineDesignation, bomByLine: bomByLineCsv, lineCsv: lineCsv, lineListHtml: lineListHtml, pdf: buildPdf, tags: assignTags, backups: readBackups, backup: takeBackup, restore: restoreBackup, backupsHtml: backupsHtml, isoOpts: isoOpts, isoCtx: isoCtx, fab: fabrication, fabCsv: fabCsv, stretch: stretchPipe, typed: addTyped,

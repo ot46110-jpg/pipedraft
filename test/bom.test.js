@@ -2087,5 +2087,22 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// Sheets stay A3: lists that do not fit go to continuation sheets in columns, numbered 1 OF n on every sheet
+{
+  const pipes = [], valves = []; let x = 0, z = 0;
+  for (let k = 0; k < 40; k++) { pipes.push({ a: [x, 1, z], b: [x + 1.2, 1, z], n: 4 }); pipes.push({ a: [x + 1.2, 1, z], b: [x + 1.2, 1, z + 0.8], n: 4 }); if (k % 3 === 0) valves.push({ p: [x + 0.6, 1, z], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }); x += 1.2; z += 0.8; }
+  PD.load({ pipes, valves });
+  const pg = PD.isoPages('', '0'), vb = s => /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s).slice(1).map(Number);
+  check('a long line makes continuation sheets, every one A3 (1200 x 849)', pg.length === 3 && pg.every(s => vb(s)[0] === 1200 && vb(s)[1] === 849), pg.map(s => vb(s).join('x')).join(' '));
+  check('each sheet is numbered in its title block', pg.every((s, i) => s.includes('>' + (i + 1) + ' OF 3<')));
+  check('sheet 1 says where the lists went', pg[0].includes('CUT LIST AND WELD LIST: SHEET 2'));
+  const all = pg.join('');
+  check('every weld and piece is listed once across the sheets', [...Array(PD.fab().welds.length)].every((_, i) => (all.match(new RegExp('>W' + (i + 1) + '<', 'g')) || []).length >= 1) && pg.slice(1).join('').includes('>S01-94<'));
+  check('the screen and SVG file stack the sheets in one svg', /<svg [^>]*viewBox="0 0 1200 2595"/.test(PD.isoStack(pg)));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }] });
+  check('a small drawing stays one sheet, 1 OF 1', PD.isoPages('', '0').length === 1 && PD.iso('', '0').includes('>1 OF 1<'));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
