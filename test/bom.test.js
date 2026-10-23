@@ -2094,7 +2094,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
 {
   const pipes = [], valves = []; let x = 0, z = 0;
   for (let k = 0; k < 40; k++) { pipes.push({ a: [x, 1, z], b: [x + 1.2, 1, z], n: 4 }); pipes.push({ a: [x + 1.2, 1, z], b: [x + 1.2, 1, z + 0.8], n: 4 }); if (k % 3 === 0) valves.push({ p: [x + 0.6, 1, z], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }); x += 1.2; z += 0.8; }
-  PD.load({ pipes, valves });
+  PD.load({ pipes, valves }); PD.isoOpts.split = false;   // lists only: drawing sheets are tested below
   const pg = PD.isoPages('', '0'), vb = s => /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s).slice(1).map(Number);
   check('a long line makes continuation sheets, every one A3 (1200 x 849)', pg.length === 3 && pg.every(s => vb(s)[0] === 1200 && vb(s)[1] === 849), pg.map(s => vb(s).join('x')).join(' '));
   check('each sheet is numbered in its title block', pg.every((s, i) => s.includes('>' + (i + 1) + ' OF 3<')));
@@ -2104,6 +2104,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the screen and SVG file stack the sheets in one svg', /<svg [^>]*viewBox="0 0 1200 2595"/.test(PD.isoStack(pg)));
   PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }] });
   check('a small drawing stays one sheet, 1 OF 1', PD.isoPages('', '0').length === 1 && PD.iso('', '0').includes('>1 OF 1<'));
+  PD.isoOpts.split = true;
   PD.load({ pipes: [] });
 }
 
@@ -2127,6 +2128,36 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('dimension text is slanted into the plane, not just turned', /<text class="dt" transform="matrix\(/.test(sv));
   const w = PD.fab().welds.find(x => Math.abs(x.pos[0] - 3) < 0.01); PD.model.field[w.key] = 2; PD.rebuild();
   check('a field fit weld writes its allowance after the length, 5000(+100)', PD.iso('', '0').includes('(+100)<'));
+  PD.load({ pipes: [] });
+}
+
+// A crowded drawing goes on several sheets: connected parts, CONT. ON SHEET n at the cuts, the numbers of the whole drawing
+{
+  const pipes = [], valves = []; let x = 0, z = 0;
+  for (let k = 0; k < 40; k++) { pipes.push({ a: [x, 1, z], b: [x + 1.2, 1, z], n: 4 }); pipes.push({ a: [x + 1.2, 1, z], b: [x + 1.2, 1, z + 0.8], n: 4 }); if (k % 3 === 0) valves.push({ p: [x + 0.6, 1, z], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }); x += 1.2; z += 0.8; }
+  PD.load({ pipes, valves });
+  const fab = PD.fab(), pg = PD.isoPages('', 'auto'), n = pg.length, drw = pg.filter(s => /MATERIAL LIST</.test(s));
+  check('a crowded drawing is split over several drawing sheets', PD.isoCtx.split >= 2 && drw.length === PD.isoCtx.split, PD.isoCtx.split + ' ' + n);
+  check('every sheet is numbered k OF n in order', pg.every((s, i) => s.includes('>' + (i + 1) + ' OF ' + n + '<')));
+  check('the first sheet starts the line (weld W1 is on it)', /<text[^>]*>W1</.test(pg[0]));
+  const conts = pg.map(s => [...s.matchAll(/CONT\. ON SHEET (\d+)/g)].map(m => +m[1]));
+  check('each cut says which sheet carries on, and that sheet points back', conts.every((c, i) => c.every(j => j !== i + 1 && conts[j - 1] && conts[j - 1].includes(i + 1))) && conts.flat().length >= 2, JSON.stringify(conts));
+  const allW = new Set(pg.flatMap(s => [...s.matchAll(/>W(\d+)<\/text><text[^>]*>Butt weld/g)].map(m => +m[1])));
+  check('the weld lists of the sheets together hold every weld of the line once, with the line\'s own numbers', allW.size === fab.welds.length && Math.max(...allW) === fab.welds.length, allW.size + ' of ' + fab.welds.length);
+  const elbOf = s => { const m = />\d+<\/text><text[^>]*>(\d+)<\/text><text[^>]*>Elbow 90/.exec(s); return m ? +m[1] : 0; };
+  const elbAll = PD.rows().filter(r => /^Elbow 90/.test(r[0])).reduce((t9, r) => t9 + parseFloat(r[1]), 0);
+  check('the elbows on the sheets add up to the line, none counted twice at a cut', drw.reduce((t9, s) => t9 + elbOf(s), 0) === elbAll, drw.map(elbOf).join('+') + ' vs ' + elbAll);
+  PD.isoOpts.split = false; check('the option keeps one drawing sheet', PD.isoPages('', 'auto').filter(s => /MATERIAL LIST</.test(s)).length === 1); PD.isoOpts.split = true;
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4 }, { a: [3, 1, 0], b: [3, 2, 0], n: 4 }] });
+  check('a tidy drawing is not split', PD.isoPages('', 'auto').length === 1 && !PD.isoCtx.split);
+  PD.load({ pipes: [] });
+}
+
+// A one-line sheet keeps the field weld marks of its welds (keys hold the pipe index, which changes in the line's copy)
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4, ln: 'L-A' }, { a: [5, 1, 0], b: [7, 1, 0], n: 4, ln: 'L-B' }, { a: [7, 1, 0], b: [7, 1, 2], n: 4, ln: 'L-B' }] });
+  const w = PD.fab().welds.find(x => x.ln === 'L-B'); PD.model.field[w.key] = 2; PD.rebuild();
+  check('a field fit weld on line L-B shows on its own sheet', PD.iso('L-B', '0').includes('>FFW<') && !PD.iso('L-A', '0').includes('>FFW<'));
   PD.load({ pipes: [] });
 }
 

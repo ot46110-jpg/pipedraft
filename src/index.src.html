@@ -374,6 +374,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             <button id="iso-tidy" aria-pressed="true">Auto layout</button>
             <button id="iso-coords" aria-pressed="false">Coordinates</button>
             <button id="iso-brk" aria-pressed="true">Shorten long pipes</button>
+            <button id="iso-split" aria-pressed="true">New sheet when crowded</button>
             <button id="iso-str" aria-pressed="true">Stretch crowded pipes</button>
             <button id="iso-ball" aria-label="Balloons">Balloons: tidy</button>
             <button id="iso-edit" aria-pressed="false">Move labels</button>
@@ -1627,7 +1628,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         bm0.position.copy(V(j.pos)); world.add(bm0); return;
       }
       if (!j.type) return;
-      curRef = ['joint', k]; jSkip = model.onlyLine != null && jointOwner(j) !== model.onlyLine ? k : null;
+      curRef = ['joint', k]; jSkip = !ownsJoint(j) ? k : null;
       var P = V(j.pos), L = j.legs, n = j.nmax, r = OD[n] / 2000, mesh, fm = 0xf2f6f8;
       if (j.type === 'elbow') {
         var EL = j.elL || L, d1 = EL[0].d, d2 = EL[1].d;
@@ -1900,6 +1901,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var ks = Object.keys(by).sort(); if (!ks.length) return null;
     var run = ks.filter(function (k) { return by[k] >= 2; }); return (run.length ? run : ks)[0];
   }
+  function ownsJoint(j) {                                           // does the sheet being drawn list the fitting at this joint: its line owns it, and on a split drawing its sheet does (the lowest sheet among the largest legs of that line)
+    if (model.onlyLine != null && jointOwner(j) !== model.onlyLine) return false;
+    if (model.onlyPart == null) return true;
+    var L = j.legs || [], nm = 0, best = null; L.forEach(function (l) { if (l.n > nm) nm = l.n; });
+    L.forEach(function (l) { var p = model.pipes[l.i]; if (!p || l.n !== nm || (model.onlyLine != null && p.ln !== model.onlyLine)) return; var pt = p.part == null ? 1e9 : p.part; if (best == null || pt < best) best = pt; });
+    return best == null || best === model.onlyPart;
+  }
   function instrDir(it) {                                          // which way an instrument stands off: up from horizontal pipe, toward X from vertical pipe, outward from equipment (3D and iso alike)
     if (it.eq != null && model.equip[it.eq]) { var v = V(it.p).sub(V(model.equip[it.eq].p)); v.y = 0; if (v.lengthSq() < 1e-6) return [1, 0, 0]; v.normalize(); return [v.x, 0, v.z]; }
     return it.d && Math.abs(it.d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
@@ -1985,7 +1993,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
         if (J.legs.length === 2) {
           var pk = 'P@' + k, w3 = byPair[pk];
-          if (!w3 && model.onlyLine != null && jointOwner(J) !== model.onlyLine) return;   // a butt weld where two lines meet is listed on one of them
+          if (!w3 && !ownsJoint(J)) return;   // a butt weld where two lines meet is listed on one of them
           if (!w3) { w3 = byPair[pk] = mkWeld(weldKindFor(p.n), p.n, J.pos, ln, pk); w3.pcs = []; }
           w3.pcs.push(pc.id); if (w3.pcs.length === 2) link(w3, w3.pcs[0], w3.pcs[1]);
         }
@@ -1999,7 +2007,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     // An olet is welded to the header and the branch pipe is welded to the olet.
     Object.keys(jointInfo).forEach(function (k) {
-      var J = jointInfo[k]; if (J.type !== 'olet' || (model.onlyLine != null && jointOwner(J) !== model.onlyLine)) return;
+      var J = jointInfo[k]; if (J.type !== 'olet' || !ownsJoint(J)) return;
       var h = hostOf(J.pos), kind = /^(sockolet|halfcoupling)$/.test(J.oletKind) ? 'SW' : J.oletKind === 'threadolet' ? 'THD' : 'BW';
       var hp = null, tj = h >= 0 ? V(J.pos).distanceTo(V(model.pipes[h].a)) : 0;
       pieces.forEach(function (pc) { if (pc.i === h && tj >= pc.t0 - 0.001 && tj <= pc.t1 + 0.001) hp = pc; });
@@ -2025,6 +2033,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     pieces.forEach(function (pc) { count[pc.spool] = (count[pc.spool] || 0) + 1; pc.label = pc.spool + '-' + count[pc.spool]; });
     welds.sort(function (x, y) { return (x.atValve ? 1 : 0) - (y.atValve ? 1 : 0); });   // the welds at flanged valves come last, so the numbers on the drawing run without gaps
     welds.forEach(function (w, i) { w.no = i + 1; });
+    var FM = model.fabMap;                                          // a sheet of a split drawing keeps the weld, piece and spool numbers of the whole drawing
+    if (FM) {
+      welds.forEach(function (w) { var n = FM.w[w.kind + '@' + key(w.pos)]; if (n) w.no = n; });
+      welds.sort(function (x, y) { return x.no - y.no; });
+      pieces.forEach(function (pc) { var q = FM.pc[key(pc.pa) + '|' + key(pc.pb)]; if (q) { pc.label = q[0]; pc.spool = q[1]; } });
+      Object.keys(sp).forEach(function (r) { var pc0 = sp[r].pieces[0]; if (pc0) sp[r].id = pc0.spool; });
+    }
     return { pieces: pieces, welds: welds, joints: joints, spools: order.map(function (r) { return sp[r]; }) };
   }
   var WELD_NAME = { BW: 'Butt weld', SW: 'Socket weld', FW: 'Fillet weld' };
@@ -3853,7 +3868,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     isoCtx.brkN = brkN; isoCtx.strN = strN;
     var ox = (Wd - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - TB - (y1 - y0) * sc) / 2 - y0 * sc;
-    var LAYK = (isoCtx.ln || '*') + '|' + rot, LAY = (model.isoLay && model.isoLay[LAYK]) || {}; isoCtx.layKey = LAYK; isoCtx.layN = 0;   // labels moved by hand on this sheet
+    isoCtx.clutL = 0; isoCtx.clutD = 0;
+    var LAYK = (isoCtx.ln || '*') + '|' + rot + (model.onlyPart != null ? '|p' + model.onlyPart : ''), LAY = (model.isoLay && model.isoLay[LAYK]) || {}; isoCtx.layKey = LAYK; isoCtx.layN = 0;   // labels moved by hand on this sheet
     function prKey(x, y) { return Math.round((x - ox) / sc * 1000) + ',' + Math.round((y - oy) / sc * 1000); }   // the anchor in model millimetres on paper, so the key survives a change of scale
     function sp(p) { var q = pr(p); return [q[0] * sc + ox, q[1] * sc + oy]; }
     // Auto layout: labels go where they touch neither pipes, symbols nor each other, nearest to their anchor first.
@@ -3914,6 +3930,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             if (ec < best.c) best = { c: ec, cx: ex, cy: ey, b: eb, d: rr, raw: er };
           }
         }
+        if (TIDY && best.raw >= 25) isoCtx.clutL++;                 // no clear spot for this label: the sheet is getting crowded
         occ.push(best.b); out += wrapL(L, best.cx, best.cy, best.d);
       });
       return out;
@@ -3921,7 +3938,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     function tagText(text, size) { return text.length * size * 0.6 + 4; }
     function f1(v) { return v.toFixed(1); }
     function f3(v) { return v.toFixed(3); }
-    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><style>.sy *{vector-effect:non-scaling-stroke}</style>';
+    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace" data-lay="' + LAYK + '"><style>.sy *{vector-effect:non-scaling-stroke}</style>';
     o += '<rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/><rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>';
     var body = '';
 
@@ -4377,6 +4394,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (!best || cost < best.cost) best = Object.assign(main, { cost: cost, off: c.off, code: c.dir.code, tx: tx, ty: ty, rx: rx, ry: ry, len: len, nx: c.dir.u[0], ny: c.dir.u[1] });
         if (!TIDY || cost < 1) break;
       }
+      if (best && only == null && TIDY && best.cost >= (chain ? 40 * chain.length : 40)) isoCtx.clutD++;   // no side of this pipe is clear
       return best;
     }
     var lastDim = null;
@@ -4466,6 +4484,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var q = sp(j.pos), el = j.pos[1]; elShown[Math.round(el * 1000)] = 1;
       var et = 'EL ' + (el >= 0 ? '+' : '') + el.toFixed(3), nzE = nozList.filter(function (z) { return z.e >= 0 && key(mm3(z.p)) === k; })[0];
       if (nzE && tg.equip[nzE.e]) et += '  TO ' + tg.equip[nzE.e] + '/N' + (nzE.idx + 1);      // connection note: which nozzle the pipe ends on
+      else if (model.contSheet && model.contSheet[k]) et += '  CONT. ON SHEET ' + model.contSheet[k].map(function (q) { return '§P' + q + '§'; }).join(', ');   // the same drawing carries on on another sheet; the number is filled in when every sheet is known
       else if (model.contAt && model.contAt[k]) et += '  ' + model.contAt[k].map(function (l2) { var d2 = dwgOf(l2); return d2 ? 'CONT. ON ' + d2 + ' (' + l2 + ')' : 'CONT. ' + l2; }).join(', ');   // continuation: the drawing that carries the other line on      // the line that carries on from this end
       if (isoCtx.coords) et += '  E ' + Math.round(j.pos[0] * 1000) + ' N ' + Math.round(j.pos[2] * 1000);   // plant coordinates in mm, east and north
       var ew = tagText(et, 9);
@@ -4526,7 +4545,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (r.tag) { o += '<text x="' + (Wd + 108) + '" y="' + (ly - 1) + '" font-size="8" fill="#555">' + esc(r.tag) + '</text>'; ly += 11; }
       ly += 9;
     });
-    if (more) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 4) + '" font-size="9" font-weight="600" fill="' + INK + '">' + (more.mat.length ? 'ITEMS ' + (keepN + 1) + ' TO ' + list.length + ', CUT LIST AND WELD LIST: SHEET 2' : 'CUT LIST AND WELD LIST: SHEET 2') + '</text>'; ly += 20; }
+    if (more) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 4) + '" font-size="9" font-weight="600" fill="' + INK + '">' + (more.mat.length ? 'ITEMS ' + (keepN + 1) + ' TO ' + list.length + ', CUT LIST AND WELD LIST: SHEET ' + (isoCtx.deferNo ? '§NEXT§' : 2) : 'CUT LIST AND WELD LIST: SHEET ' + (isoCtx.deferNo ? '§NEXT§' : 2)) + '</text>'; ly += 20; }
     notes.forEach(function (r) { o += '<text x="' + (Wd + 14) + '" y="' + (ly + 8) + '" font-size="8.5" fill="#555">' + esc(r[0]) + ': ' + esc(r[1]) + '</text>'; ly += 12; });
     var cutSorted = cutRows.slice().sort(function (p, q) { var x = String(p.label).split(/(\d+)/), y = String(q.label).split(/(\d+)/); for (var i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return i % 2 ? Number(x[i]) - Number(y[i]) : (x[i] < y[i] ? -1 : 1); } return x.length - y.length; });
     if (!more && (cutRows.length || weldRows.length)) {             // cut list and weld list side by side under the material list, with column heads
@@ -4583,11 +4602,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         x += w;
       });
     });
+    isoCtx.sc = sc;
     var tbStr = o, pages = more ? contSheets(more) : [], nP = 1 + pages.length;
-    function sheetNo(k) { return isoSheetTxt && nP === 1 ? isoSheetTxt : k + ' OF ' + nP; }
+    function sheetNo(k) { if (isoCtx.deferNo) return '§SHEET§'; return isoSheetTxt && nP === 1 ? isoSheetTxt : k + ' OF ' + nP; }
     o = oSheet + tbStr.split('§SHEET§').join(sheetNo(1)) + '</svg>';
     isoCtx.pages = pages.map(function (pg, k) {
-      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/><rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>'
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="ui-monospace,Menlo,monospace" data-lay="' + LAYK + '"><rect width="' + W + '" height="' + H + '" fill="' + PAPER + '"/><rect x="12" y="12" width="' + (W - 24) + '" height="' + (H - 24) + '" fill="none" stroke="' + INK + '" stroke-width="1.5"/>'
         + pg + tbStr.split('§SHEET§').join(sheetNo(k + 2)) + '</svg>';
     });
     return o;
@@ -4626,42 +4646,128 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // The isometric sheet for everything, or for one line number, and the view that reads best.
   var isoSheetTxt = '';
   var isoCtx = { ln: '', rot: 0, tidy: true, style: 'sym' }, isoOpts = { ln: '', view: 'auto', style: 'sym' };
-  function subsetFor(ln) {                                          // a copy of the model with one line's pipes and what sits on them
-    var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {}; m.onlyLine = ln;
-    m.pipes = []; model.pipes.forEach(function (p, i) { if (p.ln === ln) { keepP[i] = 1; m.pipes.push(JSON.parse(JSON.stringify(p))); ends[key(p.a)] = 1; ends[key(p.b)] = 1; } });
+  function subsetFor(ln) { return subsetPipes(function (p) { return p.ln === ln; }, { line: ln }); }   // one line's pipes and what sits on them
+  // A copy of the model with the kept pipes and what sits on them. Pipes that touch a kept end but are not kept come back as short
+  // dashed stubs (ghost), so the tee, olet or elbow there still forms; their far end carries the continuation note: another line
+  // (contAt) or another sheet of the same drawing (contSheet, o.partOf). Weld marks keyed by pipe or flange index are renumbered.
+  function subsetPipes(keep, o) {
+    o = o || {};
+    var m = JSON.parse(JSON.stringify(model)), keepP = {}, ends = {}, vmap = {}, pmap = {}, fmap = {};
+    m.onlyLine = o.line != null ? o.line : model.onlyLine != null ? model.onlyLine : undefined; if (m.onlyLine == null) delete m.onlyLine;
+    if (o.part != null) m.onlyPart = o.part; else delete m.onlyPart;
+    if (o.fabMap) m.fabMap = o.fabMap; else delete m.fabMap;
+    m.pipes = []; model.pipes.forEach(function (p, i) { if (!p.ghost && keep(p, i)) { keepP[i] = 1; pmap[i] = m.pipes.length; var c = JSON.parse(JSON.stringify(p)); if (o.part != null) c.part = o.part; m.pipes.push(c); ends[key(p.a)] = 1; ends[key(p.b)] = 1; } });
     function onLine(pt) { var h2 = hostOf(pt); return h2 >= 0 && keepP[h2]; }
     m.valves = []; model.valves.forEach(function (v, i) { if (onLine(v.p)) { vmap[i] = m.valves.length; m.valves.push(JSON.parse(JSON.stringify(v))); } });
-    ['flanges', 'items', 'supports'].forEach(function (g) { m[g] = model[g].filter(function (it) { return onLine(it.p); }).map(function (it) { return JSON.parse(JSON.stringify(it)); }); });
+    m.flanges = []; model.flanges.forEach(function (f, i) { var h3 = isOne(f) ? flHost(f) : hostOf(f.p); if (h3 >= 0 && keepP[h3]) { fmap[i] = m.flanges.length; m.flanges.push(JSON.parse(JSON.stringify(f))); } });
+    ['items', 'supports'].forEach(function (g) { m[g] = model[g].filter(function (it) { return onLine(it.p); }).map(function (it) { return JSON.parse(JSON.stringify(it)); }); });
     m.instr = []; model.instr.forEach(function (it) { if (it.eq != null || !onLine(it.p)) return; var c = JSON.parse(JSON.stringify(it)); if (c.link != null) { if (vmap[c.link] != null) c.link = vmap[c.link]; else delete c.link; } m.instr.push(c); });
     m.caps = model.caps.filter(function (c) { return ends[key(c)]; }).map(function (c) { return c.slice(); });
     var nz = {}; nozList.forEach(function (z) { if (z.e >= 0 && ends[key(mm3(z.p))]) nz[z.e] = 1; });
     m.equip = model.equip.filter(function (e, i) { return nz[i]; }).map(function (e) { return JSON.parse(JSON.stringify(e)); });
-    m.contAt = {};                                                  // where another line continues: a short dashed stub of it (ghost) keeps the tee, olet or elbow there, and its far end carries the note
+    ['field', 'ndeW'].forEach(function (g) {                         // weld keys hold a pipe or flange index: follow the new numbering
+      var src = model[g] || {}, dst = {};
+      Object.keys(src).forEach(function (k0) {
+        var mt = /^(\d+)@(.*)$/.exec(k0), mf = /^(FB|FV)@(\d+)$/.exec(k0);
+        if (mt) { if (pmap[+mt[1]] != null) dst[pmap[+mt[1]] + '@' + mt[2]] = src[k0]; }
+        else if (mf) { if (fmap[+mf[2]] != null) dst[mf[1] + '@' + fmap[+mf[2]]] = src[k0]; }
+        else dst[k0] = src[k0];
+      });
+      m[g] = dst;
+    });
+    m.contAt = {}; m.contSheet = {};
     model.pipes.forEach(function (p, i) {
       if (keepP[i]) return;
       [['a', 'b'], ['b', 'a']].forEach(function (w) {
         var E = p[w[0]], O = p[w[1]]; if (!ends[key(E)]) return;
         var d = [O[0] - E[0], O[1] - E[1], O[2] - E[2]], L = Math.hypot(d[0], d[1], d[2]); if (L < 1e-6) return;
         var l = Math.min(L, 0.5), F = [E[0] + d[0] / L * l, E[1] + d[1] / L * l, E[2] + d[2] / L * l].map(function (v) { return Math.round(v * 1000) / 1000; });
-        m.pipes.push({ a: E.slice(), b: F, n: p.n, s: p.s || 40, ln: p.ln, fl: 0, ghost: 1 });
-        var k = key(F); if ((m.contAt[k] = m.contAt[k] || []).indexOf(p.ln) < 0) m.contAt[k].push(p.ln);
+        var other = o.partOf && o.partOf[i] != null && !p.ghost ? o.partOf[i] : null, g9 = { a: E.slice(), b: F, n: p.n, s: p.s || 40, ln: p.ln, fl: 0, ghost: 1 }; if (other != null) g9.part = other;
+        m.pipes.push(g9);
+        var k = key(F);
+        if (other != null) { if ((m.contSheet[k] = m.contSheet[k] || []).indexOf(other) < 0) m.contSheet[k].push(other); }
+        else if ((m.contAt[k] = m.contAt[k] || []).indexOf(p.ln) < 0) m.contAt[k].push(p.ln);
       });
     });
     return m;
+  }
+  function isoCtxInit(ln, tidy, style) {                            // the sheet options, for every sheet of one drawing
+    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.stretch = isoOpts.stretch !== false; isoCtx.balls = isoOpts.balls === 'all' ? 'all' : 'tidy'; isoCtx.valveWelds = isoOpts.valveWelds === true;
+    isoCtx.pages = []; isoCtx.deferNo = false;
   }
   function isoSvg(ln, view, tidy, style) {
     ln = ln == null ? isoOpts.ln : ln; view = view == null ? isoOpts.view : view;
     if (!model.pipes.length) return null;
     if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
     var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, svg;
-    isoCtx.ln = ln; isoCtx.tidy = tidy == null ? isoOpts.tidy !== false : tidy; isoCtx.style = style || isoOpts.style || 'sym'; isoCtx.coords = isoOpts.coords === true; isoCtx.brk = isoOpts.brk !== false; isoCtx.stretch = isoOpts.stretch !== false; isoCtx.balls = isoOpts.balls === 'all' ? 'all' : 'tidy'; isoCtx.valveWelds = isoOpts.valveWelds === true;
-    isoCtx.pages = [];
+    isoCtxInit(ln, tidy, style);
     if (!ln) return isoCore(rot);
     var sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode; model = subsetFor(ln); rebuild();
     try { svg = isoCore(rot); } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }
     return svg;
   }
-  function isoPages(ln, view, tidy, style) { var s1 = isoSvg(ln, view, tidy, style); return s1 ? [s1].concat(isoCtx.pages || []) : []; }   // the sheet and its continuation sheets
+  // A drawing that comes out crowded (labels with no clear spot, dimensions with no clear side, or a very small scale) is drawn
+  // on several sheets instead: the piping is cut into connected parts, each part on its own sheet with dashed stubs and
+  // CONT. ON SHEET n where it carries on, its own material, cut and weld lists, and the weld, piece and spool numbers of the
+  // whole drawing. A part that is still crowded is cut again, up to ISO_MAX_SHEETS drawing sheets.
+  var ISO_MAX_SHEETS = 6;
+  function isoCrowded() { return (isoCtx.clutL || 0) + 0.5 * (isoCtx.clutD || 0) >= 5 || (isoCtx.sc != null && isoCtx.sc < 22); }
+  function isoPages(ln, view, tidy, style) {                        // the sheet and its continuation sheets, or the sheets of a split drawing
+    var s1 = isoSvg(ln, view, tidy, style); if (!s1) return [];
+    var pages = [s1].concat(isoCtx.pages || []);
+    isoCtx.split = 0;
+    if (isoOpts.split === false || !isoCrowded()) return pages;
+    var r = isoSplitPages(ln == null ? isoOpts.ln : ln, view == null ? isoOpts.view : view, tidy, style);
+    return r && r.length > 1 ? r : pages;
+  }
+  function isoBisect(list) {                                        // cut a set of pipes in two of about equal work: walk from one far end, stop half way
+    if (list.length < 2) return [list, []];
+    var inL = {}, byK = {}, w = {}, tot = 0;
+    list.forEach(function (i) { inL[i] = 1; var p = model.pipes[i]; [p.a, p.b].forEach(function (e) { (byK[key(e)] = byK[key(e)] || []).push(i); }); w[i] = 1; });
+    [model.valves, model.items, model.supports, model.instr].forEach(function (g) { g.forEach(function (it) { if (!it.p) return; var h = hostOf(it.p); if (inL[h]) w[h] += 1; }); });
+    list.forEach(function (i) { tot += w[i]; });
+    function bfs(st) { var seen = {}, ord = [], q = [st]; seen[st] = 1; while (q.length) { var c = q.shift(); ord.push(c); var p = model.pipes[c]; [p.a, p.b].forEach(function (e) { (byK[key(e)] || []).forEach(function (j) { if (!seen[j]) { seen[j] = 1; q.push(j); } }); }); } return ord; }
+    var far = bfs(list[0]); far = bfs(far[far.length - 1]);          // start from one end of the piping
+    var seenA = {}; far.forEach(function (i) { seenA[i] = 1; }); list.forEach(function (i) { if (!seenA[i]) far.push(i); });   // pieces not joined to the rest go last
+    var acc = 0, cut = 0; while (cut < far.length - 1 && acc + w[far[cut]] <= tot / 2) { acc += w[far[cut]]; cut++; }
+    if (cut === 0) cut = 1;
+    return [far.slice(0, cut), far.slice(cut)];
+  }
+  function isoSplitPages(ln, view, tidy, style) {
+    if (ln && !model.pipes.some(function (p) { return p.ln === ln; })) ln = '';
+    var rot = view === 'auto' ? 'auto' : Number(view) || 0, orig = model, sel0 = sel, msel0 = Object.assign({}, msel), rot0 = rotMode, out = null, nParts = 0;
+    try {
+      isoCtxInit(ln, tidy, style);
+      var base = ln ? subsetFor(ln) : JSON.parse(JSON.stringify(model));
+      model = base; rebuild();
+      var F = fabrication(), FM = { w: {}, pc: {} };                // the numbers of the whole drawing
+      F.welds.forEach(function (w) { FM.w[w.kind + '@' + key(w.pos)] = w.no; });
+      F.pieces.forEach(function (pc) { FM.pc[key(pc.pa) + '|' + key(pc.pb)] = [pc.label, pc.spool]; });
+      var parts = [model.pipes.map(function (p, i) { return p.ghost ? -1 : i; }).filter(function (i) { return i >= 0; })], res = null;
+      for (var guard = 0; guard < 10; guard++) {
+        var partOf = {}; parts.forEach(function (pp, k) { pp.forEach(function (i) { partOf[i] = k; }); });
+        var subs = parts.map(function (pp, k) { var set = {}; pp.forEach(function (i) { set[i] = 1; }); return subsetPipes(function (p, i) { return !!set[i]; }, { part: k, partOf: partOf, fabMap: FM }); });
+        res = subs.map(function (m9) {
+          model = m9; rebuild(); isoCtxInit(ln, tidy, style); isoCtx.deferNo = true;
+          var s1 = isoCore(rot), r9 = { pages: s1 ? [s1].concat(isoCtx.pages || []) : [], crowded: isoCrowded() };
+          model = base; rebuild(); return r9;
+        });
+        if (parts.length >= ISO_MAX_SHEETS) break;
+        var worst = -1; res.forEach(function (r9, k) { if (r9.crowded && parts[k].length >= 2 && (worst < 0 || parts[k].length > parts[worst].length)) worst = k; });
+        if (worst < 0) break;
+        var h = isoBisect(parts[worst]); if (!h[0].length || !h[1].length) break;
+        parts.splice(worst, 1, h[0], h[1]);
+      }
+      var ordr = parts.map(function (pp, k) { return { k: k, at: Math.min.apply(null, pp) }; }).sort(function (x, y) { return x.at - y.at; });   // sheets in drawing order: the part with the first-drawn pipe first
+      var all = [], first = {};
+      ordr.forEach(function (o9) { var k = o9.k, r9 = res[k]; first[k] = all.length + 1; r9.pages.forEach(function (pg) { all.push(pg); }); });
+      out = all.map(function (pg, i) { return pg.split('§SHEET§').join((i + 1) + ' OF ' + all.length).split('§NEXT§').join(String(i + 2)).replace(/§P(\d+)§/g, function (m0, q) { return String(first[+q] || '?'); }); });
+      nParts = parts.length;
+    } finally { model = orig; sel = sel0; msel = msel0; rebuild(); rotMode = rot0; if (rot0) { updateRing(); buildQbar(); } }
+    isoCtx.deferNo = false; isoCtx.split = nParts;
+    if (out) isoCtx.pages = out.slice(1);
+    return out;
+  }
   function isoStack(pg) {                                           // several sheets as one svg, one under another (screen and SVG file)
     if (pg.length < 2) return pg[0] || null;
     var y = 0, inner = pg.map(function (s1) { var m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(s1), h = m ? +m[2] : 849, r = s1.replace('<svg ', '<svg x="0" y="' + y + '" width="1200" height="' + h + '" '); y += h + 24; return r; }).join('');
@@ -5761,7 +5867,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('iso-line').value = isoOpts.ln; $('iso-view').value = isoOpts.view;
     $('iso-tidy').setAttribute('aria-pressed', String(isoOpts.tidy !== false));
     $('iso-style').textContent = isoOpts.style === 'pic' ? 'Pictures' : 'Symbols';
-    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-str').setAttribute('aria-pressed', String(isoOpts.stretch !== false)); $('iso-ball').textContent = isoOpts.balls === 'all' ? 'Balloons: every part' : 'Balloons: tidy'; $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
+    $('iso-coords').setAttribute('aria-pressed', String(isoOpts.coords === true)); $('iso-brk').setAttribute('aria-pressed', String(isoOpts.brk !== false)); $('iso-split').setAttribute('aria-pressed', String(isoOpts.split !== false)); $('iso-str').setAttribute('aria-pressed', String(isoOpts.stretch !== false)); $('iso-ball').textContent = isoOpts.balls === 'all' ? 'Balloons: every part' : 'Balloons: tidy'; $('iso-vw').setAttribute('aria-pressed', String(isoOpts.valveWelds === true));
     $('isoInfo').innerHTML = isoInfoHtml();
     var pg0 = isoPages(); showSheet('Isometric sheet', pg0.join('') || null, 'pipedraft-iso' + (isoOpts.ln ? '-' + isoOpts.ln : '') + '.svg', true); isoCur = isoStack(pg0);
   }
@@ -5773,8 +5879,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('isoSheet').classList.toggle('editing', isoOpts.edit && isoShowing);
     if (isoOpts.edit) toast('Drag a balloon, weld number, tag, elevation or dimension line. One finger on empty paper moves the sheet.');
   }
+  var layKeyCur = null;                                            // the sheet (svg data-lay) the label being dragged sits on
   function layPut(k, v) {                                           // one hand move on the open sheet: undoable, saved with the project
-    var sk = isoCtx.layKey || '*|0';
+    var sk = layKeyCur || isoCtx.layKey || '*|0';
     pushHist(); layHist.push(JSON.stringify(model.isoLay || {})); if (layHist.length > 50) layHist.shift();
     model.isoLay = model.isoLay || {}; var L = model.isoLay[sk] = model.isoLay[sk] || {};
     if (v == null) delete L[k]; else L[k] = v;
@@ -5783,8 +5890,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function layUndo() { if (!layHist.length) { toast('No label move to undo'); return; } pushHist(); model.isoLay = JSON.parse(layHist.pop()); save(); isoRedraw(); }
   function layReset() {
-    var sk = isoCtx.layKey || '*|0'; if (!model.isoLay || !model.isoLay[sk]) { toast('Nothing has been moved on this sheet'); return; }
-    pushHist(); layHist.push(JSON.stringify(model.isoLay)); delete model.isoLay[sk]; save(); isoRedraw(); toast('Labels back to the automatic layout');
+    var sk = (isoCtx.layKey || '*|0').replace(/\|p\d+$/, ''), ks = Object.keys(model.isoLay || {}).filter(function (k0) { return k0 === sk || k0.indexOf(sk + '|p') === 0; });   // every sheet of the drawing
+    if (!ks.length) { toast('Nothing has been moved on this sheet'); return; }
+    pushHist(); layHist.push(JSON.stringify(model.isoLay)); ks.forEach(function (k0) { delete model.isoLay[k0]; }); save(); isoRedraw(); toast('Labels back to the automatic layout');
   }
   function showSheet(title, svg, file, isIso) {
     isoShowing = !!isIso; $('isoSheet').classList.toggle('editing', !!isoOpts.edit && isoShowing);
@@ -5838,6 +5946,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('iso-tidy').onclick = function () { isoOpts.tidy = isoOpts.tidy === false; refreshIso(); };
   $('iso-coords').onclick = function () { isoOpts.coords = isoOpts.coords !== true; refreshIso(); };
   $('iso-brk').onclick = function () { isoOpts.brk = isoOpts.brk === false; refreshIso(); };
+  $('iso-split').onclick = function () { isoOpts.split = isoOpts.split === false; refreshIso(); if (isoOpts.split !== false && isoCtx.split > 1) toast('The drawing is on ' + isoCtx.split + ' sheets, joined by CONT. ON SHEET notes'); };
   $('iso-str').onclick = function () { isoOpts.stretch = isoOpts.stretch === false; refreshIso(); };
   $('iso-ball').onclick = function () { isoOpts.balls = isoOpts.balls === 'all' ? 'tidy' : 'all'; refreshIso(); toast(isoOpts.balls === 'all' ? 'A balloon on every part' : 'Flanges, supports and fittings: one balloon for each item number on the sheet'); };
   $('iso-edit').onclick = function () { setIsoEdit(!isoOpts.edit); closeIsoPops(); };
@@ -5851,6 +5960,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       n = e.isPrimary ? 1 : n + 1; if (!isoOpts.edit || !isoShowing) return;
       if (n > 1) { cancel(); return; }                              // a second finger is a pinch
       var t = e.target && e.target.closest ? e.target.closest('.lb, .dg') : null;
+      if (t) { var sv9 = t.closest('svg[data-lay]'); layKeyCur = sv9 ? sv9.getAttribute('data-lay') : null; }
       if (t) { dr = { el: t, id: e.pointerId, x: e.clientX, y: e.clientY, k: scale(), dx: 0, dy: 0, moved: false }; t.classList.add('drag'); }
       else pan = { id: e.pointerId, x: e.clientX, y: e.clientY, sl: box.scrollLeft, st: box.scrollTop };
       try { box.setPointerCapture(e.pointerId); } catch (x) {}
