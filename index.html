@@ -1329,6 +1329,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var used = {}; model.instr.forEach(function (q) { if ((q.k === 'PSV' ? 'PSV' : q.k[0]) === letter) used[q.num || 101] = 1; });
     var n = 101; while (used[n]) n++; return n;
   }
+  function flHost(f) {                                              // the pipe a flange sits on: a single flange by its body, behind the face (its face may lie on a joint between two pipes)
+    if (!isOne(f)) return hostOf(f.p);
+    var d = V(f.d).normalize(), b = V(f.p).addScaledVector(d, -flangeSpan(f) / 2);
+    return hostOf([b.x, b.y, b.z]);
+  }
   function hostOf(p) {                                              // index of the pipe a point sits on, or -1 (plain numbers: this runs for every placed part on every rebuild)
     var px = p[0], py = p[1], pz = p[2], P = model.pipes;
     for (var i = 0; i < P.length; i++) {
@@ -1826,7 +1831,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       else add('flange', 'Weld-neck flange 150# BW, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc');
       add('flange', 'Gasket 150# spiral wound, ' + sz(f.n), 1, 'pc');
       add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
-      var hf = hostOf(f.p);
+      var hf = flHost(f);
       if (hf >= 0) {
         var Lf = flangeSpan(f);
         add('pipe', 'Pipe, ' + sz(f.n) + ' SCH ' + sch + ', ' + pipeEnd(f.n), -Lf, 'm');
@@ -1893,7 +1898,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.valves.forEach(function (v, k) { var i = hostOf(v.p); if (i < 0) return; var kind = VALVE_FF[v.k] ? v.k : 'gate'; put(i, { what: 'valve', idx: k, kind: kind, e: v.e, n: v.n, p: v.p, half: VALVE_FF[kind][v.n] / 2 }); });
     model.items.forEach(function (it, k) { var i = hostOf(it.p); if (i < 0) return; put(i, { what: 'item', idx: k, kind: it.t, n: it.n, p: it.p, half: itemLen(it.t, it.n) / 2 }); });
     model.flanges.forEach(function (f, k) {
-      var i = hostOf(f.p); if (i < 0) return;
+      var i = flHost(f); if (i < 0) return;
       var sp0 = flangeSpan(f), pc = f.p;
       if (isOne(f)) {                                               // body behind the face: toward the pipe, away from the part it mates with
         var pp0 = model.pipes[i], dv = V(pp0.b).sub(V(pp0.a)).normalize(), sg0 = V(f.d).dot(dv) >= 0 ? 1 : -1;
@@ -1947,6 +1952,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ps.forEach(function (pc) { endJoint(pc, 'a'); endJoint(pc, 'b'); });
     });
     model.flanges.forEach(function (f, k) { var i = hostOf(f.p); if (i >= 0 && !isOne(f)) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FB@' + k); });
+    model.flanges.forEach(function (f, k) {                         // a valve flange on the next pipe: its bolted joint to the valve is not between two parts of one pipe, so add it here
+      if (!f.m) return; var i = flHost(f); if (i < 0) return;
+      if (!joints.some(function (j) { return j.kind === 'BOLT' && V(j.pos).distanceTo(V(f.p)) < 0.012; })) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FV@' + k);
+    });
     // An olet is welded to the header and the branch pipe is welded to the olet.
     Object.keys(jointInfo).forEach(function (k) {
       var J = jointInfo[k]; if (J.type !== 'olet') return;
@@ -2352,6 +2361,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var sps = spOf(ln || 'L-001');                                  // a line with a class draws in its schedule
     model.pipes.push({ a: a, b: b, n: n, s: sps ? sps.sch : s || 40, ln: ln || 'L-001', fl: fl == null ? curFlow : fl });
     splitAt(b); splitAt(a);
+    if (model.valves.length && fitValveFlanges()) toast('Flange added where the pipe meets the flanged valve');
   }
 
   var ray = new T.Raycaster(), ndc = new T.Vector2();
@@ -2746,6 +2756,25 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     return added;
   }
+  function fitValveFlanges() {                                      // a pipe now runs on from the open face of a flanged valve: give that face its mating flange
+    var added = 0;
+    model.valves.forEach(function (v) {
+      var kind = VALVE_FF[v.k] ? v.k : 'gate', t = endType(kind, v.n, v.e); if (t !== 'flg' && t !== 'wafer') return;
+      var dvv = V(v.d).normalize(), half = VALVE_FF[kind][v.n] / 2, span = flangeSpan({ n: v.n, m: 1 });
+      [-1, 1].forEach(function (sg) {
+        var fp = V(v.p).addScaledVector(dvv, sg * half), away = dvv.clone().multiplyScalar(sg);
+        if (model.flanges.some(function (f) { return f.m && V(f.p).distanceTo(fp) < 0.004; })) return;
+        var on = model.pipes.some(function (q) {                    // a pipe that starts at the face and leaves straight away from the valve
+          var a = V(q.a), b = V(q.b), far = a.distanceTo(fp) < 0.002 ? b : b.distanceTo(fp) < 0.002 ? a : null; if (!far) return false;
+          var L = far.distanceTo(fp); return L >= span + 0.04 && far.clone().sub(fp).normalize().dot(away) > 0.999;
+        });
+        if (!on) return;
+        var dd = away.clone().negate();
+        model.flanges.push({ p: mm3(fp), d: [dd.x, dd.y, dd.z], n: v.n, s: v.s || 40, t: v.n <= 1.5 ? 'sw' : 'wn', m: 1 }); added++;
+      });
+    });
+    return added;
+  }
   function dropValveFlanges(v) { valveFaceFlanges(v).sort(function (x, y) { return y - x; }).forEach(function (k) { model.flanges.splice(k, 1); }); }
   function onTap(e) {
     var hit;
@@ -2789,6 +2818,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             var vh = VALVE_FF[vk][op.pipe.n] / 2, vrec = { p: mm3(V(endPt).addScaledVector(outd, -vh)), d: [op.dir.x, op.dir.y, op.dir.z], n: op.pipe.n, s: op.pipe.s || 40, k: vk };
             if (ve !== 'auto') vrec.e = ve;
             model.valves.push(vrec); addValveFlanges(vrec);
+            if (['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, vrec.e)) >= 0) toast('Valve on the pipe end: one flange on the pipe side. Draw on from the valve and the mating flange is added.');
           }
           changed(); return;
         }
@@ -3982,11 +4012,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var flOf = {};                                                  // flange index to the valve it is bolted to
     var flAt = model.flanges.map(function (f) {
       if (!f.m) return null;
-      var hf = hostOf(f.p), best = null, bd = 0.03, fd = V(f.d).normalize();
+      var best = null, bd = 0.03, fd = V(f.d).normalize();
       model.valves.forEach(function (v) {
-        if (hostOf(v.p) !== hf) return;
         var ff = VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], dv = V(v.p).sub(V(f.p));
-        if (dv.dot(fd) <= 0) return;                                // the valve lies on the side the flange faces
+        if (dv.dot(fd) <= 0 || dv.clone().cross(fd).length() > 0.005) return;   // the valve lies straight ahead of the face (its own pipe, or the next one)
         var e = Math.abs(dv.length() - ff / 2); if (e < bd) { bd = e; best = v; }
       });
       if (!best) return null;

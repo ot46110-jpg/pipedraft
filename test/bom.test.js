@@ -1991,5 +1991,25 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+// A flanged valve on a pipe end: one flange on the pipe side; drawing on from the valve adds the mating flange, gasket and bolts
+{
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4 }] });
+  const v = { p: [2 - 0.229 / 2, 1, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }; PD.model.valves.push(v); PD.addValveFlanges(v); PD.rebuild();
+  const q = re => { const r = PD.rows().find(x => re.test(x[0])); return r ? parseFloat(r[1]) : 0; };
+  check('a flanged valve on a free pipe end has one flange, on the pipe side', PD.model.flanges.length === 1 && q(/^Weld-neck flange/) === 1 && q(/^Gasket/) === 1);
+  PD.addPipe([2, 1, 0], [4, 1, 0], 4, 40); PD.rebuild();
+  check('drawing on from the valve adds the mating flange, gasket and bolts', PD.model.flanges.length === 2 && q(/^Weld-neck flange/) === 2 && q(/^Gasket/) === 2 && q(/^Stud bolt/) === 2);
+  const f2 = PD.model.flanges[1];
+  check('the new flange faces the valve and sits at its face', Math.abs(f2.p[0] - 2) < 0.002 && f2.d[0] < -0.99);
+  const fab = PD.fab(), pipeM = parseFloat(q(/^Pipe, NPS 4/)), cut = fab.pieces.reduce((a, pc) => a + pc.len, 0);
+  check('the second pipe is cut short by the flange, and the cut list still adds up to the BOM pipe', Math.abs(cut - pipeM) < 0.011, cut.toFixed(3) + ' vs ' + pipeM);
+  check('the flange is welded to the new pipe and bolted to the valve', fab.welds.filter(w => w.atValve).length === 2 && fab.joints.filter(j => j.kind === 'BOLT').length === 2);
+  const sv = PD.iso('', '0');
+  check('on the iso the valve shows its flange bars and no stray flange', (sv.match(/class="sy"/g) || []).length === 1);
+  PD.addPipe([4, 1, 0], [6, 1, 0], 4, 40);
+  check('more pipe later does not add flanges again', PD.model.flanges.length === 2);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
