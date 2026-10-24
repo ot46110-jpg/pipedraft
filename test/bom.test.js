@@ -728,7 +728,7 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
   PD.load(old);
   const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
-  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","","",""'), csvRow);
+  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","","","","Carbon steel"'), csvRow);
 }
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
 check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 20);
@@ -2170,6 +2170,38 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('valves follow their size setting, other parts theirs', Math.abs(s1[0] / s0[0] - 1.5) < 0.01 && Math.abs(s1[1] / s0[1] - 0.6) < 0.01, s0.join() + ' / ' + s1.join());
   PD.load(Object.assign(JSON.parse(JSON.stringify(mdl)), { isoSize: { v: 999, p: 'x', q: 5 } }));
   check('a project file keeps sizes within 50 to 200 percent and drops junk', JSON.stringify(PD.model.isoSize) === '{"v":200}', JSON.stringify(PD.model.isoSize));
+  PD.load({ pipes: [] });
+}
+
+// Pipe material: per pipe (p.m), carried into the bill, the joints, the weight and the hydraulics; carbon steel stays as before
+{
+  const two = m => ({ pipes: [{ a: [0, 1, 0], b: [2, 1, 0], n: 4, m }, { a: [2, 1, 0], b: [2, 1, 2], n: 4, m }], valves: [{ p: [1, 1, 0], d: [1, 0, 0], n: 4, k: 'gate', e: 'weld' }] });
+  PD.load(two(undefined)); const cs = PD.rows(); const wCs = cs.find(r => /^Pipe weight/.test(r[0]));
+  check('carbon steel rows carry no material word', !cs.some(r => /SS316L|HDPE/.test(r[0])) && cs.some(r => r[0] === 'Pipe weight, steel, empty'), cs.map(r => r[0]).join(' | '));
+  PD.load(two('ss316')); const ss = PD.rows();
+  const sp = ss.find(r => /^Pipe,/.test(r[0])), se = ss.find(r => /^Elbow/.test(r[0])), sv = ss.find(r => /^Gate valve/.test(r[0]));
+  check('stainless pipe, elbow and valve name the material and its standard', sp && /SS316L$/.test(sp[0]) && sp[2] === 'ASTM A312 TP316L' && se && /SS316L/.test(se[0]) && /A403/.test(se[2]) && sv && /CF3M/.test(sv[2]), JSON.stringify([sp, se, sv]));
+  check('a valve on stainless pipe takes the same pipe row off', ss.filter(r => /^Pipe,/.test(r[0])).length === 1, ss.map(r => r[0]).join(' | '));
+  PD.load(two('hdpe')); const pe = PD.rows(), fpe = PD.fab();
+  const pp = pe.find(r => /^Pipe,/.test(r[0])), wPe = pe.find(r => /^Pipe weight/.test(r[0]));
+  check('HDPE is sized by SDR and joined by butt fusion', pp && / SDR 11/.test(pp[0]) && !/SCH/.test(pp[0]) && fpe.welds.length > 0 && fpe.welds.every(w => w.kind === 'BF'), JSON.stringify(pp) + ' ' + fpe.welds.map(w => w.kind).join());
+  check('HDPE pipe weighs far less than steel', parseFloat(wPe[1]) < parseFloat(wCs[1]) * 0.3, wPe[1] + ' vs ' + wCs[1]);
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 2, m: 'galv' }, { a: [1, 1, 0], b: [1, 1, 1], n: 2, m: 'galv' }] });
+  const fg = PD.fab();
+  check('galvanised pipe is threaded: no welds, threaded joints', fg.welds.length === 0 && fg.joints.some(j => j.kind === 'THD') && PD.rows().some(r => /^Elbow.*THD/.test(r[0]) && /GALV/.test(r[0])), PD.rows().map(r => r[0]).join(' | '));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 4, m: 'frp' }, { a: [1, 1, 0], b: [1, 1, 1], n: 4, m: 'ti' }] });
+  check('two materials meeting at a fitting are reported', PD.warns().some(w => /FRP .*Titanium Gr.2 pipes meet at \(1000, 0, 1000 mm\)/.test(w)), PD.warns().join(' | '));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 4, m: 'frp' }, { a: [1, 1, 0], b: [2, 1, 0], n: 4, m: 'ti' }], flanges: [{ p: [1, 1, 0], d: [1, 0, 0], n: 4, t: 'wn' }] });
+  check('a flange pair where the materials change is not reported', !PD.warns().some(w => /pipes meet at/.test(w)), PD.warns().join(' | '));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 2, m: 'unobtainium' }, { a: [1, 1, 0], b: [2, 1, 0], n: 2, m: 'cs' }] });
+  check('a file keeps only known materials, carbon steel is left out', !('m' in PD.model.pipes[0]) && !('m' in PD.model.pipes[1]));
+  const hz = m => { PD.load({ pipes: [{ a: [0, 1, 0], b: [50, 1, 0], n: 4, m, fl: 1 }], valves: [], fluid: 'water20', lines: { 'L-001': { q: 60 } } }); return PD.hyd(); };
+  const dpOf = H => JSON.stringify(H).match(/"dp":([\d.e-]+)/)[1] * 1;
+  check('smooth plastic pipe loses less pressure than steel', dpOf(hz('pvc')) < dpOf(hz(undefined)), dpOf(hz('pvc')) + ' / ' + dpOf(hz(undefined)));
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 4, ln: 'L-1' }, { a: [3, 1, 0], b: [4, 1, 0], n: 4, ln: 'L-2' }] });
+  const c = PD.spec.add('ss316'); PD.spec.assign('L-1', c.e.id);
+  check('a line class with a material puts it on its pipes only', PD.model.pipes[0].m === 'ss316' && !PD.model.pipes[1].m);
+  check('the line list shows the material of each line', PD.lineCsv().includes('"Stainless 316L"') && PD.lineCsv().includes('"Carbon steel"'));
   PD.load({ pipes: [] });
 }
 
