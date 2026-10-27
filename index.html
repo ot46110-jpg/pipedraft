@@ -109,7 +109,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #lvl .row { margin: 6px 0; }
 #elev output { font: 500 12px/1.2 var(--font-data); color: var(--accent); text-align: center; font-variant-numeric: tabular-nums; padding: 2px 0; }
 /* right column */
-#side { position: absolute; top: 130px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
+#side { position: absolute; top: 156px; right: var(--gutter-r); bottom: 190px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 12px; overflow: auto; pointer-events: none; }
 #side .sheet { position: static; flex: none; pointer-events: auto; max-height: none; }
 .inspbar { width: 100%; min-height: 48px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-color: transparent; text-align: left; font: 600 13px var(--font-ui); }
 .inspbody { margin-top: 4px; }
@@ -132,18 +132,18 @@ body.dragging #insp, body.dragging #qbar { opacity: .12; pointer-events: none; t
 #more details > button { margin-bottom: 4px; }
 /* isometric sheet */
 #views { display: none; }
-#vcube { position: absolute; right: var(--gutter-r); top: 12px; width: 112px; height: 112px; z-index: 4; touch-action: none; user-select: none; -webkit-user-select: none; }
+#vcube { position: absolute; right: var(--gutter-r); top: 12px; width: 136px; height: 136px; z-index: 4; touch-action: none; user-select: none; -webkit-user-select: none; }
 #vcube button { position: absolute; min-width: 40px; min-height: 40px; width: 40px; height: 40px; padding: 0; font-size: 14px; border-color: transparent; background: var(--panel); }
-#vc-scene { position: absolute; left: 0; top: 0; width: 112px; height: 112px; perspective: 340px; }
-#vc-in { position: absolute; left: 20px; top: 20px; width: 72px; height: 72px; transform-style: preserve-3d; }
-.vf { position: absolute; width: 72px; height: 72px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dim); background: var(--panel2, var(--panel)); background: color-mix(in srgb, var(--panel) 88%, var(--fg)); color: var(--fg); font: 600 10px var(--font-data); letter-spacing: .08em; backface-visibility: hidden; -webkit-backface-visibility: hidden; cursor: pointer; }
+#vc-scene { position: absolute; left: 0; top: 0; width: 136px; height: 136px; perspective: 400px; }
+#vc-in { position: absolute; left: 20px; top: 20px; width: 96px; height: 96px; transform-style: preserve-3d; }
+.vf { position: absolute; width: 96px; height: 96px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dim); background: var(--panel2, var(--panel)); background: color-mix(in srgb, var(--panel) 88%, var(--fg)); color: var(--fg); font: 600 10px var(--font-data); letter-spacing: .08em; backface-visibility: hidden; -webkit-backface-visibility: hidden; cursor: pointer; }
 @media (hover: hover) { .vf:hover { background: var(--accent); color: var(--accent-fg); } }   /* on the iPad a tapped face would stay lit */
-.vf[data-face="front"] { transform: translateZ(36px); }
-.vf[data-face="back"] { transform: rotateY(180deg) translateZ(36px); }
-.vf[data-face="right"] { transform: rotateY(90deg) translateZ(36px); }
-.vf[data-face="left"] { transform: rotateY(-90deg) translateZ(36px); }
-.vf[data-face="top"] { transform: rotateX(90deg) translateZ(36px); }
-.vf[data-face="bottom"] { transform: rotateX(-90deg) translateZ(36px); }
+.vf[data-face="front"] { transform: translateZ(48px); }
+.vf[data-face="back"] { transform: rotateY(180deg) translateZ(48px); }
+.vf[data-face="right"] { transform: rotateY(90deg) translateZ(48px); }
+.vf[data-face="left"] { transform: rotateY(-90deg) translateZ(48px); }
+.vf[data-face="top"] { transform: rotateX(90deg) translateZ(48px); }
+.vf[data-face="bottom"] { transform: rotateX(-90deg) translateZ(48px); }
 #qbar { z-index: 5; padding: 4px; gap: 4px; left: 50%; bottom: 12px; transform: translateX(-50%); max-width: calc(100% - 180px); overflow-x: auto; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 #qbar[hidden] { display: none; }
 #qbar .qang { align-self: center; padding: 0 6px; font: 600 13px var(--font-data); min-width: 44px; text-align: center; color: var(--accent); }
@@ -1111,8 +1111,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.lines = {}; Object.keys(plain(m.lines)).forEach(function (k) {   // one record per line number, strings and numbers only
       var d = plain(m.lines[k]), c = {}; Object.keys(d).forEach(function (f) { if (typeof d[f] === 'string' || (typeof d[f] === 'number' && isFinite(d[f]))) c[f] = d[f]; }); o.lines[k] = c;
     });
-    o.fit = plain(m.fit); o.field = {}; (function (fd) { Object.keys(fd).forEach(function (k) { if (fd[k]) o.field[k] = fd[k] === 2 ? 2 : 1; }); })(plain(m.field));   // 1 field weld, 2 field fit weld
-    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(plain(m.ndeW)); o.isoLay = {}; (function (L0) { Object.keys(L0).slice(0, 200).forEach(function (sk) {   // labels moved by hand on the iso sheets: sheet key to label key to an offset
+    function weldKeys(src) { var out = {}; Object.keys(src).forEach(function (k) { var mm = /^[0-9]+@(-?[0-9]+,-?[0-9]+,-?[0-9]+)$/.exec(k); out[mm ? 'W' + mm[1] : k] = src[k]; }); return out; }   // marks used to be keyed by pipe number and position
+    o.fit = plain(m.fit); o.field = {}; (function (fd) { Object.keys(fd).forEach(function (k) { if (fd[k]) o.field[k] = fd[k] === 2 ? 2 : 1; }); })(weldKeys(plain(m.field)));   // 1 field weld, 2 field fit weld
+    o.ndeW = {}; (function (nw) { Object.keys(nw).forEach(function (k) { if (NDE_M.indexOf(nw[k]) >= 0) o.ndeW[k] = nw[k]; }); })(weldKeys(plain(m.ndeW))); o.isoLay = {}; (function (L0) { Object.keys(L0).slice(0, 200).forEach(function (sk) {   // labels moved by hand on the iso sheets: sheet key to label key to an offset
       if (String(sk).length > 80) return; var d = plain(L0[sk]), c = {}, n = 0;
       Object.keys(d).forEach(function (k) { var v = d[k]; if (n >= 2000 || k.length > 80) return;
         if (typeof v === 'number' && isFinite(v) && Math.abs(v) < 5000) { c[k] = v; n++; }
@@ -1992,7 +1993,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function isOne(f) { return f.t === 'bl' || !!f.e || !!f.m; }       // one flange: blind, at a pipe end, or against a valve. Its face is at p and its body runs back along the pipe
   function flangeSpan(f) { var ft = FL[f.n][1], gap = 0.004; return isOne(f) ? ft + gap : 2 * (ft + gap); }
-  function insulated(t) { return !!t && !/^\s*(none|no|n\/a|-|—|0)\s*$/i.test(String(t)); }
+  function insulated(t) { return !!t && !/^\s*(none|no|n\/a|-|—|0(\s*mm)?)\s*$/i.test(String(t)); }
   function ffwAllow() { var a = Number((model.spec || {}).ffw); return [50, 100, 150, 200].indexOf(a) >= 0 ? a : 100; }   // mm of extra pipe left on a piece at a field fit weld, cut to fit on site
   function madeText(w) { return w.ffw ? 'Field fit' : w.field ? 'Field' : 'Shop'; }
   var NDE_M = ['RT', 'PT', 'MT', 'VT', 'UT'];                         // radiography, dye penetrant, magnetic particle, visual, ultrasonic
@@ -2000,7 +2001,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var field = model.field || {}, welds = [], pieces = [], joints = [], parent = {}, byPair = {}, jpos = {};
     function find(x) { if (parent[x] == null) parent[x] = x; while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
     function union(a, b) { a = find(a); b = find(b); if (a !== b) parent[a] = b; }
+    var wseen = {};
     function mkWeld(kind, n, pos, ln, wkey) {
+      if (wseen[wkey]) { wseen[wkey]++; wkey += '#' + wseen[wkey]; } else wseen[wkey] = 1;   // two welds at one point get their own keys
       kind = matJoin(kind, wkey, pos);
       var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey], ffw: field[wkey] === 2, nde: (model.ndeW || {})[wkey] || '' };
       if (WELD_K[kind]) welds.push(w); else joints.push(w);
@@ -2030,7 +2033,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       list.forEach(function (e) {
         var s = e.t - e.half, e0 = e.t + e.half;
         if (s - c0 > 0.002) ps.push({ t0: c0, t1: s, from: prev, to: e });
-        else if (prev && prev.what !== 'flange' !== (e.what !== 'flange') && c0 > 0.002) { var jp = at(Math.min(c0, Lp)); mkWeld('BOLT', e.n, jp, ln, i + '@' + key(jp)); }   // a valve bolted straight to its flange
+        else if (prev && prev.what !== 'flange' !== (e.what !== 'flange') && c0 > 0.002) { var jp = at(Math.min(c0, Lp)); mkWeld('BOLT', e.n, jp, ln, 'W' + key(jp)); }   // a valve bolted straight to its flange
         c0 = Math.max(c0, e0); prev = e;
       });
       if (Lp - tr[1] - c0 > 0.002) ps.push({ t0: c0, t1: Lp - tr[1], from: prev, to: null });
@@ -2042,7 +2045,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       function endJoint(pc, side) {
         var nb = side === 'a' ? pc.from : pc.to, t = side === 'a' ? pc.t0 : pc.t1, pos = side === 'a' ? pc.pa : pc.pb;
         if (nb) {
-          var kind = elEnd(nb), w = mkWeld(kind, nb.n, pos, ln, i + '@' + key(pos));
+          var kind = elEnd(nb), w = mkWeld(kind, nb.n, pos, ln, 'W' + key(pos));
           if (nb.what === 'flange' && model.flanges[nb.idx] && model.flanges[nb.idx].m) w.atValve = true;
           if (nb.what === 'valve') w.vEnd = nb.idx;
           if (nb.what === 'item') w.iEnd = nb.idx;                   // and next to an inline part: the iso puts it on the end of that part's symbol                 // a butt or socket welded valve: the iso puts this weld on the end of the valve symbol   // the flange fitted to a flanged valve: the valve and its flanges are one part on the drawing
@@ -2050,13 +2053,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           link(w, pc.id, node); return;
         }
         var end = side === 'a' ? p.a : p.b, k = key(end);
-        if (nozzleAt(k)) { mkWeld('BOLT', p.n, pos, ln, i + '@' + key(pos)); return; }
+        if (nozzleAt(k)) { mkWeld('BOLT', p.n, pos, ln, 'W' + key(pos)); return; }
         var J = jointInfo[k]; if (!J) return;
         if (J.type === 'olet' && (side === 'a' ? tr[0] : tr[1]) < 0.001) {   // the header runs on through an olet, it is one pipe
           union(pc.id, 'J' + key(J.pos)); (oletEnds[key(J.pos)] = oletEnds[key(J.pos)] || []).push({ pc: pc, side: side }); return;
         }
-        if (J.type && J.corner && J.corner.leg.i === i) { var wc = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(wc, pc.id, 'J' + key(J.pos)); return; }
-        if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, i + '@' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
+        if (J.type && J.corner && J.corner.leg.i === i) { var wc = mkWeld(weldKindFor(p.n), p.n, pos, ln, 'W' + key(pos)); link(wc, pc.id, 'J' + key(J.pos)); return; }
+        if (J.type) { var w2 = mkWeld(weldKindFor(p.n), p.n, pos, ln, 'W' + key(pos)); link(w2, pc.id, 'J' + key(J.pos)); jpos[key(J.pos)] = J; return; }
         if (J.legs.length === 2) {
           var pk = 'P@' + k, w3 = byPair[pk];
           if (!w3 && !ownsJoint(J)) return;   // a butt weld where two lines meet is listed on one of them
@@ -2066,10 +2069,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
       ps.forEach(function (pc) { endJoint(pc, 'a'); endJoint(pc, 'b'); });
     });
-    model.flanges.forEach(function (f, k) { var i = hostOf(f.p); if (i >= 0 && !isOne(f)) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FB@' + k); });
+    model.flanges.forEach(function (f, k) { var i = hostOf(f.p); if (i >= 0 && !isOne(f)) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FB@' + key(f.p)); });
     model.flanges.forEach(function (f, k) {                         // a valve flange on the next pipe: its bolted joint to the valve is not between two parts of one pipe, so add it here
       if (!f.m) return; var i = flHost(f); if (i < 0) return;
-      if (!joints.some(function (j) { return j.kind === 'BOLT' && V(j.pos).distanceTo(V(f.p)) < 0.012; })) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FV@' + k);
+      if (!joints.some(function (j) { return j.kind === 'BOLT' && V(j.pos).distanceTo(V(f.p)) < 0.012; })) mkWeld('BOLT', f.n, f.p, model.pipes[i].ln, 'FV@' + key(f.p));
     });
     // An olet is welded to the header and the branch pipe is welded to the olet.
     Object.keys(jointInfo).forEach(function (k) {
@@ -5465,8 +5468,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var a = rotAngle(e); if (!a) return false;
     var R = RING_R * rgz.scale.x;
     if (!rotMode && (a.r < R * 0.5 || a.r > R * 1.6)) return false;   // outside Rotate mode only the ring and a little around it
-    if (rotMode && !rotFacing()) return true;                        // seen edge on the dial cannot be read: the view has to be turned
-    rotDrag = { id: e.pointerId, moved: false, last: null, rel: rotMode, base: a.deg, deg0: rotInfo.deg };
+    if (rotMode && !rotFacing()) return false;                       // seen edge on the dial cannot be read: the view has to be turned
+    rotDrag = { id: e.pointerId, moved: false, last: null, rel: rotMode, base: a.deg, deg0: rotInfo.deg, sx: e.clientX, sy: e.clientY, far: false };
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     if (!rotMode) rotMove(e);
     return true;
@@ -5489,6 +5492,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var g = rotDrag; if (!rotInfo || tool !== 'sel' || !sel) { rotDrag = null; dragUi(false); return; }
     var a = rotAngle(e); if (!a) return;
     if (g.rel && !rotFacing()) return;
+    if (g.rel && !g.far) { if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 8) return; g.far = true; }   // a tap is not a turn: the dial waits until the pointer has gone 8 px
     var raw = g.rel ? g.deg0 + (a.deg - g.base) : a.deg;           // Rotate mode turns by how far the pointer went round, from anywhere
     var deg = ((Math.round(raw / 5) * 5) % 360 + 360) % 360;        // every 5 degrees, 0 is the usual position
     if (deg === g.last) return;
@@ -5497,7 +5501,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     g.moved = true; g.last = deg; setPos('Angle ' + deg + '°'); var ao = $('q-ang'); if (ao) ao.textContent = deg + '°';
     if (!rotRaf) rotRaf = requestAnimationFrame(function () { rotRaf = 0; if (rotDrag) rebuild(); });
   }
-  function rotEnd() { var g = rotDrag; rotDrag = null; dragUi(false); if (g && g.moved) changed(); }
+  function rotEnd(e) {
+    var g = rotDrag; rotDrag = null; dragUi(false);
+    if (g && g.moved) changed();
+    else if (g && g.rel && e && e.type === 'pointerup') { rotMode = false; onTap(e); updateUi(); }   // a tap in Rotate mode leaves it and picks what was tapped
+  }
 
   // ---------- view cube: click a face, an edge or a corner to look from there, drag it to orbit ----------
   var VC_FACES = {                                                  // normal and the two sides of each face in scene axes (y is up)
@@ -5507,7 +5515,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   };
   function vcDir(face, u, v) {                                      // u, v 0 to 1 across the face: near an edge or corner the view leans toward the neighbour faces
     var f = VC_FACES[face]; if (!f) return null;
-    var a = u < 0.28 ? -1 : u > 0.72 ? 1 : 0, b = v < 0.28 ? -1 : v > 0.72 ? 1 : 0;
+    var a = u < 0.32 ? -1 : u > 0.68 ? 1 : 0, b = v < 0.32 ? -1 : v > 0.68 ? 1 : 0;
     return new T.Vector3(f.n[0] + a * f.tu[0] + b * f.tv[0], f.n[1] + a * f.tu[1] + b * f.tv[1], f.n[2] + a * f.tu[2] + b * f.tv[2]).normalize();
   }
   var vcAnim = 0;
@@ -5549,7 +5557,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     vc.addEventListener('click', function (e) {
       if (vc._dragged && (performance.now() || 1) - vc._dragged < 400) return;      // the click that ends a drag is not a pick
       var f = e.target && e.target.closest ? e.target.closest('[data-face]') : null; if (!f) return;
-      var W = f.offsetWidth || 72, d = vcDir(f.getAttribute('data-face'), (e.offsetX || W / 2) / W, (e.offsetY || W / 2) / W);
+      var W = f.offsetWidth || 96, d = vcDir(f.getAttribute('data-face'), (e.offsetX || W / 2) / W, (e.offsetY || W / 2) / W);
       if (d) viewDir(d);
     });
   })();
@@ -5608,7 +5616,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function dragRevert() { if (hist.length) { model = normalize(JSON.parse(hist.pop())); save(); } rebuild(); updateUi(); }   // a cancelled drag put its first step on the history: take it back
   function end(e) {
     var cancel = e.type === 'pointercancel';                       // the system took the touch away (palm, gesture): a drag is abandoned, not applied
-    if (rotDrag && rotDrag.id === e.pointerId) { var rg = rotDrag; if (cancel && rg.moved) { rotDrag = null; dragUi(false); dragRevert(); } else rotEnd(); return; }
+    if (rotDrag && rotDrag.id === e.pointerId) { var rg = rotDrag; if (cancel && rg.moved) { rotDrag = null; dragUi(false); dragRevert(); } else rotEnd(e); return; }
     if (hdlDrag && hdlDrag.id === e.pointerId) { if (cancel) hdlCancel(); else hdlEnd(); return; }
     if (egzDrag && egzDrag.id === e.pointerId) { var eg = egzDrag; if (cancel && eg.moved && !eg.st.msel) { egzDrag = null; dragUi(false); dragRevert(); } else if (cancel) { egzDrag = null; dragUi(false); } else egzEnd(); return; }
     if (!ptrs[e.pointerId]) return;
@@ -6536,7 +6544,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    pen: { sel: function () { return sel; }, partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

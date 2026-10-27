@@ -2202,6 +2202,30 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   const c = PD.spec.add('ss316'); PD.spec.assign('L-1', c.e.id);
   check('a line class with a material puts it on its pipes only', PD.model.pipes[0].m === 'ss316' && !PD.model.pipes[1].m);
   check('the line list shows the material of each line', PD.lineCsv().includes('"Stainless 316L"') && PD.lineCsv().includes('"Carbon steel"'));
+}
+
+// Field and NDE marks follow the weld by position; Rotate mode ends on a tap; "0 mm" is no insulation
+{
+  const btn = id => ctx.document.getElementById(id);
+  PD.load({ pipes: [{ a: [0, 0, 5], b: [2, 0, 5], n: 4, ln: 'X' }, { a: [0, 0, 0], b: [2, 0, 0], n: 4, ln: 'A' }, { a: [2, 0, 0], b: [2, 0, 2], n: 4, ln: 'A' }] });
+  const k0 = PD.fab().welds.find(w => w.ln === 'A').key;
+  check('a weld key is the position, not the pipe number', /^W-?[0-9]+,-?[0-9]+,-?[0-9]+$/.test(k0), k0);
+  PD.model.field[k0] = 1; PD.model.ndeW[k0] = 'RT';
+  PD.model.pipes.shift(); PD.rebuild();
+  const w1 = PD.fab().welds.find(w => w.key === k0);
+  check('deleting an earlier pipe leaves the marks on the same weld', w1 && w1.field === true && w1.nde === 'RT', JSON.stringify(w1 && [w1.key, w1.field, w1.nde]));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }, { a: [2, 0, 0], b: [2, 0, 2], n: 4 }], field: { '3@2000,0,0': 1 }, ndeW: { '1@2000,0,0': 'PT' } });
+  check('an old file keyed by pipe number and position is read as position only', PD.model.field['W2000,0,0'] === 1 && PD.model.ndeW['W2000,0,0'] === 'PT' && !PD.model.field['3@2000,0,0'], JSON.stringify([PD.model.field, PD.model.ndeW]));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4, ln: 'A' }], lines: { A: { insul: '0 mm' } } });
+  check('"0 mm" of insulation is none', !PD.iso().includes('stroke-dasharray="7 3"'));
+  // Rotate mode: a tap picks something else and leaves the mode
+  const ev = (type, id, x, y) => ({ type, pointerType: 'pen', pointerId: id, clientX: x, clientY: y });
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 4 }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 4, s: 40, k: 'gate' }] });
+  btn('t-sel').onclick(); PD.selectPart('valve', 0); PD.pen.quick('q-rot');
+  const sp = PD.project([0.5, 0, 0]), id = pid_++;
+  L.cv.pointerdown(ev('pointerdown', id, sp.x, sp.y)); L.cv.pointerup(ev('pointerup', id, sp.x, sp.y));
+  check('a tap in Rotate mode leaves it', !PD.pen.ring() || !/aria-pressed="true"/.test((PD.pen.qbar().html.split('q-rot')[1] || '').split('</button>')[0]), PD.pen.qbar().html);
+  check('and picks what was tapped', PD.pen.sel() && PD.pen.sel().kind === 'pipe', JSON.stringify(PD.pen.sel && PD.pen.sel()));
   PD.load({ pipes: [] });
 }
 
