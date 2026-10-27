@@ -526,6 +526,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     frp: { name: 'FRP (vinyl ester)', tag: 'FRP', pipe: 'ASTM D2996 filament wound, vinyl ester', fit: 'ASTM D5685 contact moulded, vinyl ester', flg: 'ASTM D4024 FRP flange, class 150 drilling', gasket: 'EPDM full face', bolt: 'ASTM A193 B8 / A194 8, with washers', valve: 'FRP or lined body', rho: 1850, rough: 0.000005, col: 0x6b9e74, join: 'LAM', conn: 'butt and wrap', pend: 'PE', rate: 'PN 10', wall: function (od) { return Math.max(3, od * 0.025 + 1.5); } }
   };
   Object.keys(MATS).forEach(function (k) { MATS[k].key = k; });
+  // Limits per material, typical values from memory: span = share of the steel support span (water filled, 20 °C), tmax and tmin the usual service
+  // temperature limits in °C, alpha the thermal expansion per K (plastics only; metals are left to the stress engineer).
+  [['cs', 0, -29, 0, 0], ['cslt', 0, -46, 0, 0], ['galv', 200, 0, 0, 0], ['pvc', 60, 0, 0.45, 5.2e-5], ['cpvc', 93, 0, 0.5, 6.3e-5], ['hdpe', 60, -40, 0.3, 1.8e-4], ['pp', 80, 0, 0.35, 1.5e-4], ['pvdf', 140, -20, 0.5, 1.3e-4], ['frp', 90, -20, 0.7, 0]].forEach(function (r) {
+    var M = MATS[r[0]]; if (r[1]) M.tmax = r[1]; if (r[2]) M.tmin = r[2]; if (r[3]) M.span = r[3]; if (r[4]) M.alpha = r[4];
+  });
+  function isPlastic(M) { return !!M && (M.join === 'SC' || M.join === 'BF' || M.join === 'LAM'); }
+  function parseTemp(t) {                                           // a design temperature typed as text (60 °C, 140F, -20) in °C, or null
+    var m = /(-?\d+(?:[.,]\d+)?)/.exec(String(t == null ? '' : t)); if (!m) return null;
+    var v = parseFloat(m[1].replace(',', '.')); return /f/i.test(String(t).slice(m.index + m[0].length)) ? (v - 32) * 5 / 9 : v;
+  }
   var MAT_CAT = { pipe: 1, elbow: 1, reducer: 1, tee: 1, olet: 1, cross: 1, cap: 1, flange: 1, valve: 1, item: 1 };
   function matRec(m) { return m && m !== 'cs' && OWN(MATS, m) ? MATS[m] : null; }    // null: carbon steel, the project standard
   function pmat(p) { return p && p.m && OWN(MATS, p.m) ? p.m : 'cs'; }
@@ -595,6 +605,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     spectacle: 'Spectacle blind 150#', orifice: 'Orifice plate assembly 150#', sight: 'Sight glass, flanged 150#', flowmeter: 'Flow meter, magnetic, flanged 150#',
     nipple: 'Pipe nipple, 150 mm, PBE', basket: 'Basket strainer, flanged 150#', trap: 'Steam trap, thermodynamic, SW', rupture: 'Rupture disc assembly 150#', flame: 'Flame arrestor, flanged 150#', hose: 'Flexible hose, camlock'
   };
+  function itemName(t) {                                            // the name of an inline part, with the joint words of the pipe material instead of steel socket-weld or butt-weld ends
+    var nm = ITEM_NAME[t] || t, M = cm();
+    return M && M.join ? nm.replace(/(SW|THD) 3000#|, SW$|BW/, function (w) { return w.charAt(0) === ',' ? ', ' + M.conn : M.conn; }) : nm;
+  }
   var ELBOW_F = { LR: 1.5, SR: 1.0, '3D': 3.0 };                    // centreline radius in pipe diameters
   var INSTR = {                                                     // ISA function letters; dcs = shown on a shared display
     PI: { name: 'Pressure gauge' }, TI: { name: 'Temperature indicator' }, FI: { name: 'Flow indicator' },
@@ -1657,7 +1671,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       model.supports.forEach(function (q) { if (hostOf(q.p) === i) pts.push(V(q.p).distanceTo(V(p.a))); });
       pts.sort(function (x, y) { return x - y; });
       var gap = 0; for (var g2 = 1; g2 < pts.length; g2++) gap = Math.max(gap, pts[g2] - pts[g2 - 1]);
-      if (gap > SPAN[p.n] + 0.001) warns.push('Pipe ' + (i + 1) + ' spans ' + gap.toFixed(1) + ' m without a support. Keep it under about ' + SPAN[p.n] + ' m for ' + sz(p.n) + '.');
+      var pM = matRec(p.m), lim = Math.round(SPAN[p.n] * (pM && pM.span || 1) * 10) / 10;   // plastic and FRP pipe sag, so they need closer supports than steel
+      if (gap > lim + 0.001) warns.push('Pipe ' + (i + 1) + ' spans ' + gap.toFixed(1) + ' m without a support. Keep it under about ' + lim + ' m for ' + sz(p.n) + (pM && pM.span ? ' ' + pM.name : '') + '.');
     });
 
     // 5. Clash check, see clashes(). The pipes that run into something turn red.
@@ -1841,7 +1856,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.quaternion.setFromUnitVectors(UP, V(it.d).normalize());
       g.traverse(function (m) { m.userData = { kind: 'item', i: i }; });
       world.add(g);
-      add('item', (isCu(it.t) ? cuDesc(it.t) : ITEM_NAME[it.t] || it.t) + ', ' + sz(it.n), 1, 'pc', isCu(it.t) ? cuNote(it.t) : '');
+      add('item', (isCu(it.t) ? cuDesc(it.t) : itemName(it.t)) + ', ' + sz(it.n), 1, 'pc', isCu(it.t) ? cuNote(it.t) : '');
       add('pipe', 'Pipe, ' + sz(it.n) + ' SCH ' + (it.s || 40) + ', ' + pipeEnd(it.n), -L, 'm');
       total -= L; weight -= L * lineWeight(it.n, it.s || 40, (cm() || MATS.cs).key);
       var hi = hostOf(it.p);
@@ -1913,14 +1928,20 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       world.add(g);
       var sch = f.s || 40;
       var nf = isOne(f) ? 1 : 2;
-      if (t === 'so') add('flange', 'Slip-on flange 150# SO, ' + sz(f.n), nf, 'pc');
+      var pj = (cm() || {}).join, tt = t;                                // plastic and threaded pipe: steel weld-neck, slip-on and lap-joint flanges do not exist, the material has its own flange
+      if (pj && (t === 'wn' || t === 'so' || t === 'lj' || t === 'sw')) tt = pj === 'THD' ? 'th' : pj === 'BF' ? 'stub' : pj === 'LAM' ? 'lam' : 'psock';
+      if (tt === 'th') t = 'th';
+      if (tt === 'psock') add('flange', 'Socket flange 150#, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc');
+      else if (tt === 'stub') { add('flange', 'Stub end, butt fusion, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc'); add('flange', 'Backing ring 150#, drilled, ' + sz(f.n), nf, 'pc'); }
+      else if (tt === 'lam') add('flange', 'Flange 150#, laminated, drilled, ' + sz(f.n), nf, 'pc');
+      else if (t === 'so') add('flange', 'Slip-on flange 150# SO, ' + sz(f.n), nf, 'pc');
       else if (t === 'lj') { add('flange', 'Lap-joint flange 150#, ' + sz(f.n), nf, 'pc'); add('flange', 'Stub end BW, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc'); }
       else if (t === 'bl') add('flange', 'Blind flange 150#, ' + sz(f.n), 1, 'pc');
       else if (t === 'th') add('flange', 'Threaded flange 150# THD, ' + sz(f.n), nf, 'pc');
       else if (t === 'sw') add('flange', 'Socket-weld flange 150# SW, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc');
       else if (t === 'ro') { add('flange', 'Orifice flange 150# WN with taps, ' + sz(f.n) + ' SCH ' + sch, 2, 'pc'); add('flange', 'Orifice plate, ' + sz(f.n), 1, 'pc'); }
       else add('flange', 'Weld-neck flange 150# BW, ' + sz(f.n) + ' SCH ' + sch, nf, 'pc');
-      add('flange', 'Gasket 150# spiral wound, ' + sz(f.n), 1, 'pc');
+      add('flange', 'Gasket 150# ' + (pj === 'THD' ? 'non-asbestos' : pj ? 'full face' : 'spiral wound') + ', ' + sz(f.n), 1, 'pc');
       add('flange', 'Stud bolt set 150#, ' + BOLTS[f.n], 1, 'set');
       var hf = flHost(f);
       if (hf >= 0) {
@@ -1950,7 +1971,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
-    hydroWarnings(); spWarnings(); partWarnings();
+    hydroWarnings(); spWarnings(); partWarnings(); materialWarnings(); layoutWarnings();
     matDirty = true;
     renderBom(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();   // the ring before the bar: the bar shows the angle
     $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
@@ -2000,7 +2021,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function insulated(t) { return !!t && !/^\s*(none|no|n\/a|-|—|0(\s*mm)?)\s*$/i.test(String(t)); }
   function ffwAllow() { var a = Number((model.spec || {}).ffw); return [50, 100, 150, 200].indexOf(a) >= 0 ? a : 100; }   // mm of extra pipe left on a piece at a field fit weld, cut to fit on site
   function madeText(w) { return w.ffw ? 'Field fit' : w.field ? 'Field' : 'Shop'; }
-  var NDE_M = ['RT', 'PT', 'MT', 'VT', 'UT'];                         // radiography, dye penetrant, magnetic particle, visual, ultrasonic
+  var NDE_M = ['RT', 'PT', 'MT', 'VT', 'UT'];
+  function ndeOk(kind) { return kind === 'SC' || kind === 'LAM' ? ['VT'] : kind === 'BF' ? ['VT', 'UT'] : NDE_M; }   // radiography, dye penetrant and magnetic particle tests mean nothing on a plastic joint
+  function ndeFor(kind, v) { return ndeOk(kind).indexOf(v) >= 0 ? v : ''; }                         // radiography, dye penetrant, magnetic particle, visual, ultrasonic
   function fabrication() {
     var field = model.field || {}, welds = [], pieces = [], joints = [], parent = {}, byPair = {}, jpos = {};
     function find(x) { if (parent[x] == null) parent[x] = x; while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
@@ -2009,7 +2032,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     function mkWeld(kind, n, pos, ln, wkey) {
       if (wseen[wkey]) { wseen[wkey]++; wkey += '#' + wseen[wkey]; } else wseen[wkey] = 1;   // two welds at one point get their own keys
       kind = matJoin(kind, wkey, pos);
-      var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey], ffw: field[wkey] === 2, nde: (model.ndeW || {})[wkey] || '' };
+      var w = { kind: kind, n: n, pos: pos, ln: ln, key: wkey, field: !!field[wkey], ffw: field[wkey] === 2, nde: ndeFor(kind, (model.ndeW || {})[wkey] || '') };
       if (WELD_K[kind]) welds.push(w); else joints.push(w);
       return w;
     }
@@ -2129,7 +2152,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     h += '<h3>Welds</h3><div class="scroll"><table class="tbl"><thead><tr><th>No.</th><th>Type</th><th>Size</th><th>Line</th><th>Where, mm (X, Y, Z)</th><th>Made</th><th>NDE</th></tr></thead><tbody>'
       + f.welds.map(function (w) {
         var c = [w.pos[0], w.pos[2], w.pos[1]].map(function (v) { return Math.round(v * 1000); }).join(', ');
-        return '<tr><td>' + jTag(w) + '</td><td>' + WELD_NAME[w.kind] + '</td><td>' + (w.n ? szs(w.n) : '') + '</td><td>' + esc(w.ln) + '</td><td>' + c + '</td><td><button data-wk="' + esc(w.key) + '" aria-pressed="' + w.field + '">' + madeText(w) + '</button></td><td><select data-nde="' + esc(w.key) + '" aria-label="NDE for weld ' + w.no + '"><option value="">None</option>' + NDE_M.map(function (m) { return '<option' + (w.nde === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select></td></tr>';
+        return '<tr><td>' + jTag(w) + '</td><td>' + WELD_NAME[w.kind] + '</td><td>' + (w.n ? szs(w.n) : '') + '</td><td>' + esc(w.ln) + '</td><td>' + c + '</td><td><button data-wk="' + esc(w.key) + '" aria-pressed="' + w.field + '">' + madeText(w) + '</button></td><td><select data-nde="' + esc(w.key) + '" aria-label="NDE for weld ' + w.no + '"><option value="">None</option>' + ndeOk(w.kind).map(function (m) { return '<option' + (w.nde === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select></td></tr>';
       }).join('') + '</tbody></table></div>';
     h += '<h3>Spools</h3><div class="scroll"><table class="tbl"><thead><tr><th>Spool</th><th>Line</th><th>Pieces</th><th>Pipe m</th></tr></thead><tbody>'
       + f.spools.map(function (s) { return '<tr><td>' + s.id + '</td><td>' + esc(s.ln) + '</td><td>' + s.pieces.length + '</td><td>' + s.len.toFixed(2) + '</td></tr>'; }).join('') + '</tbody></table></div>';
@@ -2342,6 +2365,50 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     });
     Object.keys(lines).forEach(function (k) { if (lines[k].qty < -0.0005) warns.push('The list has a negative quantity for "' + lines[k].desc + '": a part is longer than its pipe.'); });
   }
+  function materialWarnings() {                                     // limits of the pipe material against the line design data, and what plastic pipe does when it warms up
+    var seenL = {};
+    model.pipes.forEach(function (p) {
+      if (p.ghost || seenL[p.ln + pmat(p)]) return; seenL[p.ln + pmat(p)] = 1;
+      var M = MATS[pmat(p)], ld = model.lines[p.ln] || {}, T = parseTemp(ld.tdes);
+      if (T != null && M.tmax && T > M.tmax) warns.push('Line ' + p.ln + ' is ' + M.name + ' but its design temperature is ' + Math.round(T) + ' °C. Usual limit for ' + M.name + ' is about ' + M.tmax + ' °C: choose another material or check the supplier data.');
+      if (T != null && M.tmin && T < M.tmin) warns.push('Line ' + p.ln + ' is ' + M.name + ' but its design temperature is ' + Math.round(T) + ' °C. Usual lower limit for ' + M.name + ' is about ' + M.tmin + ' °C' + (pmat(p) === 'cs' ? ': use low temperature carbon steel.' : '.'));
+      if (isPlastic(M) && /\b(RT|MT|PT)\b/i.test(ld.nde || '') && !seenL[p.ln + 'nde']) { seenL[p.ln + 'nde'] = 1; warns.push('Line ' + p.ln + ' is ' + M.name + ' but its NDE extent says ' + ld.nde + '. Radiography, dye penetrant and magnetic particle tests do not apply to plastic joints: use visual (VT) and pressure test.'); }
+    });
+    var par = {}, P = model.pipes;                                  // runs of straight plastic pipe: free growth = alpha x length x temperature change
+    function fnd(x) { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; }
+    P.forEach(function (p, i) { par[i] = i; });
+    Object.keys(jointInfo).forEach(function (k) {
+      var L = jointInfo[k].legs; if (L.length !== 2 || L[0].d.dot(L[1].d) > -0.999 || pmat(P[L[0].i]) !== pmat(P[L[1].i])) return;
+      par[fnd(L[0].i)] = fnd(L[1].i);
+    });
+    var runs = {};
+    P.forEach(function (p, i) {
+      var M = MATS[pmat(p)]; if (p.ghost || !M.alpha) return;
+      var r = runs[fnd(i)] = runs[fnd(i)] || { i: i, len: 0, M: M, ln: p.ln, joint: false }; r.len += V(p.a).distanceTo(V(p.b));
+    });
+    model.items.forEach(function (it) { var h = hostOf(it.p); if (h >= 0 && runs[fnd(h)] && (it.t === 'expansion' || it.t === 'hose')) runs[fnd(h)].joint = true; });
+    Object.keys(runs).forEach(function (k) {
+      var r = runs[k]; if (r.joint) return;
+      var T = parseTemp((model.lines[r.ln] || {}).tdes), dT = T == null ? 30 : Math.abs(T - 20), g = r.M.alpha * r.len * dT * 1000;
+      if (g > 25) warns.push('Pipe ' + (r.i + 1) + ' starts a straight ' + r.M.name + ' run of ' + r.len.toFixed(1) + ' m that grows about ' + Math.round(g) + ' mm over ' + Math.round(dT) + ' K' + (T == null ? ' (assumed, type the design temperature of line ' + r.ln + ')' : '') + '. Add an expansion loop, offset or expansion joint, and guide the pipe, do not anchor it.');
+    });
+  }
+  function layoutWarnings() {                                       // dead legs and a line left without a class
+    var P = model.pipes, dead = [], capKey = {};
+    nozList.forEach(function (z) { capKey[key(mm3(z.p))] = 1; });
+    model.flanges.forEach(function (f) { if (isOne(f)) capKey[key(f.p)] = 1; });
+    Object.keys(jointInfo).forEach(function (k) {
+      var j = jointInfo[k], L = j.legs; if (L.length !== 1 || P[L[0].i].ghost) return;
+      var i = L[0].i; if (!(j.type === 'cap' || capKey[k])) return;   // only a closed end makes a dead leg
+      var other = jointInfo[key(L[0].end === 'a' ? P[i].b : P[i].a)], len = V(P[i].a).distanceTo(V(P[i].b));
+      if (other && other.legs.length >= 3 && len > 6 * OD[P[i].n] / 1000 + 0.001
+        && !model.valves.some(function (v) { return hostOf(v.p) === i; }) && !model.instr.some(function (x) { return hostOf(x.p) === i; })) {
+        var pair = other.legs.filter(function (o) { return o.i !== i; }); if (pair.length === 2 && pair[0].d.dot(pair[1].d) < -0.999) dead.push(i + 1);   // this pipe is the branch, closed at its far end, with no valve to isolate it
+      }
+    });
+    if (dead.length) warns.push('Pipe ' + dead[0] + (dead.length > 1 ? ' (and ' + (dead.length - 1) + ' more)' : '') + ' is a dead leg: a branch closed at its end, longer than 6 pipe diameters, with no valve. The fluid stands still in it. Shorten it or put a valve on it.');
+    if (model.pspecs.length) { var nc = {}; P.forEach(function (p) { if (!p.ghost && !spOf(p.ln) && !(model.lines[p.ln] || {}).cls && !nc[p.ln]) { nc[p.ln] = 1; warns.push('Line ' + p.ln + ' has no piping class, while other lines are set up with one.'); } }); }
+  }
   function spWarnings() {                                           // pipes and valves that break the class of their line
     var seen = {};
     model.pipes.forEach(function (p, i) {
@@ -2367,13 +2434,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.pipes.forEach(function (p) {
       var r = L[p.ln] = L[p.ln] || { ln: p.ln, sizes: {}, len: 0, valves: 0, welds: 0, pieces: 0 };
       r.sizes[p.n] = 1; r.len += V(p.a).distanceTo(V(p.b)); (r.mats = r.mats || {})[pmat(p)] = 1;
+      var jk = (matRec(p.m) || {}).join || weldKindFor(p.n); (r.joints = r.joints || {})[jk] = 1;   // how this line is joined: welded steel by size, the others by their own method
     });
     model.valves.forEach(function (v) { var i = hostOf(v.p); if (i >= 0 && L[model.pipes[i].ln]) L[model.pipes[i].ln].valves++; });
     f.welds.forEach(function (w) { if (L[w.ln]) L[w.ln].welds++; });
     f.pieces.forEach(function (pc) { if (L[pc.ln]) L[pc.ln].pieces++; });
     return Object.keys(L).sort().map(function (k) {
       var d = model.lines[k] || {}, r = L[k];
-      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', spec: d.spec || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', dwg: d.dwg || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces, mat: Object.keys(r.mats || { cs: 1 }).map(matName).join(' / ') };
+      return { ln: k, desig: lineDesignation(k), code: d.code || '', size: Object.keys(r.sizes).map(Number).sort(function (a, b) { return b - a; }).map(szs).join(' / '), svc: d.svc || '', cls: d.cls || '', spec: d.spec || '', pdes: d.pdes || '', tdes: d.tdes || '', insul: d.insul || '', from: d.from || '', to: d.to || '', dwg: d.dwg || '', q: d.q > 0 ? d.q : 0, len: r.len, valves: r.valves, welds: r.welds, pieces: r.pieces, mat: Object.keys(r.mats || { cs: 1 }).map(matName).join(' / '), joint: ['BW', 'SW', 'THD', 'BF', 'SC', 'LAM'].filter(function (k) { return (r.joints || {})[k]; }).map(function (k) { return k === 'THD' ? 'Threaded' : WELD_NAME[k]; }).join(' / ') };
     });
   }
   function dwgOf(ln) {                                              // the iso drawing number of a line: typed for the line, else the default ISO-<line> unless one project number is typed for every sheet
@@ -2399,16 +2467,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function lineListHtml() {
     var rows = lineList(); if (!rows.length) return specHtml() + '<p class="empty">No pipe yet.</p>';
     return specHtml() + '<p class="empty">Service, class, pressure, temperature and insulation are typed by you and appear in the title block of that line\'s isometric sheet. Class defaults to ' + esc(std().cls) + '. The other columns come from the drawing.</p>'
-      + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Designation</th><th>Size</th><th>Material</th><th>Piping class</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
+      + '<div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Designation</th><th>Size</th><th>Material</th><th>Joint</th><th>Piping class</th>' + LL_FIELDS.map(function (f) { return '<th>' + f[1] + '</th>'; }).join('') + '<th>Flow m³/h</th><th>Pipe m</th><th>Valves</th><th>Welds</th></tr></thead><tbody>'
       + rows.map(function (r) {
-        return '<tr><td><input type="text" data-llname="' + esc(r.ln) + '" value="' + esc(r.ln) + '" maxlength="12" style="min-width:84px" aria-label="Line number"></td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td><td>' + esc(r.mat) + '</td><td><select data-llspec="' + esc(r.ln) + '"><option value="">None</option>' + model.pspecs.map(function (s) { return '<option value="' + esc(s.id) + '"' + (r.spec === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[0] === 'dwg' ? ((model.title || {}).drawing || 'ISO-' + r.ln) : f[2]) + '"></td>'; }).join('')
+        return '<tr><td><input type="text" data-llname="' + esc(r.ln) + '" value="' + esc(r.ln) + '" maxlength="12" style="min-width:84px" aria-label="Line number"></td><td>' + esc(r.desig) + '</td><td>' + esc(r.size) + '</td><td>' + esc(r.mat) + '</td><td>' + esc(r.joint) + '</td><td><select data-llspec="' + esc(r.ln) + '"><option value="">None</option>' + model.pspecs.map(function (s) { return '<option value="' + esc(s.id) + '"' + (r.spec === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select></td>' + LL_FIELDS.map(function (f) { return '<td><input type="text" data-ll="' + f[0] + '" data-ln="' + esc(r.ln) + '" value="' + esc(r[f[0]]) + '" placeholder="' + esc(f[0] === 'cls' ? std().cls : f[0] === 'dwg' ? ((model.title || {}).drawing || 'ISO-' + r.ln) : f[2]) + '"></td>'; }).join('')
           + '<td>' + (r.q || '–') + '</td><td>' + r.len.toFixed(2) + '</td><td>' + r.valves + '</td><td>' + r.welds + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
   function lineCsv() {
     var q = csvq;
-    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation,From,To,Drawing,Material\n'
-      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || (spOf(r.ln) && (spOf(r.ln).code || spOf(r.ln).name)) || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to), q(r.dwg), q(r.mat)].join(','); }).join('\n') + '\n';
+    return 'Line,Size,Service,Class,Design pressure,Design temperature,Insulation,Flow (m3/h),Pipe length (m),Valves,Welds,Fluid code,Designation,From,To,Drawing,Material,Joint method\n'
+      + lineList().map(function (r) { return [q(r.ln), q(r.size), q(r.svc), q(r.cls || (spOf(r.ln) && (spOf(r.ln).code || spOf(r.ln).name)) || std().cls), q(r.pdes), q(r.tdes), q(r.insul), r.q || '', r.len.toFixed(2), r.valves, r.welds, q(r.code), q(r.desig), q(r.from), q(r.to), q(r.dwg), q(r.mat), q(r.joint)].join(','); }).join('\n') + '\n';
   }
 
   function bomByLineCsv() {                                         // the material list of each line number on its own, rows tagged with the line designation

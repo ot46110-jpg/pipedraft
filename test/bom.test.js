@@ -728,7 +728,7 @@ check('the iso sheet lists welds when there are some', PD.iso('L-002', 'auto', t
   const old = JSON.parse(JSON.stringify(PD.model)); Object.keys(old.lines || {}).forEach(k => delete old.lines[k].code);
   PD.load(old);
   const csvRow = PD.lineCsv().split(String.fromCharCode(10))[1];
-  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","","","","Carbon steel"'), csvRow);
+  check('a save without fluid codes loads and the designation omits the code', !PD.lineDesignation('L-001').includes('--') && csvRow.endsWith(',"","' + PD.lineDesignation('L-001').replace(/"/g, '""') + '","","","","Carbon steel","Butt weld"'), csvRow);
 }
 check('the line list csv has a header and a row per line', lcsv.startsWith('Line,Size,Service,Class,') && lcsv.split('\n').filter(Boolean).length === 3 && lcsv.includes('"Cooling water"') && lcsv.includes('"ASME') === false);
 check('the screen version has an input per field and line', (PD.lineListHtml().match(/data-ll=/g) || []).length === 20);
@@ -2267,6 +2267,60 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 2, ln: 'A', m: 'pvc' }, { a: [3, 0, 0], b: [3, 0, 2], n: 2, ln: 'A', m: 'cs' }] });
   const k = PD.fab().welds.map(w => w.kind);
   check('a joint between two materials takes the method of the pipe it belongs to, per pipe', k.length >= 1, JSON.stringify(k));
+  PD.load({ pipes: [] });
+}
+
+// Piping audit: plastic and threaded pipe get their own flanges, gaskets, inline parts, support spans, limits and warnings
+{
+  const NL = String.fromCharCode(10);
+  const run = (m, extra) => Object.assign({ pipes: [{ a: [0, 1, 0], b: [6, 1, 0], n: 2, m, ln: 'A', s: 80 }, { a: [6, 1, 0], b: [6, 1, 3], n: 2, m, ln: 'A', s: 80 }],
+    flanges: [{ p: [2, 1, 0], d: [1, 0, 0], n: 2, s: 80, t: 'wn' }], items: [{ p: [4, 1, 0], d: [1, 0, 0], n: 2, t: 'union', s: 80 }, { p: [4.5, 1, 0], d: [1, 0, 0], n: 2, t: 'coupling', s: 80 }] }, extra || {});
+  const names = m => { PD.load(run(m)); return PD.rows().map(r => r[0]); };
+  const pv = names('pvc'), pe = names('hdpe'), gv = names('galv'), cs = names(undefined);
+  check('PVC flange is a socket flange with a full face gasket, no weld-neck or spiral wound', pv.some(r => /^Socket flange 150#, NPS 2 SCH 80, PVC-U/.test(r)) && !pv.some(r => /Weld-neck|spiral|BW|SW 3000/.test(r)) && pv.some(r => /^Gasket 150# full face/.test(r)), pv.join(' | '));
+  check('HDPE flange is a butt fusion stub end with a backing ring', pe.some(r => /^Stub end, butt fusion, NPS 2 SDR 11, HDPE/.test(r)) && pe.some(r => /^Backing ring/.test(r)) && !pe.some(r => /Weld-neck|Lap-joint|spiral/.test(r)), pe.join(' | '));
+  check('galvanised flange is threaded', gv.some(r => /^Threaded flange/.test(r)) && !gv.some(r => /Weld-neck|spiral/.test(r)), gv.join(' | '));
+  check('steel keeps its weld-neck flange and spiral wound gasket', cs.some(r => /^Weld-neck flange 150# BW/.test(r)) && cs.some(r => /^Gasket 150# spiral wound/.test(r)) && cs.some(r => /^Union, SW 3000#/.test(r)), cs.join(' | '));
+  check('inline parts on plastic carry the joint of the material, not SW 3000#', pv.some(r => /^Union, socket, solvent cement/.test(r)) && pe.some(r => /^Coupling, full, butt fusion/.test(r)) && !pv.concat(pe).some(r => /SW 3000#/.test(r)), pv.concat(pe).join(' | '));
+  // support span
+  const spanW = (m, len) => { PD.load({ pipes: [{ a: [0, 1, 0], b: [len, 1, 0], n: 4, m }] }); return PD.warns().filter(w => /without a support/.test(w)); };
+  check('steel 4 in pipe may span 4 m', spanW(undefined, 4).length === 0, spanW(undefined, 4).join());
+  check('PVC and HDPE 4 in pipe of the same span is warned, with the shorter limit', spanW('pvc', 4).length === 1 && /about 1\.9 m for NPS 4 PVC-U/.test(spanW('pvc', 4)[0]) && spanW('hdpe', 3).length === 1, spanW('pvc', 4).join() + ' / ' + spanW('hdpe', 3).join());
+  check('and PVC pipe with supports at that spacing is not warned', (() => { PD.load({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 4, m: 'pvc' }], supports: [{ p: [1.5, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }, { p: [2.8, 1, 0], d: [1, 0, 0], n: 4, t: 'shoe' }] }); return !PD.warns().some(w => /without a support/.test(w)); })());
+  // temperature limits
+  const tw = (m, tdes) => { PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 2, m, ln: 'A' }], lines: { A: { tdes } } }); return PD.warns().filter(w => /design temperature/.test(w)); };
+  check('PVC at 80 C is warned, at 40 C and at 120 F it is not, CPVC at 80 C is fine', tw('pvc', '80 °C').length === 1 && tw('pvc', '40 °C').length === 0 && tw('pvc', '150F').length === 1 && tw('pvc', '120F').length === 0 && tw('cpvc', '80 °C').length === 0, [tw('pvc', '80 °C'), tw('pvc', '150F')].join());
+  check('carbon steel below -29 C asks for low temperature steel, LTCS does not', /low temperature carbon steel/.test(tw(undefined, '-40 °C')[0] || '') && tw('cslt', '-40 °C').length === 0);
+  check('no design temperature, no temperature warning', tw('pvc', '').length === 0 && tw('pvc', 'ambient').length === 0);
+  // NDE on plastic
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [1, 1, 0], n: 2, m: 'pvc', ln: 'A' }, { a: [1, 1, 0], b: [1, 1, 1], n: 2, m: 'pvc', ln: 'A' }, { a: [3, 1, 0], b: [4, 1, 0], n: 2, ln: 'B' }], lines: { A: { nde: 'RT 10%' }, B: { nde: 'RT 10%' } } });
+  check('RT on a plastic line is warned, on a steel line it is not', PD.warns().filter(w => /NDE extent says RT/.test(w)).length === 1 && PD.warns().some(w => /Line A is PVC-U but its NDE/.test(w)));
+  { const k = PD.fab().welds.find(w => w.ln === 'A').key; PD.model.ndeW[k] = 'RT'; const f1 = PD.fab().welds.find(w => w.key === k); PD.model.ndeW[k] = 'VT'; const f2 = PD.fab().welds.find(w => w.key === k);
+    check('an RT mark on a solvent joint is ignored, VT is kept', f1.nde === '' && f2.nde === 'VT', f1.nde + '/' + f2.nde); }
+  // thermal expansion
+  const ex = (m, len, tdes, items) => { PD.load({ pipes: [{ a: [0, 1, 0], b: [len / 2, 1, 0], n: 2, m, ln: 'A' }, { a: [len / 2, 1, 0], b: [len, 1, 0], n: 2, m, ln: 'A' }], lines: { A: { tdes } }, items: items || [] }); return PD.warns().filter(w => /grows about/.test(w)); };
+  check('a long straight HDPE run is warned about growth, across the pipe split in the middle', ex('hdpe', 10, '50 °C').length === 1 && /about 54 mm/.test(ex('hdpe', 10, '50 °C')[0]), ex('hdpe', 10, '50 °C').join());
+  check('a short run, steel, or a run with an expansion joint is not', ex('hdpe', 2, '50 °C').length === 0 && ex(undefined, 40, '50 °C').length === 0 && ex('hdpe', 10, '50 °C', [{ p: [2, 1, 0], d: [1, 0, 0], n: 2, t: 'expansion' }]).length === 0);
+  check('PVC grows less than HDPE for the same run', ex('pvc', 10, '40 °C').length === 0 && ex('pvc', 20, '60 °C').length === 1);
+  // dead leg and class
+  const hdr = (blen, valve) => ({ pipes: [{ a: [0, 1, 0], b: [4, 1, 0], n: 2, ln: 'A' }, { a: [2, 1, 0], b: [2, 1, blen], n: 2, ln: 'A' }], caps: [[2, 1, blen]], valves: valve ? [{ p: [2, 1, 0.5], d: [0, 0, 1], n: 2, k: 'ball' }] : [] });
+  PD.load(hdr(1)); check('a long capped branch with no valve is a dead leg', PD.warns().some(w => /dead leg/.test(w)), PD.warns().join('|'));
+  PD.load(hdr(1, true)); check('with a valve on it it is a spare, not a dead leg', !PD.warns().some(w => /dead leg/.test(w)), PD.warns().join('|'));
+  PD.load(hdr(0.2)); check('a stub of 4 diameters is not a dead leg', !PD.warns().some(w => /dead leg/.test(w)), PD.warns().join('|'));
+  PD.load(Object.assign(hdr(1, true), { pspecs: [{ id: 'x1', name: 'Test', code: 'T1', sch: 40, minN: 0.5, maxN: 12 }], lines: { A: { spec: 'x1' } } }));
+  PD.model.pipes.push({ a: [8, 1, 0], b: [9, 1, 0], n: 2, ln: 'B', s: 40 }); PD.rebuild();
+  check('a line without a class is named when the other lines have one', PD.warns().some(w => /Line B has no piping class/.test(w)) && !PD.warns().some(w => /Line A has no piping class/.test(w)), PD.warns().join('|'));
+  PD.load({ pipes: [{ a: [8, 1, 0], b: [9, 1, 0], n: 2, ln: 'B', s: 40 }] }); check('and nothing is said while no class exists at all', !PD.warns().some(w => /no piping class/.test(w)));
+  // line list and consistency
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 2, m: 'pvc', ln: 'A' }, { a: [0, 2, 0], b: [3, 2, 0], n: 4, m: 'hdpe', ln: 'B' }, { a: [0, 3, 0], b: [3, 3, 0], n: 1, m: 'galv', ln: 'C' }, { a: [0, 4, 0], b: [3, 4, 0], n: 4, ln: 'D' }] });
+  const ll = PD.lineCsv().split(NL).filter(Boolean);
+  check('the line list csv ends with material and joint method', ll[0].endsWith(',Material,Joint method') && ll[1].endsWith('"PVC-U","Solvent joint"') && ll[2].endsWith('"HDPE PE100","Butt fusion"') && ll[3].endsWith('"Galvanised steel","Threaded"') && ll[4].endsWith('"Carbon steel","Butt weld"'), ll.join(NL));
+  PD.load(run('pvc', { lines: { A: { svc: '=cmd|calc' } } }));
+  check('line list cells that look like formulas are neutralised', PD.lineCsv().includes('"\'=cmd|calc"'));
+  { PD.load(Object.assign(run('hdpe'), { valves: [{ p: [1, 1, 0], d: [1, 0, 0], n: 2, k: 'ball', s: 80 }] })); PD.addValveFlanges(PD.model.valves[0]); PD.rebuild();
+    const tot = {}; PD.rows().forEach(r => { if (!/^Pipe/.test(r[0])) tot[r[0]] = parseFloat(r[1]); });
+    const sum = {}; PD.bomByLine().split(NL).filter(Boolean).slice(1).forEach(l => { const c = l.match(/"((?:[^"]|"")*)"/g).map(x => x.slice(1, -1).replace(/""/g, '"')); if (!/^Pipe/.test(c[2])) sum[c[2]] = (sum[c[2]] || 0) + parseFloat(c[3]); });
+    check('BOM by line adds up to the whole BOM for a plastic line with flanges and valves', JSON.stringify(tot) === JSON.stringify(sum) && Object.keys(tot).length > 5, JSON.stringify(tot) + ' vs ' + JSON.stringify(sum)); }
   PD.load({ pipes: [] });
 }
 
