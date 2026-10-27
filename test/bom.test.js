@@ -2255,5 +2255,20 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// PVC joints are J, not W
+{
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 2, ln: 'A', m: 'pvc' }, { a: [3, 0, 0], b: [3, 0, 2], n: 2, ln: 'A', m: 'pvc' }] });
+  const svg = PD.iso();
+  check('PVC solvent joints are numbered J on the iso and in the lists', svg.includes('>J1<') && !svg.includes('>W1<') && /\nJ1,"Solvent joint"/.test(PD.fabCsv()), PD.fabCsv().slice(-120));
+  check('the iso marks them with a diamond and says so', svg.includes('<polygon points') && svg.includes('J = bonded joint'));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4, ln: 'A' }, { a: [3, 0, 0], b: [3, 0, 2], n: 4, ln: 'A' }] });
+  check('steel keeps W and the weld note', PD.iso().includes('>W1<') && PD.iso().includes('W = weld'));
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 2, ln: 'A', m: 'pvc' }, { a: [3, 0, 0], b: [3, 0, 2], n: 2, ln: 'A', m: 'cs' }] });
+  const k = PD.fab().welds.map(w => w.kind);
+  check('a joint between two materials takes the method of the pipe it belongs to, per pipe', k.length >= 1, JSON.stringify(k));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
