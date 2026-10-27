@@ -321,6 +321,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <div class="row"><label class="field">Eccentric reducer flat side<select id="sp-flat"><option value="bottom">Flat on bottom (FOB)</option><option value="top">Flat on top (FOT)</option><option value="side">Flat on side (FOS)</option></select></label></div>
         <div class="row"><label class="field">Small branch<select id="sp-br"><option value="auto">Olet when half size or less</option><option value="tee">Always a tee</option></select></label></div>
         <div class="row"><label class="field">Olet type<select id="sp-olet"><option value="weldolet">Weldolet BW</option><option value="sockolet">Sockolet SW</option><option value="threadolet">Threadolet THD</option><option value="sweepolet">Sweepolet BW</option><option value="halfcoupling">Half coupling SW</option><option value="nippolet">Nippolet BW</option></select></label></div>
+        <div class="row"><label class="field">Lowest level, mm under the floor<select id="sp-depth"><option value="0">0, the floor</option><option value="500">500</option><option value="1000">1000</option><option value="1500">1500</option><option value="2000">2000</option><option value="3000">3000</option><option value="5000">5000</option></select></label></div>
         <div class="row"><label class="field">Weld gap per joint, taken off cut lengths<select id="sp-gap"><option value="0">None</option><option value="1.5">1.5 mm</option><option value="2">2 mm</option><option value="3">3 mm</option></select></label></div>
         <div class="row"><label class="field">Field fit weld allowance, added to one piece<select id="sp-ffw"><option value="50">50 mm</option><option value="100">100 mm</option><option value="150">150 mm</option><option value="200">200 mm</option></select></label></div>
         <div class="row"><label class="field">Small bore ends, NPS 1-1/2 and below<select id="sp-small"><option value="SW">Socket weld, 3000#</option><option value="THD">Threaded, 3000#</option><option value="BW">Butt weld</option></select></label></div>
@@ -1120,6 +1121,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     o.title = plain(m.title); Object.keys(o.title).forEach(function (k) { if (typeof o.title[k] !== 'string' || (k === 'logo' ? !cuImgOk(o.title[k]) : o.title[k].length > 200)) delete o.title[k]; }); o.levels = Array.isArray(m.levels) ? m.levels.filter(function (l) { return l && isFinite(l.z); }) : [];
     o.spec = Object.assign(o.spec, plain(m.spec));
     if (!OWN(STD, o.spec.std)) o.spec.std = 'asme';
+    { var dp = Number(o.spec.depth); if (isFinite(dp) && dp > 0) o.spec.depth = Math.min(20000, Math.round(dp)); else delete o.spec.depth; }   // mm under the floor, absent for none
     (Array.isArray(m.pspecs) ? m.pspecs : []).forEach(function (r) {   // piping classes; a bad one is dropped, a missing or repeated id gets a new one
       var v = spValidate(r, false); if (!v.e || o.pspecs.length >= SP_MAX) return;
       v.e.id = typeof r.id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(r.id) && !o.pspecs.some(function (x) { return x.id === r.id; }) ? r.id : spFresh(o.pspecs);
@@ -1310,6 +1312,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- helpers ----------
+  function lowY() { var d = Number((model.spec || {}).depth); return d > 0 ? -Math.min(d, 20000) / 1000 : 0; }   // metres, 0 or below: how far under the floor the project may go
   var V = function (a) { return new T.Vector3(a[0], a[1], a[2]); };
   var key = function (p) { return [p[0], p[1], p[2]].map(function (v) { return Math.round(v * 1000); }).join(','); };
   var UP = new T.Vector3(0, 1, 0);
@@ -2548,7 +2551,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
     return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -elev), hit) ? hit : null;
   }
-  function planePt(p) { return [rs(p.x), p.side ? Math.max(0, rs(p.y)) : elev, rs(p.z)]; }   // a work-plane hit on the grid, height from the plane in a side view
+  function planePt(p) { return [rs(p.x), p.side ? Math.max(lowY(), rs(p.y)) : elev, rs(p.z)]; }   // a work-plane hit on the grid, height from the plane in a side view
   var matDirty = true;
   function pickMeshes(e, kind) {
     setRay(e); if (matDirty) { world.updateMatrixWorld(true); matDirty = false; }
@@ -2587,7 +2590,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function eqMoveTo(st, delta) {                                    // equipment and followers at orig + delta metres along the axis; false when a followed pipe would get too short
     var e = model.equip[st.i]; if (!e || !isFinite(delta)) return false;
     delta = Math.max(-1000, Math.min(1000, delta));
-    if (st.ax === 'y') delta = Math.max(delta, -st.orig[1]);          // never below the floor
+    if (st.ax === 'y') delta = Math.max(delta, lowY() - st.orig[1]);          // never below the floor
     var ok = true;
     st.ends.forEach(function (s) { if (!model.pipes[s.pi]) { ok = false; return; } var np = V(s.orig).addScaledVector(st.A, delta); if (np.distanceTo(V(s.other)) < 0.05 || V(s.other).sub(np).dot(V(s.other).sub(V(s.orig))) <= 0) ok = false; });
     if (!ok) return false;
@@ -2633,7 +2636,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var p = model.pipes[st.i]; if (!p || !isFinite(delta)) return false;
     delta = Math.max(-1000, Math.min(1000, delta));
     var D = st.A.clone().multiplyScalar(delta), na = mm3(V(st.a0).add(D)), nb2 = mm3(V(st.b0).add(D));
-    if (na[1] < -1e-9 || nb2[1] < -1e-9) return false;
+    if (na[1] < lowY() - 1e-9 || nb2[1] < lowY() - 1e-9) return false;
     var ok = true;
     st.nb.forEach(function (s0) { var np = V(s0.orig).add(D); if (!model.pipes[s0.pi] || np.distanceTo(V(s0.other)) < 0.05 || V(s0.other).sub(np).dot(V(s0.other).sub(V(s0.orig))) <= 0) ok = false; });
     if (!ok) return false;
@@ -2849,7 +2852,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       model.pipes.forEach(function (pp) { [pp.a, pp.b].forEach(function (pt) { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } }); });
       if (bestv != null) { q[ai] = bestv; align = true; }
     }
-    if (q[1] < -1e-9) return null;                                  // nothing below the floor
+    if (q[1] < lowY() - 1e-9) return null;                                  // nothing below the floor
     lastAim = { axis: pick.i, dir: a.clone(), sign: sg };
     return { q: q, axis: pick.i, dir: a, align: align };
   }
@@ -3006,7 +3009,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         var rbN = cp.n, Rr = ELBOW_F[model.spec.elbow] * Math.max(rbN, 1) * 0.0254;
         var outw = (atA ? ea.clone().sub(eb) : eb.clone().sub(ea)).normalize(), sd = perpDir(outw, bdir);
         var qa = mm3(V(end).addScaledVector(sd, 2 * Rr)), qb = mm3(V(qa).addScaledVector(outw, -0.3));
-        if (qa[1] < -1e-9 || qb[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; }
+        if (qa[1] < lowY() - 1e-9 || qb[1] < lowY() - 1e-9) { toast('No room below the floor. Pick another direction.'); return; }
         var intoEnd = cp.fl ? ((atA ? cp.fl < 0 : cp.fl > 0) ? 1 : -1) : 0;
         pushHist();
         addPipe(end, qa, rbN, cp.s || 40, cp.ln, intoEnd, cp.m || 'cs'); addPipe(qa, qb, rbN, cp.s || 40, cp.ln, intoEnd, cp.m || 'cs');
@@ -3038,8 +3041,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var bdv = perpDir(bo.dir, bdir), q2 = null;
       if (bk === 'lat') bdv = bo.dir.clone().add(bdv).normalize();
       var q1 = mm3(V(bo.pt).addScaledVector(bdv, 0.3));
-      if (bk === 'cross') { q2 = mm3(V(bo.pt).addScaledVector(bdv, -0.3)); if (q2[1] < -1e-9 || q1[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; } }
-      if (q1[1] < -1e-9) { toast('No room below the floor. Pick another direction.'); return; }
+      if (bk === 'cross') { q2 = mm3(V(bo.pt).addScaledVector(bdv, -0.3)); if (q2[1] < lowY() - 1e-9 || q1[1] < lowY() - 1e-9) { toast('No room below the floor. Pick another direction.'); return; } }
+      if (q1[1] < lowY() - 1e-9) { toast('No room below the floor. Pick another direction.'); return; }
       pushHist();
       var bkey = key(bo.pt), ovr = null;
       if (bk === 'tee' || bk === 'rtee' || bk === 'cross') ovr = { br: 'tee' };
@@ -3195,14 +3198,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     else if (lastAim) dir = lastAim.dir.clone().multiplyScalar(lastAim.sign);
     if (!dir) { toast('Aim a direction first, or lock X, Y or Z'); return; }
     var q = mm3(V(cursor).addScaledVector(dir, val / 1000));
-    if (q[1] < -1e-9) { toast('That goes below the floor'); return; }
+    if (q[1] < lowY() - 1e-9) { toast('That goes below the floor'); return; }
     pushHist(); addPipe(cursor, q, curN, curS, curL); cursor = q; elev = q[1]; $('lenIn').value = ''; changed();
   }
   function startAtTyped() {                                         // begin a run at typed coordinates
     var x = numField('sx'), y = numField('sy'), z = numField('sz');
     if (x == null || y == null || z == null) { toast('Type X, Y and Z in mm'); return; }
     var pt = mm3(V(sceneOf([x / 1000, y / 1000, z / 1000])));
-    if (pt[1] < -1e-9) { toast('Z cannot be below the floor'); return; }
+    if (pt[1] < lowY() - 1e-9) { toast('Z cannot be below the floor'); return; }
     var before = JSON.stringify(model);
     if (splitAt(pt)) { hist.push(before); changed(); }
     cursor = pt; elev = pt[1]; $('pstart').hidden = true; updateUi();
@@ -3251,7 +3254,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var comp = componentFrom(starts, i);
     if (nozzleAt(kEnd) || Object.keys(comp.keys).some(nozzleAt)) { toast('This end is tied to equipment or a valve port. Move the equipment instead.'); showInsp(); return; }
     if (comp.keys[key(other)]) { toast('The piping beyond this end loops back to the other end, so it cannot stretch'); showInsp(); return; }
-    if (lowest(comp, delta, np[1]) < -1e-9) { toast('That would take piping below the floor'); showInsp(); return; }
+    if (lowest(comp, delta, np[1]) < lowY() - 1e-9) { toast('That would take piping below the floor'); showInsp(); return; }
     pushHist();
     var holders = hostMap(), oldDirN = oldDir.clone().normalize(), fixed = V(other);
     moveComponent(comp, delta, { [kEnd]: 1 });
@@ -3289,7 +3292,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var idx = Object.keys(g.set).map(Number).sort(function (a, b) { return a - b; });
     var n = copies || 1, trial = [];
     for (var c = 1; c <= n; c++) groupPoints(g).forEach(function (pt) { trial.push(tf(pt, c)[1]); });
-    if (trial.some(function (y) { return y < -1e-9; })) { toast('That would take piping below the floor'); return false; }
+    if (trial.some(function (y) { return y < lowY() - 1e-9; })) { toast('That would take piping below the floor'); return false; }
     pushHist();
     var firstNew = model.pipes.length;
     if (!copies) {
@@ -5208,7 +5211,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var ax = Math.abs(a.x) > 0.999 ? 'x' : Math.abs(a.y) > 0.999 ? 'y' : Math.abs(a.z) > 0.999 ? 'z' : null;
     if (ax) q[ax] = rs(q[ax]); else q = c.clone().addScaledVector(a, Math.max(0.05, rs(t)));   // on the grid in world coordinates, or by length on a 45° pipe
     if (q.distanceTo(c) < 0.05 || q.clone().sub(c).dot(a) <= 0) q = c.clone().addScaledVector(a, 0.05);
-    if (q.y < -1e-9) return;
+    if (q.y < lowY() - 1e-9) return;
     g.np = mm3(q);
     marker.visible = true; marker.position.set(g.np[0], g.np[1], g.np[2]); markSnap(false);
     ghostLine.visible = true; setLine(ghostLine, g.other, g.np);
@@ -5738,7 +5741,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
     $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden));
-    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-flat').value = model.spec.eccFlat || 'bottom'; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-gap').value = String(model.spec.gap || 0); $('sp-ffw').value = String(ffwAllow()); $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
+    $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-flat').value = model.spec.eccFlat || 'bottom'; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-gap').value = String(model.spec.gap || 0); $('sp-depth').value = String(model.spec.depth || 0); if (!$('sp-depth').value) $('sp-depth').value = '0'; $('sp-ffw').value = String(ffwAllow()); $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
     curMark.visible = !!cursor && tool === 'pipe'; syncLevelViz();
     if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
     var hints = {
@@ -5792,6 +5795,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('sp-std').onchange = function () { pushHist(); model.spec.std = this.value; model.spec.sizeMode = { asme: 'NPS', jis: 'A', en: 'DN' }[this.value]; changed(); fillSizes(); };
   $('sp-size').onchange = function () { setSpec('sizeMode', this.value); fillSizes(); };
   $('sp-gap').onchange = function () { setSpec('gap', this.value); };
+  $('sp-depth').onchange = function () { pushHist(); var d = Number(this.value) || 0; if (d) model.spec.depth = d; else delete model.spec.depth; changed(); };
   $('sp-ffw').onchange = function () { setSpec('ffw', Number(this.value)); };
   $('specBtn').onclick = function () { $('spec').hidden = !$('spec').hidden; updateUi(); };
   $('lenAdd').onclick = addTyped;
@@ -5840,7 +5844,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }).join('');
   }
   function setLevel(z) {                                            // while drawing this adds a vertical pipe to the height, otherwise it sets the working height
-    z = Math.max(0, Math.round(z * 1000) / 1000);
+    z = Math.max(lowY(), Math.round(z * 1000) / 1000);
     if (cursor && tool === 'pipe') {
       if (Math.abs(z - cursor[1]) < 0.0005) { elev = z; updateUi(); return true; }
       if (Math.abs(z - cursor[1]) < 0.05) { toast('That is less than 50 mm from here'); return false; }
@@ -5886,7 +5890,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var q = [cursor[0], y, cursor[2]];
       addPipe(cursor, q, curN, curS, curL); cursor = q; elev = y; changed();
     } else {
-      elev = Math.max(0, Math.round((elev + sign * STEP) * 1000) / 1000); updateUi();
+      elev = Math.max(lowY(), Math.round((elev + sign * STEP) * 1000) / 1000); updateUi();
     }
   }
   $('up').onclick = function () { vertical(1); };

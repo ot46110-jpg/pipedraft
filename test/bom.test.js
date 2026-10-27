@@ -2229,5 +2229,31 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// Levels under the floor, when the project allows them
+{
+  const btn = id => ctx.document.getElementById(id);
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'A' }] });
+  PD.stretch(0, 'b', [3, -0.5, 0]);
+  check('by default nothing goes under the floor', PD.model.pipes[0].b[1] === 1, JSON.stringify(PD.model.pipes[0].b));
+  PD.setLevel(-0.5);
+  check('and the working level stops at the floor', PD.elevNow() === 0, PD.elevNow());
+  PD.load({ pipes: [{ a: [0, 1, 0], b: [3, 1, 0], n: 4, ln: 'A' }], spec: { depth: 1000 } });
+  check('the lowest level is kept with the project', PD.model.spec.depth === 1000);
+  PD.setLevel(-0.5);
+  check('with a lowest level of 1000 mm the working level can go to -500', PD.elevNow() === -0.5, PD.elevNow());
+  PD.setLevel(-3);
+  check('but not below the lowest level', PD.elevNow() === -1, PD.elevNow());
+  PD.stretch(0, 'b', [3, -0.5, 0]);
+  check('a pipe end can be moved under the floor within it', Math.abs(PD.model.pipes[0].b[1] + 0.5) < 1e-9, JSON.stringify(PD.model.pipes[0].b));
+  PD.stretch(0, 'b', [3, -2, 0]);
+  check('but not below the lowest level', PD.model.pipes[0].b[1] >= -1 - 1e-9, JSON.stringify(PD.model.pipes[0].b));
+  PD.rebuild();
+  check('the BOM and the iso still build with a pipe under the floor', PD.rows().length > 0 && (PD.iso() || '').includes('EL -'), (PD.iso() || '').slice(0, 20));
+  PD.load({ pipes: [], spec: { depth: -5 } }); check('a bad lowest level is dropped', PD.model.spec.depth === undefined);
+  PD.load({ pipes: [], spec: { depth: 999999 } }); check('and a huge one is limited to 20 m', PD.model.spec.depth === 20000);
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
