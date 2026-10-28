@@ -266,6 +266,22 @@
     made.forEach(function (q) { model.steel.m.push(q); }); changed(); return made.length;
   }
 
+  // ---------- groups: members that share a mark prefix (a rack, a frame) move, copy and delete together ----------
+  function stPrefix(k) { var i = String(k || '').indexOf('-'); return i > 0 ? k.slice(0, i) : ''; }
+  function stGroups() { var g = {}; model.steel.m.forEach(function (p, i) { var x = stPrefix(p.k); if (x) (g[x] = g[x] || []).push(i); }); return g; }
+  function stFreshPrefix(x) {
+    var g = stGroups(), m = /^(.*?)([0-9]*)$/.exec(x), base = m[1], n = m[2] ? Number(m[2]) + 1 : 2;
+    while (g[base + n] || (base + n).length > 10) { n++; if (n > 999) break; } return base + n;
+  }
+  function stGroupMove(x, o, copy) {                                // o is a model-space offset in metres; a copy gets a new prefix
+    var g = stGroups()[x]; if (!g) return 0;
+    if (!copy) return stMove(g, o, false) || g.length;
+    var np = stFreshPrefix(x), n0 = model.steel.m.length; stMove(g, o, true);
+    for (var i = n0; i < model.steel.m.length; i++) model.steel.m[i].k = np + model.steel.m[g[i - n0]].k.slice(x.length);
+    changed(); return model.steel.m.length - n0;
+  }
+  function stGroupDelete(x) { var g = stGroups()[x]; if (!g) return 0; pushHist(); var set = {}; g.forEach(function (i) { set[i] = 1; }); model.steel.m = model.steel.m.filter(function (p, i) { return !set[i]; }); sel = null; msel = {}; changed(); return g.length; }
+
   // ---------- generators ----------
   var stP = { x: 0, y: 0, dir: 'x', bays: 4, bay: 6000, w: 4000, tiers: '4000, 5500', col: 'H200x200', beam: 'H300x150', strut: 'H200x100', brace: 'L75x75x6', bracing: 'end', mid: 'no', mk: 'PR1',
     fh: 1000, finset: 100, fleg: 'H150x150', fbeam: 'H100x50', fbrace: 'none', pt: 20, pove: 75, pbolt: 'M20', pn: '4' };
@@ -294,7 +310,7 @@
     var E = model.equip[ei]; if (!E) return 0; o = Object.assign({}, stP, o || {});
     var f = stFoot(E, 0), tos = Number(o.fh) / 1000, ins = Number(o.finset) / 1000; if (!f || !(tos > 0.2) || !OWN(SSEC, o.fleg) || !OWN(SSEC, o.fbeam)) return 0;
     var bx = f.box, c = Math.cos(f.th), s = Math.sin(f.th), rot = function (x, z) { return [E.p[0] + x * c + z * s, E.p[2] - x * s + z * c]; };
-    var C = [rot(bx.x0 + ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z1 - ins), rot(bx.x0 + ins, bx.z1 - ins)], zb = stCz(tos, o.fbeam), made = [], roll = ((Math.round(-(E.r || 0) * 90) % 360) + 360) % 360, mk = stTag(ei);
+    var C = [rot(bx.x0 + ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z1 - ins), rot(bx.x0 + ins, bx.z1 - ins)], zb = stCz(tos, o.fbeam), made = [], roll = ((Math.round(-(E.r || 0) * 90) % 360) + 360) % 360, mk = stTag(ei).replace(/[^A-Za-z0-9]+/g, '').slice(0, 10) || 'EQ';
     var newY = st3(tos - bx.y0);
     if (Math.abs(E.p[1] - newY) > 0.001 && eqNozEnds(ei) > 0) { toast('Pipes are tied to the nozzles. Move the equipment to ' + Math.round(tos * 1000) + ' mm first, or take the pipes off.'); return 0; }
     C.forEach(function (q, i) { made.push({ a: [st3(q[0]), 0, st3(q[1])], b: [st3(q[0]), zb, st3(q[1])], s: o.fleg, r: roll, k: mk + '-L' + (i + 1) }); });

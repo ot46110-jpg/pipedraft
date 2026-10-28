@@ -1380,6 +1380,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     made.forEach(function (q) { model.steel.m.push(q); }); changed(); return made.length;
   }
 
+  // ---------- groups: members that share a mark prefix (a rack, a frame) move, copy and delete together ----------
+  function stPrefix(k) { var i = String(k || '').indexOf('-'); return i > 0 ? k.slice(0, i) : ''; }
+  function stGroups() { var g = {}; model.steel.m.forEach(function (p, i) { var x = stPrefix(p.k); if (x) (g[x] = g[x] || []).push(i); }); return g; }
+  function stFreshPrefix(x) {
+    var g = stGroups(), m = /^(.*?)([0-9]*)$/.exec(x), base = m[1], n = m[2] ? Number(m[2]) + 1 : 2;
+    while (g[base + n] || (base + n).length > 10) { n++; if (n > 999) break; } return base + n;
+  }
+  function stGroupMove(x, o, copy) {                                // o is a model-space offset in metres; a copy gets a new prefix
+    var g = stGroups()[x]; if (!g) return 0;
+    if (!copy) return stMove(g, o, false) || g.length;
+    var np = stFreshPrefix(x), n0 = model.steel.m.length; stMove(g, o, true);
+    for (var i = n0; i < model.steel.m.length; i++) model.steel.m[i].k = np + model.steel.m[g[i - n0]].k.slice(x.length);
+    changed(); return model.steel.m.length - n0;
+  }
+  function stGroupDelete(x) { var g = stGroups()[x]; if (!g) return 0; pushHist(); var set = {}; g.forEach(function (i) { set[i] = 1; }); model.steel.m = model.steel.m.filter(function (p, i) { return !set[i]; }); sel = null; msel = {}; changed(); return g.length; }
+
   // ---------- generators ----------
   var stP = { x: 0, y: 0, dir: 'x', bays: 4, bay: 6000, w: 4000, tiers: '4000, 5500', col: 'H200x200', beam: 'H300x150', strut: 'H200x100', brace: 'L75x75x6', bracing: 'end', mid: 'no', mk: 'PR1',
     fh: 1000, finset: 100, fleg: 'H150x150', fbeam: 'H100x50', fbrace: 'none', pt: 20, pove: 75, pbolt: 'M20', pn: '4' };
@@ -1408,7 +1424,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var E = model.equip[ei]; if (!E) return 0; o = Object.assign({}, stP, o || {});
     var f = stFoot(E, 0), tos = Number(o.fh) / 1000, ins = Number(o.finset) / 1000; if (!f || !(tos > 0.2) || !OWN(SSEC, o.fleg) || !OWN(SSEC, o.fbeam)) return 0;
     var bx = f.box, c = Math.cos(f.th), s = Math.sin(f.th), rot = function (x, z) { return [E.p[0] + x * c + z * s, E.p[2] - x * s + z * c]; };
-    var C = [rot(bx.x0 + ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z1 - ins), rot(bx.x0 + ins, bx.z1 - ins)], zb = stCz(tos, o.fbeam), made = [], roll = ((Math.round(-(E.r || 0) * 90) % 360) + 360) % 360, mk = stTag(ei);
+    var C = [rot(bx.x0 + ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z1 - ins), rot(bx.x0 + ins, bx.z1 - ins)], zb = stCz(tos, o.fbeam), made = [], roll = ((Math.round(-(E.r || 0) * 90) % 360) + 360) % 360, mk = stTag(ei).replace(/[^A-Za-z0-9]+/g, '').slice(0, 10) || 'EQ';
     var newY = st3(tos - bx.y0);
     if (Math.abs(E.p[1] - newY) > 0.001 && eqNozEnds(ei) > 0) { toast('Pipes are tied to the nozzles. Move the equipment to ' + Math.round(tos * 1000) + ' mm first, or take the pipes off.'); return 0; }
     C.forEach(function (q, i) { made.push({ a: [st3(q[0]), 0, st3(q[1])], b: [st3(q[0]), zb, st3(q[1])], s: o.fleg, r: roll, k: mk + '-L' + (i + 1) }); });
@@ -1583,6 +1599,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     h += R.map(function (r) { return line(esc(r.name) + ' × ' + r.q, r.L.toFixed(1) + ' m, ' + Math.round(r.kg) + ' kg'); }).join('');
     h += PR.map(function (r) { return line(esc(r.name) + ' × ' + r.q, Math.round(r.kg) + ' kg'); }).join('') + (BR.length ? line('Anchor bolts', BR.map(function (r) { return r.q + ' × ' + r.bolt; }).join(', ')) : '');
     if (T0.n) h += '<p class="dim" style="margin:6px 0;font-size:11.5px">Paint area about ' + T0.paint.toFixed(1) + ' m². Weights come from the section shape at ' + ST_RHO + ' kg/m³, without bolts or welds.</p><div class="row"><button id="st-csv">Export steel list (.csv)</button></div>';
+    var GR = stGroups(), gk = Object.keys(GR);
+    if (gk.length) h += '<h2 style="margin-top:14px">Groups</h2><div class="field">Move or copy a group by, mm<div class="coord"><input type="text" inputmode="decimal" id="stg-x" value="0"><input type="text" inputmode="decimal" id="stg-y" value="0"><input type="text" inputmode="decimal" id="stg-z" value="0"></div></div>' + gk.map(function (x) { return '<div class="row" style="justify-content:space-between"><span>' + esc(x) + ' · ' + GR[x].length + '</span><span><button data-stgm="' + esc(x) + '">Move</button> <button data-stgc="' + esc(x) + '">Copy</button> <button data-stgd="' + esc(x) + '">Delete</button></span></div>'; }).join('') + '<p class="dim" style="margin:6px 0;font-size:11.5px">A group is every member with the same mark before the first dash, such as a rack (PR1) or a frame (E-1 has its own tag). Equipment does not move with its frame.</p>';
     h += '<h2 style="margin-top:14px">Equipment layout</h2>';
     h += model.equip.map(function (e, i) {
       return '<div class="row" style="justify-content:space-between"><button data-steq="' + i + '" style="flex:1;text-align:left">' + esc(stTag(i)) + ' · ' + esc(eqLabel(e.k)) + '<small> ' + Math.round(e.p[0] * 1000) + ', ' + Math.round(e.p[2] * 1000) + '</small></button><input type="text" inputmode="decimal" data-stcl="' + i + '" value="' + Math.round(stClear(e) * 1000) + '" style="width:64px" aria-label="Maintenance clearance, mm" title="Maintenance clearance, mm"><button data-stfr="' + i + '">Frame</button></div>';
@@ -1612,6 +1630,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b) return;
     if (b.getAttribute('data-steq') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'equip', i: Number(b.getAttribute('data-steq')) }; msel = {}; rebuild(); updateUi(); return; }
     if (b.getAttribute('data-stfr') != null) { var nf = stFrame(Number(b.getAttribute('data-stfr'))); if (nf) toast(nf + ' members added'); return; }
+    var gm = b.getAttribute('data-stgm'), gc = b.getAttribute('data-stgc'), gd = b.getAttribute('data-stgd');
+    if (gm != null || gc != null || gd != null) {
+      var go = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }, off = sceneOf([go('stg-x'), go('stg-y'), go('stg-z')]);
+      if (gd != null) { var nd = stGroupDelete(gd); toast(nd + ' members deleted'); } else if (gm != null) { stGroupMove(gm, off, false); toast('Moved'); } else { var nc = stGroupMove(gc, off, true); toast(nc + ' members copied'); }
+      return;
+    }
     var id = b.id;
     if (id === 'st-csv') saveBlob(fname('steel-list', 'csv'), new Blob([stCsv()], { type: 'text/csv' }));
     else if (id === 'stp-go') { var nr = stRack(); if (nr) { toast(nr + ' members added'); fit(); } else toast('Check the rack sizes and levels'); }
@@ -1642,7 +1666,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function stInit() { stBindInsp(); stBind(); }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }
 
   // ---------- state ----------

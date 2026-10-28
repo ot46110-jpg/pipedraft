@@ -45,6 +45,8 @@
     h += R.map(function (r) { return line(esc(r.name) + ' × ' + r.q, r.L.toFixed(1) + ' m, ' + Math.round(r.kg) + ' kg'); }).join('');
     h += PR.map(function (r) { return line(esc(r.name) + ' × ' + r.q, Math.round(r.kg) + ' kg'); }).join('') + (BR.length ? line('Anchor bolts', BR.map(function (r) { return r.q + ' × ' + r.bolt; }).join(', ')) : '');
     if (T0.n) h += '<p class="dim" style="margin:6px 0;font-size:11.5px">Paint area about ' + T0.paint.toFixed(1) + ' m². Weights come from the section shape at ' + ST_RHO + ' kg/m³, without bolts or welds.</p><div class="row"><button id="st-csv">Export steel list (.csv)</button></div>';
+    var GR = stGroups(), gk = Object.keys(GR);
+    if (gk.length) h += '<h2 style="margin-top:14px">Groups</h2><div class="field">Move or copy a group by, mm<div class="coord"><input type="text" inputmode="decimal" id="stg-x" value="0"><input type="text" inputmode="decimal" id="stg-y" value="0"><input type="text" inputmode="decimal" id="stg-z" value="0"></div></div>' + gk.map(function (x) { return '<div class="row" style="justify-content:space-between"><span>' + esc(x) + ' · ' + GR[x].length + '</span><span><button data-stgm="' + esc(x) + '">Move</button> <button data-stgc="' + esc(x) + '">Copy</button> <button data-stgd="' + esc(x) + '">Delete</button></span></div>'; }).join('') + '<p class="dim" style="margin:6px 0;font-size:11.5px">A group is every member with the same mark before the first dash, such as a rack (PR1) or a frame (E-1 has its own tag). Equipment does not move with its frame.</p>';
     h += '<h2 style="margin-top:14px">Equipment layout</h2>';
     h += model.equip.map(function (e, i) {
       return '<div class="row" style="justify-content:space-between"><button data-steq="' + i + '" style="flex:1;text-align:left">' + esc(stTag(i)) + ' · ' + esc(eqLabel(e.k)) + '<small> ' + Math.round(e.p[0] * 1000) + ', ' + Math.round(e.p[2] * 1000) + '</small></button><input type="text" inputmode="decimal" data-stcl="' + i + '" value="' + Math.round(stClear(e) * 1000) + '" style="width:64px" aria-label="Maintenance clearance, mm" title="Maintenance clearance, mm"><button data-stfr="' + i + '">Frame</button></div>';
@@ -74,6 +76,12 @@
     var b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b) return;
     if (b.getAttribute('data-steq') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'equip', i: Number(b.getAttribute('data-steq')) }; msel = {}; rebuild(); updateUi(); return; }
     if (b.getAttribute('data-stfr') != null) { var nf = stFrame(Number(b.getAttribute('data-stfr'))); if (nf) toast(nf + ' members added'); return; }
+    var gm = b.getAttribute('data-stgm'), gc = b.getAttribute('data-stgc'), gd = b.getAttribute('data-stgd');
+    if (gm != null || gc != null || gd != null) {
+      var go = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }, off = sceneOf([go('stg-x'), go('stg-y'), go('stg-z')]);
+      if (gd != null) { var nd = stGroupDelete(gd); toast(nd + ' members deleted'); } else if (gm != null) { stGroupMove(gm, off, false); toast('Moved'); } else { var nc = stGroupMove(gc, off, true); toast(nc + ' members copied'); }
+      return;
+    }
     var id = b.id;
     if (id === 'st-csv') saveBlob(fname('steel-list', 'csv'), new Blob([stCsv()], { type: 'text/csv' }));
     else if (id === 'stp-go') { var nr = stRack(); if (nr) { toast(nr + ' members added'); fit(); } else toast('Check the rack sizes and levels'); }
@@ -104,5 +112,5 @@
   function stInit() { stBindInsp(); stBind(); }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }

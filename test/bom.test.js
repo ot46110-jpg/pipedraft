@@ -2442,6 +2442,18 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the delete tool removes a steel member', PD.model.steel.m.length === 1 && PD.model.steel.m[0].s === 'H300x150');
   els['t-sel'].onclick();
 
+
+  // groups by mark prefix
+  PD.load({ pipes: [] }); ST.rack({ bays: 2, bay: 6000, w: 4000, tiers: '4000', bracing: 'none', mk: 'PR1' });
+  check('a rack is one group of 6 columns, 3 beams and 4 struts', ST.groups().PR1 && ST.groups().PR1.length === 13 && Object.keys(ST.groups()).length === 1);
+  ST.groupMove('PR1', [1, 0, 2], false);
+  check('moving a group shifts all its members', PD.model.steel.m.every(m => m.k.indexOf('PR1-C1') < 0 || (m.a[0] === 1 && m.a[2] === 2)) && PD.warns().length === 0, PD.warns().join('; '));
+  check('copying a group gives it the next prefix', ST.groupMove('PR1', [0, 0, 8], true) === 13 && ST.groups().PR2 && ST.groups().PR2.length === 13 && PD.model.steel.m.some(m => m.k === 'PR2-C1'));
+  check('a second copy is PR3', (ST.groupMove('PR1', [0, 0, 16], true), !!ST.groups().PR3));
+  check('deleting a group removes all its members', ST.groupDelete('PR2') === 13 && !ST.groups().PR2 && PD.model.steel.m.length === 26);
+  els.undo.onclick();
+  check('and undo brings the group back', !!ST.groups().PR2);
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();
