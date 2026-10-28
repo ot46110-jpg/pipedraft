@@ -194,16 +194,53 @@
     stAccWarnings();
   }
 
+  // ---------- visual fit at joints ----------
+  // Members are placed on centrelines. Drawn as they are, two beams that meet at a corner leave a square notch, and a column that ends at a beam's centreline shows its top beside the beam.
+  // So each end is drawn a little longer or shorter: a corner between horizontal members is filled by running each end out to the outer face of the other, and a column that
+  // carries a beam stops at the bottom of that beam. Only the drawing changes; cut lengths, weights and the list stay on centrelines.
+  function stCalcExt() {                                            // [{a, b}] metres per member: positive runs the end out, negative trims it
+    var S = model.steel.m, ext = S.map(function () { return { a: 0, b: 0 }; }); if (S.length < 2 || S.length > 3000) return ext;
+    var info = S.map(function (p) {
+      if (stLen(p) < 0.001) return null; var d = V(p.b).sub(V(p.a)).normalize(), sec = SSEC[p.s];
+      return { d: d, B: stBasis(p), b: sec.b / 2000, h: sec.h / 2000, hor: Math.abs(d.y) < 0.2, ver: Math.abs(d.y) > 0.98 };
+    }), cell = {};
+    S.forEach(function (p, i) { var f = info[i]; if (!f || !f.hor) return; ['a', 'b'].forEach(function (w) { var k = Math.round(p[w][0] / 0.02) + ',' + Math.round(p[w][2] / 0.02); (cell[k] = cell[k] || []).push([i, w]); }); });
+    S.forEach(function (p, i) {
+      var f = info[i]; if (!f) return;
+      if (f.hor) ['a', 'b'].forEach(function (w) {
+        var q = p[w], n = w === 'b' ? f.d : f.d.clone().negate(), cx = Math.round(q[0] / 0.02), cz = Math.round(q[2] / 0.02), best = 0;
+        for (var dx = -1; dx <= 1; dx++) for (var dz = -1; dz <= 1; dz++) (cell[(cx + dx) + ',' + (cz + dz)] || []).forEach(function (c) {
+          var j = c[0]; if (j === i) return; var g = info[j], r = S[j][c[1]];
+          if (Math.hypot(r[0] - q[0], r[2] - q[2]) > 0.015 || Math.abs(r[1] - q[1]) > f.h + g.h || Math.abs(f.d.dot(g.d)) > 0.966) return;
+          var e = Math.abs(n.dot(g.B.x)) * g.b + Math.abs(n.dot(g.B.y)) * g.h; if (e > best) best = e;
+        });
+        ext[i][w] = best;
+      });
+      else if (f.ver) {
+        var w2 = p.b[1] >= p.a[1] ? 'b' : 'a', q2 = p[w2], low = Infinity;
+        S.forEach(function (r, j) {
+          var g = info[j]; if (j === i || !g || !g.hor) return;
+          var ux = r.b[0] - r.a[0], uz = r.b[2] - r.a[2], L2 = ux * ux + uz * uz, t = Math.max(0, Math.min(1, ((q2[0] - r.a[0]) * ux + (q2[2] - r.a[2]) * uz) / L2));
+          if (Math.hypot(r.a[0] + ux * t - q2[0], r.a[2] + uz * t - q2[2]) > 0.015) return;
+          var y = r.a[1] + (r.b[1] - r.a[1]) * t; if (Math.abs(y - q2[1]) > 0.2) return; if (y - g.h < low) low = y - g.h;
+        });
+        if (isFinite(low)) { var tr = q2[1] - low; if (tr > 0.005 && tr < 0.5) ext[i][w2] = -tr; }
+      }
+    });
+    return ext;
+  }
+
   // ---------- 3D ----------
   function stBuild() {
     var S = model.steel, anyCl = model.equip.some(function (e) { return stClear(e) > 0; }); stLs = null;
     if (!S.m.length && !S.pl.length && !S.a.length && !anyCl) return;
     var ls = stLs = stLoose(), mN = mat(0x6f95b0, 0.6), mL = mat(0xe5604d, 0.6), mS = mat(0xffb21f, 0.5), mP = mat(0x59636b, 0.6), edge = new T.LineBasicMaterial({ color: 0x0b1116 });
+    var ext = stCalcExt();
     S.m.forEach(function (p, i) {
       var L = stLen(p); if (L < 0.001) return;
-      var on = (sel && sel.kind === 'steel' && sel.i === i) || msel['steel:' + i], m = new T.Mesh(stGeo(p.s, L), on ? mS : ls[i] ? mL : mN), B = stBasis(p);
-      m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x, B.y, B.z); m.matrix.setPosition(V(p.a)); m.userData = { kind: 'steel', i: i }; world.add(m);
-      var ln = new T.LineSegments(stEdges(p.s, L, m.geometry), edge); ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrix); world.add(ln);
+      var La = Math.max(0.01, L + ext[i].a + ext[i].b), on = (sel && sel.kind === 'steel' && sel.i === i) || msel['steel:' + i], m = new T.Mesh(stGeo(p.s, La), on ? mS : ls[i] ? mL : mN), B = stBasis(p);
+      m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x, B.y, B.z); m.matrix.setPosition(V(p.a).addScaledVector(B.z, -ext[i].a)); m.userData = { kind: 'steel', i: i }; world.add(m);
+      var ln = new T.LineSegments(stEdges(p.s, La, m.geometry), edge); ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrix); world.add(ln);
     });
     stAccBuild();
     S.pl.forEach(function (q) { var m = new T.Mesh(new T.BoxGeometry(q.w, q.t, q.d), mP); m.position.set(q.p[0], q.p[1] + q.t / 2, q.p[2]); world.add(m); });
@@ -435,14 +472,14 @@
     var uv = view === 'plan' ? function (p) { return [p[0], p[2]]; } : view === 'front' ? function (p) { return [p[0], p[1]]; } : function (p) { return [p[2], p[1]]; };
     var ci = view === 'side' ? 0 : 2, inCut = function (q) { return cut == null || view === 'plan' || Math.abs(q[ci] - cut) < 0.06; };
     var items = [], pts = [];
-    var mhull = function (m) {
-      var s = SSEC[m.s], B = stBasis(m), P = [];
-      [m.a, m.b].forEach(function (e) { [-1, 1].forEach(function (a) { [-1, 1].forEach(function (b) { var q = V(e).addScaledVector(B.x, a * s.b / 2000).addScaledVector(B.y, b * s.h / 2000); P.push(uv([q.x, q.y, q.z])); }); }); });
+    var xt = stCalcExt(), mhull = function (m, xi) {
+      var s = SSEC[m.s], B = stBasis(m), P = [], ex = xi != null && xt[xi] ? xt[xi] : { a: 0, b: 0 }, A0 = V(m.a).addScaledVector(B.z, -ex.a), B0 = V(m.b).addScaledVector(B.z, ex.b);
+      [[A0.x, A0.y, A0.z], [B0.x, B0.y, B0.z]].forEach(function (e) { [-1, 1].forEach(function (a) { [-1, 1].forEach(function (b) { var q = V(e).addScaledVector(B.x, a * s.b / 2000).addScaledVector(B.y, b * s.h / 2000); P.push(uv([q.x, q.y, q.z])); }); }); });
       return stHull(P);
     };
     model.steel.m.forEach(function (m, i) {
       if (cut != null && view !== 'plan' && !(inCut(m.a) && inCut(m.b))) return;
-      var hp = mhull(m); hp.forEach(function (q) { pts.push(q); });
+      var hp = mhull(m, i); hp.forEach(function (q) { pts.push(q); });
       items.push({ t: 'm', i: i, poly: hp, mid: uv([(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2, (m.a[2] + m.b[2]) / 2]), L: Math.hypot(uv(m.a)[0] - uv(m.b)[0], uv(m.a)[1] - uv(m.b)[1]) });
     });
     model.steel.a.forEach(function (a) {                            // gratings, handrails, stairs and ladders, drawn from their primitives

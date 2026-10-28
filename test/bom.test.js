@@ -2590,6 +2590,38 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('and the inspector offers a length field', /Length, mm/.test(els.insp.innerHTML) && /Keep fixed/.test(els.insp.innerHTML) && /Move along with it/.test(els.insp.innerHTML));
   els['t-sel'].onclick();
 
+
+  // ---------- beams fit flush at corners and on columns ----------
+  PD.load({ pipes: [] });
+  ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([4, 3, 0], [4, 3, 3], 'H200x100');
+  let ex = ST.ext();
+  check('two beams meeting at a corner each run out to the other\'s outer face', near1(ex[0].b, 0.05, 1e-9) && near1(ex[1].a, 0.075, 1e-9) && ex[0].a === 0 && ex[1].b === 0, JSON.stringify(ex));
+  PD.load({ pipes: [] });
+  ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([4, 3, 0], [8, 3, 0], 'H300x150');
+  check('beams in line are not extended', ST.ext().every(e => e.a === 0 && e.b === 0));
+  PD.load({ pipes: [] });
+  ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([4, 3, 0], [4, 5, 0], 'H200x200');
+  check('a column is not run out into a beam', ST.ext().every(e => e.a === 0 && e.b === 0));
+  PD.load({ pipes: [] });
+  ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([0, 3, 0], [4, 3, 0], 'H300x150');
+  ex = ST.ext();
+  check('a column that carries a beam stops at the bottom of that beam', near1(ex[0].b, -0.15, 1e-9) && ex[0].a === 0, JSON.stringify(ex));
+  check('and the beam stays as it is', ex[1].a === 0 && ex[1].b === 0);
+  PD.load({ pipes: [] });
+  ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([-2, 3, 0], [2, 3, 0], 'H300x150');
+  check('a T beam on top of a column trims it the same way', near1(ST.ext()[0].b, -0.15, 1e-9), JSON.stringify(ST.ext()));
+  PD.load({ pipes: [] });
+  ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([0, 6, 0], [4, 6, 0], 'H300x150');
+  check('a column with no beam on it is left alone', ST.ext()[0].b === 0);
+  PD.load({ pipes: [] }); ST.rack({ bays: 2, bay: 6000, w: 4000, tiers: '4000', bracing: 'none' });
+  ex = ST.ext(); const cols = PD.model.steel.m.map((m, i) => /-C\d/.test(m.k) ? i : -1).filter(i => i >= 0);
+  check('on a rack every column top is trimmed to the underside of the cross beam', cols.every(i => near1(ex[i].b, -0.15, 1e-9)), JSON.stringify(cols.map(i => ex[i])));
+  check('and the beams and struts at the corners run out, those at the middle line too', PD.model.steel.m.some((m, i) => /-S\d/.test(m.k) && ex[i].a > 0) && PD.model.steel.m.some((m, i) => /-B\d/.test(m.k) && (ex[i].a > 0 || ex[i].b > 0)));
+  check('the nominal lengths, weights and cut list do not change', near1(ST.rows().find(r => r.sec === 'H300x150').L, 3 * 4, 1e-9));
+  check('the drawing sheet still draws it', /^<svg/.test(ST.sheet('plan', false)));
+  PD.load({ pipes: [] }); ST.rack({ bays: 2, bay: 6000, w: 4000, tiers: '4000', bracing: 'end' });
+  check('braces and sloping members are not touched', PD.model.steel.m.every((m, i) => !/-X\d/.test(m.k) || (ST.ext()[i].a === 0 && ST.ext()[i].b === 0)));
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();
