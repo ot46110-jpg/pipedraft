@@ -7,7 +7,9 @@
       + '<div class="grid2"><label class="field">Mark<input type="text" id="st-imk" value="' + esc(it.k) + '" maxlength="20" autocomplete="off"></label><label class="field">Roll, degrees<input type="text" inputmode="numeric" id="st-ir" value="' + it.r + '" autocomplete="off"></label></div>'
       + '<div class="field">Start, mm (X · Y · Z up)<div class="coord">' + co('st-ia0', a[0]) + co('st-ia1', a[1]) + co('st-ia2', a[2]) + '</div></div>'
       + '<div class="field">End, mm<div class="coord">' + co('st-ib0', b[0]) + co('st-ib1', b[1]) + co('st-ib2', b[2]) + '</div></div>'
-      + '<p>Length ' + Math.round(L * 1000) + ' mm, ' + (stKgm(s) * L).toFixed(1) + ' kg (' + stKgm(s).toFixed(1) + ' kg/m)</p>'
+      + '<div class="grid2"><label class="field">Length, mm<input type="text" inputmode="decimal" id="st-il" value="' + mmText(L) + '" autocomplete="off"></label><label class="field">Keep fixed<select id="st-ik">' + opts([['start', 'The start'], ['end', 'The end'], ['middle', 'The middle']], stLenKeep) + '</select></label></div>'
+      + '<div class="row"><label class="field">Members meeting an end that moves<select id="st-ic">' + opts([['0', 'Stay where they are'], ['1', 'Move along with it']], stCarry ? '1' : '0') + '</select></label></div>'
+      + '<p>' + (stKgm(s) * L).toFixed(1) + ' kg (' + stKgm(s).toFixed(1) + ' kg/m). Or drag an end handle with the Pencil.</p>'
       + '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="st-ox" value="0"><input type="text" inputmode="decimal" id="st-oy" value="0"><input type="text" inputmode="decimal" id="st-oz" value="0"></div></div>'
       + '<div class="row"><button id="st-imove">Move</button><button id="st-icopy">Copy</button><button id="st-idel">Delete</button></div>';
   }
@@ -37,6 +39,9 @@
     var t = e.target; if (!t || !t.id || t.id.indexOf('st-i') !== 0 || !sel || sel.kind !== 'steel') return;
     var p = model.steel.m[sel.i]; if (!p) return;
     if (t.id === 'st-isec') { pushHist(); p.s = t.value; changed(); }
+    else if (t.id === 'st-ik') { stLenKeep = t.value; }
+    else if (t.id === 'st-ic') { stCarry = t.value === '1'; }
+    else if (t.id === 'st-il') { var ln = parseNum(t.value); if (ln == null || !stSetLen(sel.i, ln, stLenKeep)) { toast('Type a length between 50 and 60000 mm'); showInsp(); } }
     else if (t.id === 'st-imk') { pushHist(); p.k = t.value.slice(0, 20); changed(); }
     else if (t.id === 'st-ir') { var r = parseNum(t.value); if (r == null) { showInsp(); return; } pushHist(); p.r = ((Math.round(r) % 360) + 360) % 360; changed(); }
     else if (/^st-i[ab][012]$/.test(t.id)) {
@@ -173,15 +178,13 @@
     $('st-sec').onchange = function () { stSec = this.value; };
     $('st-h').onchange = function () { var v = parseNum(this.value); if (v != null && v >= 100 && v <= 60000) stColH = v / 1000; this.value = String(Math.round(stColH * 1000)); };
     $('st-h').value = String(Math.round(stColH * 1000));
-    ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).onclick = function () { stAx = a; updateUi(); }; });
-    $('st-fin').onclick = function () { stRun = null; ghostLine.visible = marker.visible = false; updateUi(); };
   })();
   }
   function stInit() { stBindInsp(); stBind(); stBindBar(); }
   var ST_KINDS = { col: 'Column', beam: 'Beam', grating: 'Grating', rail: 'Handrail', stair: 'Stair', ladder: 'Ladder' };
   function stSyncBar() {                                            // which controls of the Steel context bar apply to the kind in use
-    var mem = stk === 'col' || stk === 'beam', run = stk === 'beam' || stk === 'rail', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
-    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = !run; $('st-fin').hidden = !run || !stRun;
+    var mem = stk === 'col' || stk === 'beam', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
+    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col';
     $('st-p1').hidden = !f; $('st-p2').hidden = !f || !f[1]; $('st-dir').hidden = stk !== 'stair' && stk !== 'ladder';
     if (f) {
       var v = { grating: [stD.gw, stD.gd], rail: [stD.rh, 0], stair: [stD.sH, stD.sW], ladder: [stD.lh, stD.lw] }[stk];
@@ -191,8 +194,8 @@
     var dv = stk === 'stair' ? stD.sdir : stD.ldir; $('st-dir').textContent = (stk === 'stair' ? 'Climbs ' : 'Faces ') + ['+X', '+Y', '−X', '−Y'][(dv / 90) % 4];
   }
   function stHint() {
-    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
-      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: stRun ? 'Tap where the handrail ends.' : 'Tap where the handrail starts: a grating corner snaps.',
+    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: cursor ? 'Aim along an axis and tap, as with pipe: up the screen is Z. Type a length and press the arrow. X, Y, Z lock the axis, the dot ends the run.' : 'Tap where the beam starts: the floor, or the end or middle of a member. Start at types a position.',
+      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: cursor ? 'Aim along an axis and tap where the handrail ends, or type a length.' : 'Tap where the handrail starts: a grating corner snaps.',
       stair: 'Tap the foot of the stair. It climbs the way the button says, to the rise below; the top edge is where the platform starts.', ladder: 'Tap the foot of the ladder. A cage is added above about 3 m.' }[stk];
   }
   function stBindBar() {
@@ -202,5 +205,5 @@
   }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return cursor; }, setLen: stSetLen, stretch: stStretch, addTyped: stAddTyped, segUndo: stSegUndo, setCarry: function (v) { stCarry = !!v; }, alignEnds: alignEnds, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }

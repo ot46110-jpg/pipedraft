@@ -2537,6 +2537,59 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('the elevation shows the platform level', /EL \+3000/.test(af));
   check('accessories are in the csv', /"ACC","Grating/.test(ST.csv()) && /Stair/.test(ST.csv()) && /Ladder/.test(ST.csv()));
 
+
+  // ---------- beams drawn and edited like pipe ----------
+  const evp = (type, id, x, y) => ({ type, pointerType: 'pen', pointerId: id, clientX: x, clientY: y });
+  const penDrag = (x0, y0, x1, y1) => { const id = pid_++; L.cv.pointerdown(evp('pointerdown', id, x0, y0)); L.cv.pointermove(evp('pointermove', id, x1, y1)); L.cv.pointerup(evp('pointerup', id, x1, y1)); globalThis.__perf = (globalThis.__perf || 0) + 1000; };
+  const startRun = () => { PD.load({ pipes: [] }); els['t-pipe'].onclick(); els['finish'].onclick(); for (let i = 0; i < 6; i++) els['down'].onclick(); ST.setTool('steel'); ST.setKind('beam'); ST.setSec('H300x150'); globalThis.__perf += 5000; };
+  startRun(); tapOn([0, 0, 0]); tapOn([0, 2.5, 0]);
+  check('aiming straight up draws a vertical member, as with pipe', PD.model.steel.m.length === 1 && near(PD.model.steel.m[0].b, [0, 2.5, 0]), JSON.stringify(PD.model.steel.m));
+  tapOn([3, 2.5, 0]);
+  check('aiming sideways carries on along X from the new end', PD.model.steel.m.length === 2 && near(PD.model.steel.m[1].a, [0, 2.5, 0]) && near(PD.model.steel.m[1].b, [3, 2.5, 0]), JSON.stringify(PD.model.steel.m[1]));
+  els.lenIn.value = '1500'; els.lenAdd.onclick();
+  check('a typed length adds a member along the last aimed direction', PD.model.steel.m.length === 3 && near(PD.model.steel.m[2].b, [4.5, 2.5, 0]), JSON.stringify(PD.model.steel.m[2]));
+  els['segUndo'].onclick();
+  check('the take-back button removes the last member and carries on from its start', PD.model.steel.m.length === 2 && near(ST.run(), [3, 2.5, 0]), JSON.stringify(ST.run()));
+  els['up'].onclick();
+  check('the up arrow adds a 500 mm vertical member', PD.model.steel.m.length === 3 && near(PD.model.steel.m[2].b, [3, 3, 0]), JSON.stringify(PD.model.steel.m[2]));
+  els['finish'].onclick();
+  check('Finish ends the run', ST.run() === null);
+  els.sx.value = '1000'; els.sy.value = '2000'; els.sz.value = '3000'; els.startGo.onclick();
+  check('Start at puts the run at typed coordinates', near(ST.run(), [1, 3, 2]), JSON.stringify(ST.run()));
+  els['ax-x'].onclick(); tapOn([5, 3, 4]);
+  check('locking X draws along X whatever the aim', PD.model.steel.m.length === 4 && PD.model.steel.m[3].b[2] === 2 && PD.model.steel.m[3].b[1] === 3 && PD.model.steel.m[3].b[0] > 3, JSON.stringify(PD.model.steel.m[3]));
+  els['ax-auto'].onclick(); els['finish'].onclick();
+  startRun(); ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([0, 3, 0], [4, 3, 0], 'H300x150');
+  tapOn([0, 3, 0]); tapOn([0, 3, 3]);
+  check('a new beam end lines up with a steel member end already drawn', PD.model.steel.m.length === 3 && Math.abs(PD.model.steel.m[2].b[2] - 3) < 0.011, JSON.stringify(PD.model.steel.m[2]));
+  els['finish'].onclick();
+  ST.setKind('rail');
+  check('the run controls also serve the handrail', ST.hint().indexOf('handrail') >= 0 || ST.hint().indexOf('Tap where the handrail') >= 0);
+
+  // changing the length of a beam
+  PD.load({ pipes: [] }); ST.add([0, 3, 0], [4, 3, 0], 'H300x150');
+  check('a typed length from the start moves the end', ST.setLen(0, 3500, 'start') && near(PD.model.steel.m[0].a, [0, 3, 0]) && near(PD.model.steel.m[0].b, [3.5, 3, 0]), JSON.stringify(PD.model.steel.m[0]));
+  check('from the end moves the start', ST.setLen(0, 2000, 'end') && near(PD.model.steel.m[0].a, [1.5, 3, 0]) && near(PD.model.steel.m[0].b, [3.5, 3, 0]), JSON.stringify(PD.model.steel.m[0]));
+  check('about the middle moves both', ST.setLen(0, 4000, 'middle') && near(PD.model.steel.m[0].a, [0.5, 3, 0]) && near(PD.model.steel.m[0].b, [4.5, 3, 0]), JSON.stringify(PD.model.steel.m[0]));
+  check('a length under 50 mm or past 60 m is refused', ST.setLen(0, 20, 'start') === false && ST.setLen(0, 90000, 'start') === false);
+  check('and so is one that would go under the floor', (PD.load({ pipes: [] }), ST.add([0, 2, 0], [0, 4, 0], 'H200x200'), ST.setLen(0, 5000, 'end') === false) && near(PD.model.steel.m[0].a, [0, 2, 0]));
+  PD.load({ pipes: [] }); ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([4, 0, 0], [4, 3, 0], 'H200x200'); ST.add([4, 3, 0], [8, 3, 0], 'H300x150');
+  ST.setCarry(false); ST.setLen(0, 5000, 'start');
+  check('by default the members that met the moved end stay put', near(PD.model.steel.m[1].a, [4, 0, 0]) && near(PD.model.steel.m[2].a, [4, 3, 0]) && near(PD.model.steel.m[0].b, [5, 3, 0]));
+  PD.load({ pipes: [] }); ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([4, 0, 0], [4, 3, 0], 'H200x200'); ST.add([4, 3, 0], [8, 3, 0], 'H300x150');
+  ST.setCarry(true); ST.setLen(0, 5000, 'start');
+  check('with carry on they move along with it, a column keeping its height and base', near(PD.model.steel.m[1].a, [5, 0, 0]) && near(PD.model.steel.m[1].b, [5, 3, 0]) && near(PD.model.steel.m[2].a, [5, 3, 0]) && near(PD.model.steel.m[2].b, [9, 3, 0]), JSON.stringify(PD.model.steel.m));
+  ST.setCarry(false);
+
+  // end handles
+  PD.load({ pipes: [] }); ST.add([0, 0, 0], [2, 0, 0], 'H200x100'); els['t-sel'].onclick(); globalThis.__perf += 5000; tapOn([1, 0, 0]);
+  check('a selected steel member shows two end handles', PD.pen.sel() && PD.pen.sel().kind === 'steel' && PD.pen.hdl().vis && PD.pen.hdl().n === 2, JSON.stringify(PD.pen.hdl()));
+  const hb = PD.project([2, 0, 0]), hf = PD.project([3.2, 0, 0]);
+  penDrag(hb.x, hb.y, hf.x, hf.y);
+  check('dragging an end handle with the Pencil lengthens the member', Math.abs(PD.model.steel.m[0].b[0] - 3.2) < 0.16 && PD.model.steel.m[0].a[0] === 0, JSON.stringify(PD.model.steel.m[0]));
+  check('and the inspector offers a length field', /Length, mm/.test(els.insp.innerHTML) && /Keep fixed/.test(els.insp.innerHTML) && /Move along with it/.test(els.insp.innerHTML));
+  els['t-sel'].onclick();
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();

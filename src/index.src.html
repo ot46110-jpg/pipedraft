@@ -280,8 +280,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <select id="st-sec" aria-label="Steel section"></select>
         <input type="text" id="st-h" inputmode="decimal" placeholder="Column mm" aria-label="Column height, mm" autocomplete="off">
         <input type="text" id="st-p1" inputmode="decimal" autocomplete="off"><input type="text" id="st-p2" inputmode="decimal" autocomplete="off"><button id="st-dir"></button>
-        <div class="seg" id="st-axis" role="group" aria-label="Beam direction"><button id="sta-auto" aria-pressed="true">Auto</button><button id="sta-free" aria-pressed="false">Free</button><button id="sta-x" aria-pressed="false">X</button><button id="sta-y" aria-pressed="false">Y</button></div>
-        <button id="st-fin">Finish</button>
       </div>
       <div data-for="branch cap reduce" id="fgroup">
         <select id="fsz" aria-label="Size of the fitting"></select>
@@ -2971,9 +2969,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var t = clamp((b * dv.dot(w) - a.dot(w)) / den, -60, 60), len = rs(Math.abs(t));
     if (len < snap * 0.99) return null;
     var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len)), align = false;
-    if (pick.i < 3 && model.pipes.length < 500) {                   // line up with an end already in the drawing (same elevation, same X or Y) when it is within half a grid step
+    if (pick.i < 3 && model.pipes.length + model.steel.m.length < 1500) {                   // line up with an end already in the drawing (same elevation, same X or Y) when it is within half a grid step
       var ai = [0, 2, 1][pick.i], c0 = c.getComponent(ai), bestv = null, bd2 = Math.max(0.011, snap * 0.45);
-      model.pipes.forEach(function (pp) { [pp.a, pp.b].forEach(function (pt) { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } }); });
+      alignEnds().forEach(function (pt) { { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } } });
       if (bestv != null) { q[ai] = bestv; align = true; }
     }
     if (q[1] < lowY() - 1e-9) return null;                                  // nothing below the floor
@@ -3318,6 +3316,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function mmText(m) { return String(+(m * 1000).toFixed(1)); }
   function addTyped() {                                             // an exact length along the aimed or locked axis
     if (!cursor) return;
+    if (tool === 'steel') { stAddTyped(); return; }
     var val = numField('lenIn');
     if (val == null || val === 0) { toast('Type a length in mm, for example 1500 or 1200+300'); return; }
     if (Math.abs(val) < 50) { toast('A pipe shorter than 50 mm is not drawn'); return; }
@@ -3334,6 +3333,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (x == null || y == null || z == null) { toast('Type X, Y and Z in mm'); return; }
     var pt = mm3(V(sceneOf([x / 1000, y / 1000, z / 1000])));
     if (pt[1] < lowY() - 1e-9) { toast('Z cannot be below the floor'); return; }
+    if (tool === 'steel') { cursor = pt; elev = pt[1]; lastAim = null; $('pstart').hidden = true; updateUi(); return; }
     var before = JSON.stringify(model);
     if (splitAt(pt)) { hist.push(before); changed(); }
     cursor = pt; elev = pt[1]; $('pstart').hidden = true; updateUi();
@@ -5313,9 +5313,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // End handles: with a pipe selected, drag either end along the pipe to stretch or shorten it.
   var hdl = new T.Group(); hdl.visible = false; scene.add(hdl); var hdlDrag = null;
+  function hdlTarget() { return tool === 'sel' && sel ? (sel.kind === 'pipe' ? model.pipes[sel.i] : sel.kind === 'steel' ? model.steel.m[sel.i] : null) || null : null; }   // the pipe or steel member whose ends can be dragged
   function updateHdl() {
     while (hdl.children.length) { var c = hdl.children[0]; hdl.remove(c); c.geometry.dispose(); c.material.dispose(); }
-    var p = tool === 'sel' && sel && sel.kind === 'pipe' ? model.pipes[sel.i] : null;
+    var p = hdlTarget();
     if (!p) { hdl.visible = false; return; }
     ['a', 'b'].forEach(function (w) {
       var m = new T.Mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: 0.95 }));
@@ -5324,19 +5325,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     hdl.visible = true;
   }
   function hdlDown(e) {                                             // true when the touch grabbed an end handle
-    if (!hdl.visible || tool !== 'sel' || !sel || sel.kind !== 'pipe' || hdlDrag) return false;
-    var p = model.pipes[sel.i]; if (!p) return false;
+    if (!hdl.visible || hdlDrag) return false;
+    var p = hdlTarget(); if (!p) return false;
     var rad = e.pointerType === 'pen' ? 26 : e.pointerType === 'touch' ? 34 : 18, best = null, bd = rad;
     ['a', 'b'].forEach(function (w) { var s = scrOk(p[w]); if (!s) return; var d = Math.hypot(s.x - e.clientX, s.y - e.clientY); if (d < bd) { bd = d; best = w; } });
     if (!best) return false;
     var other = best === 'a' ? p.b : p.a, A = V(p[best]).sub(V(other)); if (A.length() < 1e-6) return false;
-    hdlDrag = { id: e.pointerId, i: sel.i, w: best, A: A.normalize(), other: other.slice(), np: null };
+    hdlDrag = { id: e.pointerId, kind: sel.kind, i: sel.i, w: best, A: A.normalize(), other: other.slice(), np: null };
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     return true;
   }
   function hdlCancel() { rotDrag = null; hdlDrag = null; dragUi(false); marker.visible = false; ghostLine.visible = false; }
   function hdlMove(e) {
-    var g = hdlDrag; if (tool !== 'sel' || !sel || sel.kind !== 'pipe' || sel.i !== g.i || !model.pipes[g.i]) { hdlCancel(); return; }
+    var g = hdlDrag; if (!hdlTarget() || sel.kind !== g.kind || sel.i !== g.i) { hdlCancel(); return; }
     setRay(e);
     var c = V(g.other), o = ray.ray.origin.clone(), dv = ray.ray.direction.clone(), w = c.clone().sub(o), a = g.A, b = a.dot(dv), den = 1 - b * b;
     if (den < 1e-6) return;
@@ -5352,9 +5353,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function hdlEnd() {
     var g = hdlDrag; hdlCancel();
-    if (!g || !g.np || !model.pipes[g.i]) return;
-    var p = model.pipes[g.i]; if (V(p[g.w]).distanceTo(V(g.np)) < 0.0015) return;
-    stretchPipe(g.i, g.w, g.np);
+    if (!g || !g.np) return;
+    var p = g.kind === 'steel' ? model.steel.m[g.i] : model.pipes[g.i]; if (!p || V(p[g.w]).distanceTo(V(g.np)) < 0.0015) return;
+    if (g.kind === 'steel') stStretch(g.i, g.w, g.np); else stretchPipe(g.i, g.w, g.np);
   }
 
   // Box select with the Pencil: drag on empty space in Select.
@@ -5544,6 +5545,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // Take back the last pipe of the run in progress and carry on from its start.
   function segUndo() {
     if (!cursor) return;
+    if (tool === 'steel') { stSegUndo(); return; }
     var p = model.pipes[model.pipes.length - 1];
     var top = hist.length ? JSON.parse(hist[hist.length - 1]) : null;
     var onlyPipes = top && top.pipes.length < model.pipes.length && ['valves', 'flanges', 'items', 'supports', 'instr', 'equip', 'caps'].every(function (g) { return (top[g] || []).length === model[g].length; });   // the last history step must be that pipe, not a valve or cap put on since
@@ -5788,7 +5790,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var PART_KEYS = Object.keys(PARTS), lastPart = 'branch';
   function partVal(c) { return { custom: ik, steel: stk, valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
   function setPart(c, v) {
-    if (c === 'steel') stk = v; else if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
+    if (c === 'steel') { stk = v; cursor = null; lastAim = null; guideLine.visible = false; } else if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
     updateUi();
   }
   var partOpen = { branch: true };
@@ -5845,7 +5847,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   function setTool(t) {
     egzDrag = null; hdlCancel();
-    tool = t; mA = null; stRun = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
+    if (t === 'steel' || tool === 'steel') { cursor = null; lastAim = null; }
+    tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
     if (!PARTS[t]) partsMin = false;                                // the next time the list opens it is open
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
@@ -5860,6 +5863,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('axis').hidden = !cursor; $('finish').hidden = !cursor; $('segUndo').hidden = !cursor;
     $('startAt').hidden = !!cursor; $('lenIn').hidden = !cursor; $('lenAdd').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
+    { var pgrp = document.querySelectorAll('[data-for="pipe"]')[0]; if (tool === 'steel' && pgrp) pgrp.hidden = !(stk === 'beam' || stk === 'rail'); $('psum').hidden = tool === 'steel'; }   // a beam or handrail run uses the pipe tool's axis lock, typed length, take-back and Start at
     $('finish').disabled = !cursor;
     $('fgroup').hidden = $('fgroup').hidden || (tool === 'cap' && ck !== 'ret');   // direction only matters for a return bend among the end fittings
     $('fsz').hidden = tool === 'cap'; $('bdir').hidden = tool === 'reduce'; $('fsz').value = String(fsz);
@@ -5871,7 +5875,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('ang').value = ang45 ? '1' : '0';
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
-    ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).setAttribute('aria-pressed', String(stAx === a)); });
     stSyncBar();
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
@@ -5982,6 +5985,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function setLevel(z) {                                            // while drawing this adds a vertical pipe to the height, otherwise it sets the working height
     z = Math.max(lowY(), Math.round(z * 1000) / 1000);
+    if (cursor && tool === 'steel') return stVerticalTo(z);
     if (cursor && tool === 'pipe') {
       if (Math.abs(z - cursor[1]) < 0.0005) { elev = z; updateUi(); return true; }
       if (Math.abs(z - cursor[1]) < 0.05) { toast('That is less than 50 mm from here'); return false; }
@@ -6020,6 +6024,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.levels.push({ name: name, z: mm / 1000 }); save(); $('lv-name').value = ''; fillLevels(); toast('Level saved');
   };
   function vertical(sign) {
+    if (cursor && tool === 'steel') { stVerticalTo(cursor[1] + sign * STEP); return; }
     if (cursor) {
       var y = Math.round((cursor[1] + sign * STEP) * 1000) / 1000;
       if (y < 0) return;

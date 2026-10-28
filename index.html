@@ -277,8 +277,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <select id="st-sec" aria-label="Steel section"></select>
         <input type="text" id="st-h" inputmode="decimal" placeholder="Column mm" aria-label="Column height, mm" autocomplete="off">
         <input type="text" id="st-p1" inputmode="decimal" autocomplete="off"><input type="text" id="st-p2" inputmode="decimal" autocomplete="off"><button id="st-dir"></button>
-        <div class="seg" id="st-axis" role="group" aria-label="Beam direction"><button id="sta-auto" aria-pressed="true">Auto</button><button id="sta-free" aria-pressed="false">Free</button><button id="sta-x" aria-pressed="false">X</button><button id="sta-y" aria-pressed="false">Y</button></div>
-        <button id="st-fin">Finish</button>
       </div>
       <div data-for="branch cap reduce" id="fgroup">
         <select id="fsz" aria-label="Size of the fitting"></select>
@@ -1353,7 +1351,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
 
   // ---------- editing ----------
-  var stk = 'col', stSec = 'H200x200', stColH = 4, stAx = 'auto', stRun = null;
+  var stk = 'col', stSec = 'H200x200', stColH = 4, stCarry = false, stLenKeep = 'start';   // a beam or rail run uses the pipe tool's `cursor`, axis lock, typed length and take-back
   function stAdd(a, b, sec, roll, mark) {
     var p = { a: a.map(st3), b: b.map(st3), s: OWN(SSEC, sec) ? sec : stSec, r: roll || 0, k: mark || '' };
     if (Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]) < 0.001) return -1;
@@ -1376,10 +1374,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (best) return best;
     var pp = planePoint(e); return pp ? { p: planePt(pp), kind: 'grid' } : null;
   }
-  function stConstrain(s, sn) {                                     // free ends keep their point; grid points follow the locked or dominant horizontal axis
-    if (sn.kind !== 'grid' || stAx === 'free') return sn.p.slice();
-    var dx = sn.p[0] - s[0], dz = sn.p[2] - s[2], ax = stAx === 'auto' ? (Math.abs(dx) >= Math.abs(dz) ? 'x' : 'y') : stAx;
-    return ax === 'x' ? [sn.p[0], s[1], s[2]] : [s[0], s[1], sn.p[2]];
+  function stRunKind() { return stk === 'beam' || stk === 'rail'; }
+  function stEndRun() { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); }
+  function stRunAdd(a, b) { return stk === 'rail' ? stAccAdd({ t: 'h', a: a, b: b, h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs }) : stAdd(a, b); }
+  function stAimEnd(e, sn) {                                        // the next point of a run: a snapped member end or corner, else aimed along an axis exactly as the pipe tool does
+    if (sn.kind !== 'grid') return sn.p.slice();
+    var am = aim(e); return am ? am.q : null;
   }
   function stTap(e) {
     var sn = stSnap(e); if (!sn) return;
@@ -1387,18 +1387,82 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (stk === 'grating') { if (stAccAdd({ t: 'g', p: sn.p, w: stD.gw, d: stD.gd, r: 0, s: stD.gs }) >= 0) elev = sn.p[1]; return; }
     if (stk === 'stair') { stAccAdd({ t: 's', p: sn.p, dir: stD.sdir, H: stD.sH, w: stD.sW, g: stD.sG, sec: stD.ssec, tread: stD.stread, rail: true, rs: stD.rs }); return; }
     if (stk === 'ladder') { stAccAdd({ t: 'l', p: sn.p, dir: stD.ldir, h: stD.lh, w: stD.lw, cage: stD.lcage }); return; }
-    if (!stRun) { stRun = sn.p.slice(); elev = stRun[1]; updateUi(); return; }
-    var end = stConstrain(stRun, sn), made = stk === 'rail' ? stAccAdd({ t: 'h', a: stRun, b: end, h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs }) : stAdd(stRun, end);
-    if (made >= 0) { stRun = end; elev = end[1]; }
+    if (cursor) {                                                   // a tap on the white start dot ends the run, as with pipe
+      var cs = scr(V(cursor)); if (Math.hypot(e.clientX - cs.x, e.clientY - cs.y) < 28) { stEndRun(); toast('Run ended'); return; }
+    }
+    if (!cursor) { cursor = sn.p.slice(); elev = cursor[1]; lastAim = null; updateUi(); return; }
+    var end = stAimEnd(e, sn); if (!end) return;
+    if (end[1] < lowY() - 1e-9) { toast('That goes below the floor'); return; }
+    if (stRunAdd(cursor, end) >= 0) { cursor = end; elev = end[1]; }
     ghostLine.visible = false; updateUi();
   }
   function stGhost(e) {
     var sn = stSnap(e); if (!sn) { marker.visible = ghostLine.visible = false; return; }
-    var a = (stk === 'beam' || stk === 'rail') && stRun ? stRun : null, p = a ? stConstrain(a, sn) : sn.p.slice();
-    marker.visible = true; marker.position.set(p[0], p[1], p[2]); markSnap(sn.kind !== 'grid', sn.kind === 'mid' ? 'mid' : 'end');
-    var b = a ? p : stk === 'col' ? [p[0], p[1] + stColH, p[2]] : null;
-    if (b) { ghostLine.visible = true; setLine(ghostLine, a || p, b); } else ghostLine.visible = false;
-    setPos('X ' + Math.round(p[0] * 1000) + '  Y ' + Math.round(p[2] * 1000) + '  Z ' + Math.round(p[1] * 1000) + ' mm' + (a ? '  L ' + Math.round(Math.hypot(p[0] - a[0], p[1] - a[1], p[2] - a[2]) * 1000) : ''));
+    var run = stRunKind() && cursor, t = sn.p.slice(), kind = sn.kind === 'grid' ? null : sn.kind;
+    if (run && !kind) { var am = aim(e); t = am ? am.q : null; if (am) { showGuide(am); $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); } }
+    if (!t) { marker.visible = ghostLine.visible = false; return; }
+    marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!kind, kind === 'mid' ? 'mid' : kind ? 'end' : null);
+    var b = run ? t : stk === 'col' ? [t[0], t[1] + stColH, t[2]] : null;
+    if (b) { ghostLine.visible = true; setLine(ghostLine, run ? cursor : t, b); } else ghostLine.visible = false;
+    setPos((kind ? SNAPNAME[kind] + '  ' : '') + 'X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (run ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) : ''));
+  }
+  function stAddTyped() {                                           // an exact length along the aimed or locked axis, from the end of the run
+    if (!cursor) return;
+    var val = numField('lenIn');
+    if (val == null || val === 0) { toast('Type a length in mm, for example 1500 or 1200+300'); return; }
+    if (Math.abs(val) < 50) { toast('A member shorter than 50 mm is not drawn'); return; }
+    var dir = null;
+    if (axisMode !== 'auto') { var ai = { x: 0, y: 1, z: 2 }[axisMode]; dir = AXV[ai].clone(); if (lastAim && lastAim.axis === ai) dir.multiplyScalar(lastAim.sign); }
+    else if (lastAim) dir = lastAim.dir.clone().multiplyScalar(lastAim.sign);
+    if (!dir) { toast('Aim a direction first, or lock X, Y or Z'); return; }
+    var q = mm3(V(cursor).addScaledVector(dir, val / 1000));
+    if (q[1] < lowY() - 1e-9) { toast('That goes below the floor'); return; }
+    if (stRunAdd(cursor, q) >= 0) { cursor = q; elev = q[1]; $('lenIn').value = ''; }
+  }
+  function stSegUndo() {                                            // take back the last member of the run and carry on from its start
+    if (!cursor) return;
+    var list = stk === 'rail' ? model.steel.a : model.steel.m, last = list[list.length - 1], top = hist.length ? JSON.parse(hist[hist.length - 1]) : null;
+    var tl = top && top.steel ? (stk === 'rail' ? top.steel.a : top.steel.m) : null, lb = last && (last.b || null);
+    if (!last || !lb || !tl || tl.length !== list.length - 1 || key(lb) !== key(cursor)) { stEndRun(); toast('Run ended'); return; }
+    var back = last.a.slice();
+    redoStack.push(JSON.stringify(model)); if (redoStack.length > 30) redoStack.shift();
+    model = normalize(JSON.parse(hist.pop()));
+    cursor = back; elev = back[1]; sel = null; msel = {}; save(); rebuild(); updateUi(); toast('Last ' + (stk === 'rail' ? 'handrail' : 'member') + ' taken back');
+  }
+  function stVerticalTo(z) {                                        // the ▲ ▼ buttons and a typed level while a run is going add a vertical member, as they do for pipe
+    if (!cursor) return false; z = Math.max(lowY(), Math.round(z * 1000) / 1000);
+    if (Math.abs(z - cursor[1]) < 0.0005) { elev = z; updateUi(); return true; }
+    if (Math.abs(z - cursor[1]) < 0.05) { toast('That is less than 50 mm from here'); return false; }
+    var q = [cursor[0], z, cursor[2]];
+    if (stRunAdd(cursor, q) >= 0) { cursor = q; elev = z; return true; } return false;
+  }
+  function alignEnds() {                                            // points a new end lines up with: pipe ends, steel member ends, grating corners
+    var out = [];
+    model.pipes.forEach(function (p) { out.push(p.a, p.b); });
+    if (model.steel.m.length < 1500) model.steel.m.forEach(function (m) { out.push(m.a, m.b); });
+    return out;
+  }
+  function stSame(a, b) { return Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[1] - b[1]) < 0.02 && Math.abs(a[2] - b[2]) < 0.02; }
+  function stStretch(i, w, np) {                                    // move end w of member i to np; with stCarry the members that met it there are moved whole by the same amount
+    var p = model.steel.m[i]; if (!p || (np[1] < lowY() - 1e-9)) return -1;
+    var old = p[w].slice(), d = [np[0] - old[0], np[1] - old[1], np[2] - old[2]], moved = 0;
+    pushHist();
+    if (stCarry) model.steel.m.forEach(function (q, j) { if (j !== i && (stSame(q.a, old) || stSame(q.b, old))) { q.a = q.a.map(function (v, k) { return st3(v + d[k]); }); q.b = q.b.map(function (v, k) { return st3(v + d[k]); }); moved++; } });
+    p[w] = np.map(st3); changed(); return moved;
+  }
+  function stSetLen(i, mm, keep) {                                  // a typed length: from the start, from the end, or about the middle
+    var p = model.steel.m[i]; if (!p || !(mm >= 50 && mm <= 60000)) return false;
+    var L = stLen(p); if (L < 1e-6) return false; var u = [(p.b[0] - p.a[0]) / L, (p.b[1] - p.a[1]) / L, (p.b[2] - p.a[2]) / L], n = mm / 1000, add = function (P, k) { return [P[0] + u[0] * k, P[1] + u[1] * k, P[2] + u[2] * k]; };
+    var na = p.a, nb = p.b;
+    if (keep === 'end') na = add(p.b, -n); else if (keep === 'middle') { na = add(p.a, -(n - L) / 2); nb = add(p.b, (n - L) / 2); } else nb = add(p.a, n);
+    if (Math.min(na[1], nb[1]) < lowY() - 1e-9) { toast('That goes below the floor'); return false; }
+    var oa = p.a.slice(), ob = p.b.slice(), da = [na[0] - oa[0], na[1] - oa[1], na[2] - oa[2]], db = [nb[0] - ob[0], nb[1] - ob[1], nb[2] - ob[2]];
+    pushHist();
+    if (stCarry) model.steel.m.forEach(function (q, j) {
+      if (j === i) return; var sa = stSame(q.a, oa) || stSame(q.b, oa), sb = stSame(q.a, ob) || stSame(q.b, ob), dd = sa && (da[0] || da[1] || da[2]) ? da : sb && (db[0] || db[1] || db[2]) ? db : null;
+      if (dd) { q.a = q.a.map(function (v, k) { return st3(v + dd[k]); }); q.b = q.b.map(function (v, k) { return st3(v + dd[k]); }); }
+    });
+    p.a = na.map(st3); p.b = nb.map(st3); changed(); return true;
   }
   function stMove(list, o, copy) {                                  // o is a model-space offset in metres
     pushHist(); var made = [];
@@ -1816,7 +1880,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       + '<div class="grid2"><label class="field">Mark<input type="text" id="st-imk" value="' + esc(it.k) + '" maxlength="20" autocomplete="off"></label><label class="field">Roll, degrees<input type="text" inputmode="numeric" id="st-ir" value="' + it.r + '" autocomplete="off"></label></div>'
       + '<div class="field">Start, mm (X · Y · Z up)<div class="coord">' + co('st-ia0', a[0]) + co('st-ia1', a[1]) + co('st-ia2', a[2]) + '</div></div>'
       + '<div class="field">End, mm<div class="coord">' + co('st-ib0', b[0]) + co('st-ib1', b[1]) + co('st-ib2', b[2]) + '</div></div>'
-      + '<p>Length ' + Math.round(L * 1000) + ' mm, ' + (stKgm(s) * L).toFixed(1) + ' kg (' + stKgm(s).toFixed(1) + ' kg/m)</p>'
+      + '<div class="grid2"><label class="field">Length, mm<input type="text" inputmode="decimal" id="st-il" value="' + mmText(L) + '" autocomplete="off"></label><label class="field">Keep fixed<select id="st-ik">' + opts([['start', 'The start'], ['end', 'The end'], ['middle', 'The middle']], stLenKeep) + '</select></label></div>'
+      + '<div class="row"><label class="field">Members meeting an end that moves<select id="st-ic">' + opts([['0', 'Stay where they are'], ['1', 'Move along with it']], stCarry ? '1' : '0') + '</select></label></div>'
+      + '<p>' + (stKgm(s) * L).toFixed(1) + ' kg (' + stKgm(s).toFixed(1) + ' kg/m). Or drag an end handle with the Pencil.</p>'
       + '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="st-ox" value="0"><input type="text" inputmode="decimal" id="st-oy" value="0"><input type="text" inputmode="decimal" id="st-oz" value="0"></div></div>'
       + '<div class="row"><button id="st-imove">Move</button><button id="st-icopy">Copy</button><button id="st-idel">Delete</button></div>';
   }
@@ -1846,6 +1912,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var t = e.target; if (!t || !t.id || t.id.indexOf('st-i') !== 0 || !sel || sel.kind !== 'steel') return;
     var p = model.steel.m[sel.i]; if (!p) return;
     if (t.id === 'st-isec') { pushHist(); p.s = t.value; changed(); }
+    else if (t.id === 'st-ik') { stLenKeep = t.value; }
+    else if (t.id === 'st-ic') { stCarry = t.value === '1'; }
+    else if (t.id === 'st-il') { var ln = parseNum(t.value); if (ln == null || !stSetLen(sel.i, ln, stLenKeep)) { toast('Type a length between 50 and 60000 mm'); showInsp(); } }
     else if (t.id === 'st-imk') { pushHist(); p.k = t.value.slice(0, 20); changed(); }
     else if (t.id === 'st-ir') { var r = parseNum(t.value); if (r == null) { showInsp(); return; } pushHist(); p.r = ((Math.round(r) % 360) + 360) % 360; changed(); }
     else if (/^st-i[ab][012]$/.test(t.id)) {
@@ -1982,15 +2051,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('st-sec').onchange = function () { stSec = this.value; };
     $('st-h').onchange = function () { var v = parseNum(this.value); if (v != null && v >= 100 && v <= 60000) stColH = v / 1000; this.value = String(Math.round(stColH * 1000)); };
     $('st-h').value = String(Math.round(stColH * 1000));
-    ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).onclick = function () { stAx = a; updateUi(); }; });
-    $('st-fin').onclick = function () { stRun = null; ghostLine.visible = marker.visible = false; updateUi(); };
   })();
   }
   function stInit() { stBindInsp(); stBind(); stBindBar(); }
   var ST_KINDS = { col: 'Column', beam: 'Beam', grating: 'Grating', rail: 'Handrail', stair: 'Stair', ladder: 'Ladder' };
   function stSyncBar() {                                            // which controls of the Steel context bar apply to the kind in use
-    var mem = stk === 'col' || stk === 'beam', run = stk === 'beam' || stk === 'rail', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
-    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = !run; $('st-fin').hidden = !run || !stRun;
+    var mem = stk === 'col' || stk === 'beam', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
+    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col';
     $('st-p1').hidden = !f; $('st-p2').hidden = !f || !f[1]; $('st-dir').hidden = stk !== 'stair' && stk !== 'ladder';
     if (f) {
       var v = { grating: [stD.gw, stD.gd], rail: [stD.rh, 0], stair: [stD.sH, stD.sW], ladder: [stD.lh, stD.lw] }[stk];
@@ -2000,8 +2067,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var dv = stk === 'stair' ? stD.sdir : stD.ldir; $('st-dir').textContent = (stk === 'stair' ? 'Climbs ' : 'Faces ') + ['+X', '+Y', '−X', '−Y'][(dv / 90) % 4];
   }
   function stHint() {
-    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
-      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: stRun ? 'Tap where the handrail ends.' : 'Tap where the handrail starts: a grating corner snaps.',
+    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: cursor ? 'Aim along an axis and tap, as with pipe: up the screen is Z. Type a length and press the arrow. X, Y, Z lock the axis, the dot ends the run.' : 'Tap where the beam starts: the floor, or the end or middle of a member. Start at types a position.',
+      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: cursor ? 'Aim along an axis and tap where the handrail ends, or type a length.' : 'Tap where the handrail starts: a grating corner snaps.',
       stair: 'Tap the foot of the stair. It climbs the way the button says, to the rise below; the top edge is where the platform starts.', ladder: 'Tap the foot of the ladder. A cage is added above about 3 m.' }[stk];
   }
   function stBindBar() {
@@ -2011,7 +2078,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return cursor; }, setLen: stSetLen, stretch: stStretch, addTyped: stAddTyped, segUndo: stSegUndo, setCarry: function (v) { stCarry = !!v; }, alignEnds: alignEnds, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }
 
   // ---------- state ----------
@@ -3874,9 +3941,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var t = clamp((b * dv.dot(w) - a.dot(w)) / den, -60, 60), len = rs(Math.abs(t));
     if (len < snap * 0.99) return null;
     var sg = t < 0 ? -1 : 1, q = mm3(c.clone().addScaledVector(a, sg * len)), align = false;
-    if (pick.i < 3 && model.pipes.length < 500) {                   // line up with an end already in the drawing (same elevation, same X or Y) when it is within half a grid step
+    if (pick.i < 3 && model.pipes.length + model.steel.m.length < 1500) {                   // line up with an end already in the drawing (same elevation, same X or Y) when it is within half a grid step
       var ai = [0, 2, 1][pick.i], c0 = c.getComponent(ai), bestv = null, bd2 = Math.max(0.011, snap * 0.45);
-      model.pipes.forEach(function (pp) { [pp.a, pp.b].forEach(function (pt) { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } }); });
+      alignEnds().forEach(function (pt) { { var dd = Math.abs(pt[ai] - q[ai]); if (dd > 0.0005 && dd < bd2 && (pt[ai] - c0) * sg > snap * 0.5 && !(ai === 1 && pt[ai] < 0)) { bd2 = dd; bestv = pt[ai]; } } });
       if (bestv != null) { q[ai] = bestv; align = true; }
     }
     if (q[1] < lowY() - 1e-9) return null;                                  // nothing below the floor
@@ -4221,6 +4288,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function mmText(m) { return String(+(m * 1000).toFixed(1)); }
   function addTyped() {                                             // an exact length along the aimed or locked axis
     if (!cursor) return;
+    if (tool === 'steel') { stAddTyped(); return; }
     var val = numField('lenIn');
     if (val == null || val === 0) { toast('Type a length in mm, for example 1500 or 1200+300'); return; }
     if (Math.abs(val) < 50) { toast('A pipe shorter than 50 mm is not drawn'); return; }
@@ -4237,6 +4305,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (x == null || y == null || z == null) { toast('Type X, Y and Z in mm'); return; }
     var pt = mm3(V(sceneOf([x / 1000, y / 1000, z / 1000])));
     if (pt[1] < lowY() - 1e-9) { toast('Z cannot be below the floor'); return; }
+    if (tool === 'steel') { cursor = pt; elev = pt[1]; lastAim = null; $('pstart').hidden = true; updateUi(); return; }
     var before = JSON.stringify(model);
     if (splitAt(pt)) { hist.push(before); changed(); }
     cursor = pt; elev = pt[1]; $('pstart').hidden = true; updateUi();
@@ -6216,9 +6285,10 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // End handles: with a pipe selected, drag either end along the pipe to stretch or shorten it.
   var hdl = new T.Group(); hdl.visible = false; scene.add(hdl); var hdlDrag = null;
+  function hdlTarget() { return tool === 'sel' && sel ? (sel.kind === 'pipe' ? model.pipes[sel.i] : sel.kind === 'steel' ? model.steel.m[sel.i] : null) || null : null; }   // the pipe or steel member whose ends can be dragged
   function updateHdl() {
     while (hdl.children.length) { var c = hdl.children[0]; hdl.remove(c); c.geometry.dispose(); c.material.dispose(); }
-    var p = tool === 'sel' && sel && sel.kind === 'pipe' ? model.pipes[sel.i] : null;
+    var p = hdlTarget();
     if (!p) { hdl.visible = false; return; }
     ['a', 'b'].forEach(function (w) {
       var m = new T.Mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: 0xffb21f, depthTest: false, transparent: true, opacity: 0.95 }));
@@ -6227,19 +6297,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     hdl.visible = true;
   }
   function hdlDown(e) {                                             // true when the touch grabbed an end handle
-    if (!hdl.visible || tool !== 'sel' || !sel || sel.kind !== 'pipe' || hdlDrag) return false;
-    var p = model.pipes[sel.i]; if (!p) return false;
+    if (!hdl.visible || hdlDrag) return false;
+    var p = hdlTarget(); if (!p) return false;
     var rad = e.pointerType === 'pen' ? 26 : e.pointerType === 'touch' ? 34 : 18, best = null, bd = rad;
     ['a', 'b'].forEach(function (w) { var s = scrOk(p[w]); if (!s) return; var d = Math.hypot(s.x - e.clientX, s.y - e.clientY); if (d < bd) { bd = d; best = w; } });
     if (!best) return false;
     var other = best === 'a' ? p.b : p.a, A = V(p[best]).sub(V(other)); if (A.length() < 1e-6) return false;
-    hdlDrag = { id: e.pointerId, i: sel.i, w: best, A: A.normalize(), other: other.slice(), np: null };
+    hdlDrag = { id: e.pointerId, kind: sel.kind, i: sel.i, w: best, A: A.normalize(), other: other.slice(), np: null };
     try { cv.setPointerCapture(e.pointerId); } catch (x) {}
     return true;
   }
   function hdlCancel() { rotDrag = null; hdlDrag = null; dragUi(false); marker.visible = false; ghostLine.visible = false; }
   function hdlMove(e) {
-    var g = hdlDrag; if (tool !== 'sel' || !sel || sel.kind !== 'pipe' || sel.i !== g.i || !model.pipes[g.i]) { hdlCancel(); return; }
+    var g = hdlDrag; if (!hdlTarget() || sel.kind !== g.kind || sel.i !== g.i) { hdlCancel(); return; }
     setRay(e);
     var c = V(g.other), o = ray.ray.origin.clone(), dv = ray.ray.direction.clone(), w = c.clone().sub(o), a = g.A, b = a.dot(dv), den = 1 - b * b;
     if (den < 1e-6) return;
@@ -6255,9 +6325,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function hdlEnd() {
     var g = hdlDrag; hdlCancel();
-    if (!g || !g.np || !model.pipes[g.i]) return;
-    var p = model.pipes[g.i]; if (V(p[g.w]).distanceTo(V(g.np)) < 0.0015) return;
-    stretchPipe(g.i, g.w, g.np);
+    if (!g || !g.np) return;
+    var p = g.kind === 'steel' ? model.steel.m[g.i] : model.pipes[g.i]; if (!p || V(p[g.w]).distanceTo(V(g.np)) < 0.0015) return;
+    if (g.kind === 'steel') stStretch(g.i, g.w, g.np); else stretchPipe(g.i, g.w, g.np);
   }
 
   // Box select with the Pencil: drag on empty space in Select.
@@ -6447,6 +6517,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   // Take back the last pipe of the run in progress and carry on from its start.
   function segUndo() {
     if (!cursor) return;
+    if (tool === 'steel') { stSegUndo(); return; }
     var p = model.pipes[model.pipes.length - 1];
     var top = hist.length ? JSON.parse(hist[hist.length - 1]) : null;
     var onlyPipes = top && top.pipes.length < model.pipes.length && ['valves', 'flanges', 'items', 'supports', 'instr', 'equip', 'caps'].every(function (g) { return (top[g] || []).length === model[g].length; });   // the last history step must be that pipe, not a valve or cap put on since
@@ -6691,7 +6762,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var PART_KEYS = Object.keys(PARTS), lastPart = 'branch';
   function partVal(c) { return { custom: ik, steel: stk, valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
   function setPart(c, v) {
-    if (c === 'steel') stk = v; else if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
+    if (c === 'steel') { stk = v; cursor = null; lastAim = null; guideLine.visible = false; } else if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
     updateUi();
   }
   var partOpen = { branch: true };
@@ -6748,7 +6819,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   function setTool(t) {
     egzDrag = null; hdlCancel();
-    tool = t; mA = null; stRun = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
+    if (t === 'steel' || tool === 'steel') { cursor = null; lastAim = null; }
+    tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
     if (!PARTS[t]) partsMin = false;                                // the next time the list opens it is open
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
@@ -6763,6 +6835,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('axis').hidden = !cursor; $('finish').hidden = !cursor; $('segUndo').hidden = !cursor;
     $('startAt').hidden = !!cursor; $('lenIn').hidden = !cursor; $('lenAdd').hidden = !cursor;          // these only matter while a run is going
     document.querySelectorAll('[data-for]').forEach(function (g) { g.hidden = g.getAttribute('data-for').split(' ').indexOf(tool) < 0; });
+    { var pgrp = document.querySelectorAll('[data-for="pipe"]')[0]; if (tool === 'steel' && pgrp) pgrp.hidden = !(stk === 'beam' || stk === 'rail'); $('psum').hidden = tool === 'steel'; }   // a beam or handrail run uses the pipe tool's axis lock, typed length, take-back and Start at
     $('finish').disabled = !cursor;
     $('fgroup').hidden = $('fgroup').hidden || (tool === 'cap' && ck !== 'ret');   // direction only matters for a return bend among the end fittings
     $('fsz').hidden = tool === 'cap'; $('bdir').hidden = tool === 'reduce'; $('fsz').value = String(fsz);
@@ -6774,7 +6847,6 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('ang').value = ang45 ? '1' : '0';
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
-    ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).setAttribute('aria-pressed', String(stAx === a)); });
     stSyncBar();
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
@@ -6885,6 +6957,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function setLevel(z) {                                            // while drawing this adds a vertical pipe to the height, otherwise it sets the working height
     z = Math.max(lowY(), Math.round(z * 1000) / 1000);
+    if (cursor && tool === 'steel') return stVerticalTo(z);
     if (cursor && tool === 'pipe') {
       if (Math.abs(z - cursor[1]) < 0.0005) { elev = z; updateUi(); return true; }
       if (Math.abs(z - cursor[1]) < 0.05) { toast('That is less than 50 mm from here'); return false; }
@@ -6923,6 +6996,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.levels.push({ name: name, z: mm / 1000 }); save(); $('lv-name').value = ''; fillLevels(); toast('Level saved');
   };
   function vertical(sign) {
+    if (cursor && tool === 'steel') { stVerticalTo(cursor[1] + sign * STEP); return; }
     if (cursor) {
       var y = Math.round((cursor[1] + sign * STEP) * 1000) / 1000;
       if (y < 0) return;

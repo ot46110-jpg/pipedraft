@@ -238,7 +238,7 @@
   }
 
   // ---------- editing ----------
-  var stk = 'col', stSec = 'H200x200', stColH = 4, stAx = 'auto', stRun = null;
+  var stk = 'col', stSec = 'H200x200', stColH = 4, stCarry = false, stLenKeep = 'start';   // a beam or rail run uses the pipe tool's `cursor`, axis lock, typed length and take-back
   function stAdd(a, b, sec, roll, mark) {
     var p = { a: a.map(st3), b: b.map(st3), s: OWN(SSEC, sec) ? sec : stSec, r: roll || 0, k: mark || '' };
     if (Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]) < 0.001) return -1;
@@ -261,10 +261,12 @@
     if (best) return best;
     var pp = planePoint(e); return pp ? { p: planePt(pp), kind: 'grid' } : null;
   }
-  function stConstrain(s, sn) {                                     // free ends keep their point; grid points follow the locked or dominant horizontal axis
-    if (sn.kind !== 'grid' || stAx === 'free') return sn.p.slice();
-    var dx = sn.p[0] - s[0], dz = sn.p[2] - s[2], ax = stAx === 'auto' ? (Math.abs(dx) >= Math.abs(dz) ? 'x' : 'y') : stAx;
-    return ax === 'x' ? [sn.p[0], s[1], s[2]] : [s[0], s[1], sn.p[2]];
+  function stRunKind() { return stk === 'beam' || stk === 'rail'; }
+  function stEndRun() { cursor = null; lastAim = null; guideLine.visible = false; ghostLine.visible = marker.visible = false; updateUi(); }
+  function stRunAdd(a, b) { return stk === 'rail' ? stAccAdd({ t: 'h', a: a, b: b, h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs }) : stAdd(a, b); }
+  function stAimEnd(e, sn) {                                        // the next point of a run: a snapped member end or corner, else aimed along an axis exactly as the pipe tool does
+    if (sn.kind !== 'grid') return sn.p.slice();
+    var am = aim(e); return am ? am.q : null;
   }
   function stTap(e) {
     var sn = stSnap(e); if (!sn) return;
@@ -272,18 +274,82 @@
     if (stk === 'grating') { if (stAccAdd({ t: 'g', p: sn.p, w: stD.gw, d: stD.gd, r: 0, s: stD.gs }) >= 0) elev = sn.p[1]; return; }
     if (stk === 'stair') { stAccAdd({ t: 's', p: sn.p, dir: stD.sdir, H: stD.sH, w: stD.sW, g: stD.sG, sec: stD.ssec, tread: stD.stread, rail: true, rs: stD.rs }); return; }
     if (stk === 'ladder') { stAccAdd({ t: 'l', p: sn.p, dir: stD.ldir, h: stD.lh, w: stD.lw, cage: stD.lcage }); return; }
-    if (!stRun) { stRun = sn.p.slice(); elev = stRun[1]; updateUi(); return; }
-    var end = stConstrain(stRun, sn), made = stk === 'rail' ? stAccAdd({ t: 'h', a: stRun, b: end, h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs }) : stAdd(stRun, end);
-    if (made >= 0) { stRun = end; elev = end[1]; }
+    if (cursor) {                                                   // a tap on the white start dot ends the run, as with pipe
+      var cs = scr(V(cursor)); if (Math.hypot(e.clientX - cs.x, e.clientY - cs.y) < 28) { stEndRun(); toast('Run ended'); return; }
+    }
+    if (!cursor) { cursor = sn.p.slice(); elev = cursor[1]; lastAim = null; updateUi(); return; }
+    var end = stAimEnd(e, sn); if (!end) return;
+    if (end[1] < lowY() - 1e-9) { toast('That goes below the floor'); return; }
+    if (stRunAdd(cursor, end) >= 0) { cursor = end; elev = end[1]; }
     ghostLine.visible = false; updateUi();
   }
   function stGhost(e) {
     var sn = stSnap(e); if (!sn) { marker.visible = ghostLine.visible = false; return; }
-    var a = (stk === 'beam' || stk === 'rail') && stRun ? stRun : null, p = a ? stConstrain(a, sn) : sn.p.slice();
-    marker.visible = true; marker.position.set(p[0], p[1], p[2]); markSnap(sn.kind !== 'grid', sn.kind === 'mid' ? 'mid' : 'end');
-    var b = a ? p : stk === 'col' ? [p[0], p[1] + stColH, p[2]] : null;
-    if (b) { ghostLine.visible = true; setLine(ghostLine, a || p, b); } else ghostLine.visible = false;
-    setPos('X ' + Math.round(p[0] * 1000) + '  Y ' + Math.round(p[2] * 1000) + '  Z ' + Math.round(p[1] * 1000) + ' mm' + (a ? '  L ' + Math.round(Math.hypot(p[0] - a[0], p[1] - a[1], p[2] - a[2]) * 1000) : ''));
+    var run = stRunKind() && cursor, t = sn.p.slice(), kind = sn.kind === 'grid' ? null : sn.kind;
+    if (run && !kind) { var am = aim(e); t = am ? am.q : null; if (am) { showGuide(am); $('lenIn').placeholder = String(Math.round(V(am.q).distanceTo(V(cursor)) * 1000)); } }
+    if (!t) { marker.visible = ghostLine.visible = false; return; }
+    marker.visible = true; marker.position.set(t[0], t[1], t[2]); markSnap(!!kind, kind === 'mid' ? 'mid' : kind ? 'end' : null);
+    var b = run ? t : stk === 'col' ? [t[0], t[1] + stColH, t[2]] : null;
+    if (b) { ghostLine.visible = true; setLine(ghostLine, run ? cursor : t, b); } else ghostLine.visible = false;
+    setPos((kind ? SNAPNAME[kind] + '  ' : '') + 'X ' + Math.round(t[0] * 1000) + '  Y ' + Math.round(t[2] * 1000) + '  Z ' + Math.round(t[1] * 1000) + ' mm' + (run ? '  L ' + Math.round(V(t).distanceTo(V(cursor)) * 1000) : ''));
+  }
+  function stAddTyped() {                                           // an exact length along the aimed or locked axis, from the end of the run
+    if (!cursor) return;
+    var val = numField('lenIn');
+    if (val == null || val === 0) { toast('Type a length in mm, for example 1500 or 1200+300'); return; }
+    if (Math.abs(val) < 50) { toast('A member shorter than 50 mm is not drawn'); return; }
+    var dir = null;
+    if (axisMode !== 'auto') { var ai = { x: 0, y: 1, z: 2 }[axisMode]; dir = AXV[ai].clone(); if (lastAim && lastAim.axis === ai) dir.multiplyScalar(lastAim.sign); }
+    else if (lastAim) dir = lastAim.dir.clone().multiplyScalar(lastAim.sign);
+    if (!dir) { toast('Aim a direction first, or lock X, Y or Z'); return; }
+    var q = mm3(V(cursor).addScaledVector(dir, val / 1000));
+    if (q[1] < lowY() - 1e-9) { toast('That goes below the floor'); return; }
+    if (stRunAdd(cursor, q) >= 0) { cursor = q; elev = q[1]; $('lenIn').value = ''; }
+  }
+  function stSegUndo() {                                            // take back the last member of the run and carry on from its start
+    if (!cursor) return;
+    var list = stk === 'rail' ? model.steel.a : model.steel.m, last = list[list.length - 1], top = hist.length ? JSON.parse(hist[hist.length - 1]) : null;
+    var tl = top && top.steel ? (stk === 'rail' ? top.steel.a : top.steel.m) : null, lb = last && (last.b || null);
+    if (!last || !lb || !tl || tl.length !== list.length - 1 || key(lb) !== key(cursor)) { stEndRun(); toast('Run ended'); return; }
+    var back = last.a.slice();
+    redoStack.push(JSON.stringify(model)); if (redoStack.length > 30) redoStack.shift();
+    model = normalize(JSON.parse(hist.pop()));
+    cursor = back; elev = back[1]; sel = null; msel = {}; save(); rebuild(); updateUi(); toast('Last ' + (stk === 'rail' ? 'handrail' : 'member') + ' taken back');
+  }
+  function stVerticalTo(z) {                                        // the ▲ ▼ buttons and a typed level while a run is going add a vertical member, as they do for pipe
+    if (!cursor) return false; z = Math.max(lowY(), Math.round(z * 1000) / 1000);
+    if (Math.abs(z - cursor[1]) < 0.0005) { elev = z; updateUi(); return true; }
+    if (Math.abs(z - cursor[1]) < 0.05) { toast('That is less than 50 mm from here'); return false; }
+    var q = [cursor[0], z, cursor[2]];
+    if (stRunAdd(cursor, q) >= 0) { cursor = q; elev = z; return true; } return false;
+  }
+  function alignEnds() {                                            // points a new end lines up with: pipe ends, steel member ends, grating corners
+    var out = [];
+    model.pipes.forEach(function (p) { out.push(p.a, p.b); });
+    if (model.steel.m.length < 1500) model.steel.m.forEach(function (m) { out.push(m.a, m.b); });
+    return out;
+  }
+  function stSame(a, b) { return Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[1] - b[1]) < 0.02 && Math.abs(a[2] - b[2]) < 0.02; }
+  function stStretch(i, w, np) {                                    // move end w of member i to np; with stCarry the members that met it there are moved whole by the same amount
+    var p = model.steel.m[i]; if (!p || (np[1] < lowY() - 1e-9)) return -1;
+    var old = p[w].slice(), d = [np[0] - old[0], np[1] - old[1], np[2] - old[2]], moved = 0;
+    pushHist();
+    if (stCarry) model.steel.m.forEach(function (q, j) { if (j !== i && (stSame(q.a, old) || stSame(q.b, old))) { q.a = q.a.map(function (v, k) { return st3(v + d[k]); }); q.b = q.b.map(function (v, k) { return st3(v + d[k]); }); moved++; } });
+    p[w] = np.map(st3); changed(); return moved;
+  }
+  function stSetLen(i, mm, keep) {                                  // a typed length: from the start, from the end, or about the middle
+    var p = model.steel.m[i]; if (!p || !(mm >= 50 && mm <= 60000)) return false;
+    var L = stLen(p); if (L < 1e-6) return false; var u = [(p.b[0] - p.a[0]) / L, (p.b[1] - p.a[1]) / L, (p.b[2] - p.a[2]) / L], n = mm / 1000, add = function (P, k) { return [P[0] + u[0] * k, P[1] + u[1] * k, P[2] + u[2] * k]; };
+    var na = p.a, nb = p.b;
+    if (keep === 'end') na = add(p.b, -n); else if (keep === 'middle') { na = add(p.a, -(n - L) / 2); nb = add(p.b, (n - L) / 2); } else nb = add(p.a, n);
+    if (Math.min(na[1], nb[1]) < lowY() - 1e-9) { toast('That goes below the floor'); return false; }
+    var oa = p.a.slice(), ob = p.b.slice(), da = [na[0] - oa[0], na[1] - oa[1], na[2] - oa[2]], db = [nb[0] - ob[0], nb[1] - ob[1], nb[2] - ob[2]];
+    pushHist();
+    if (stCarry) model.steel.m.forEach(function (q, j) {
+      if (j === i) return; var sa = stSame(q.a, oa) || stSame(q.b, oa), sb = stSame(q.a, ob) || stSame(q.b, ob), dd = sa && (da[0] || da[1] || da[2]) ? da : sb && (db[0] || db[1] || db[2]) ? db : null;
+      if (dd) { q.a = q.a.map(function (v, k) { return st3(v + dd[k]); }); q.b = q.b.map(function (v, k) { return st3(v + dd[k]); }); }
+    });
+    p.a = na.map(st3); p.b = nb.map(st3); changed(); return true;
   }
   function stMove(list, o, copy) {                                  // o is a model-space offset in metres
     pushHist(); var made = [];
