@@ -276,6 +276,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         </div>
       </div>
       <div data-for="equip"><button id="rot">Rotate 90°</button></div>
+      <div data-for="steel">
+        <select id="st-sec" aria-label="Steel section"></select>
+        <input type="text" id="st-h" inputmode="decimal" placeholder="Column mm" aria-label="Column height, mm" autocomplete="off">
+        <div class="seg" id="st-axis" role="group" aria-label="Beam direction"><button id="sta-auto" aria-pressed="true">Auto</button><button id="sta-free" aria-pressed="false">Free</button><button id="sta-x" aria-pressed="false">X</button><button id="sta-y" aria-pressed="false">Y</button></div>
+        <button id="st-fin">Finish</button>
+      </div>
       <div data-for="branch cap reduce" id="fgroup">
         <select id="fsz" aria-label="Size of the fitting"></select>
         <div class="seg" id="bdir" role="group" aria-label="Direction from the pipe">
@@ -327,6 +333,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <div class="row"><label class="field">Small bore ends, NPS 1-1/2 and below<select id="sp-small"><option value="SW">Socket weld, 3000#</option><option value="THD">Threaded, 3000#</option><option value="BW">Butt weld</option></select></label></div>
       <p class="empty" style="margin:0;font-size:12px">Applies to every joint. Select a fitting to change just that one.</p>
       </div>
+      <div id="steel" class="sheet" hidden aria-label="Steel"></div>
       <aside id="bom" class="sheet" aria-label="Bill of materials" hidden></aside>
     </div>
     <div id="more" class="sheet" hidden>
@@ -338,6 +345,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="fabBtn">Cut list and welds</button>
         <button id="llBtn">Line list</button>
         <button id="legendBtn">Piping symbols</button>
+        <button id="stDrawBtn">Steel drawing</button>
       </details>
       <details name="menu">
         <summary>Project</summary>
@@ -346,6 +354,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="dims" aria-pressed="false">Show pipe lengths</button>
         <button id="flowBtn" aria-pressed="true">Show flow arrows</button>
         <button id="matColBtn" aria-pressed="false">Colour pipes by material</button>
+        <button id="stBtn">Steel: rack, frames, plates</button>
         <button id="cuBtn">Custom parts</button>
         <button id="helpBtn">How to draw</button>
       </details>
@@ -360,6 +369,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         <button id="f-bomln">Export BOM by line (.csv)</button>
         <button id="f-fab">Export cut list and welds (.csv)</button>
         <button id="f-ll">Export line list (.csv)</button>
+        <button id="f-steel">Export steel list (.csv)</button>
         <button id="f-dxf">Export centrelines (.dxf)</button>
         <button id="f-png">Save image (.png)</button>
         <button id="f-clear">Clear everything</button>
@@ -428,7 +438,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list. On the isometric sheet, Options, Move labels lets you drag balloons, weld numbers, tags, elevations and dimension lines; the sheet remembers them, Undo label move and Reset labels put them back. Options also has Stretch crowded pipes (short pipes with several parts get more room on paper, dimensions stay true) and Balloons: tidy (flanges, supports and fittings get one balloon per item number) or every part.</li>
-          <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
+          <li><b>Steel</b>: Parts, Steel puts a column (tap the floor or a member end) or a beam (tap the start and the end) in the same scene as the pipes. The ⋯ menu, Project, Steel builds a pipe rack, a support frame under equipment and base plates, places equipment by typed position with a maintenance clearance, lists the steel, and Sheets, Steel drawing makes the plan and elevations. Check warns when a pipe runs into steel.</li>
+      <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
           <li><b>Keep your work</b>: backups are taken as you work, but save a project file from ⋯, File, Save project now and then. Files keep the project name, drawing number and revision.</li>
         </ul>
       </div>
@@ -1098,12 +1109,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     }
   };
 
+//@@STEEL@@
   // ---------- state ----------
   var model = blank(), hist = [];
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, colByMat = false, curM = 'cs', axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, msel = {}, multiMode = false, pickCyc = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], steel: { m: [], pl: [] }, items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -1183,6 +1195,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ends.forEach(function (e) { splitAt(e[0], o.pipes, e[1]); });
       if (o.pipes.length > n0) { try { toast((o.pipes.length - n0) + ' pipe' + (o.pipes.length - n0 > 1 ? 's were' : ' was') + ' split where another pipe branches off it'); } catch (e) {} }
     })();
+    o.steel = stClean(m.steel);
     if (dropped) { try { toast(dropped + ' equipment record' + (dropped > 1 ? 's' : '') + ' could not be used and ' + (dropped > 1 ? 'were' : 'was') + ' left out'); } catch (e) {} }
     return o;
   }
@@ -1968,6 +1981,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (total > 0.001) add('stock', 'Pipe stock, ' + STOCK + ' m lengths (estimate)', Math.ceil(total / STOCK), 'pc');
     if (weight > 0.05) add('weight', model.pipes.some(function (p) { return p.m; }) ? 'Pipe weight, empty' : 'Pipe weight, steel, empty', weight, 'kg');
 
+    stBuild();
     if (sel || mselCount()) world.traverse(function (o) {
       var u = o.userData; if (!u || !u.kind || !o.material || !o.material.emissive) return;
       if ((sel && u.kind === sel.kind && u.i === sel.i) || msel[u.kind + ':' + u.i]) o.material.emissive.setHex(0x664400);
@@ -1984,9 +1998,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       ['valves', 'flanges', 'items', 'equip', 'supports'].forEach(function (g) { tg0[g].forEach(function (t0) { if (seen[t0]) dup[t0] = 1; seen[t0] = 1; }); });
       Object.keys(dup).forEach(function (t0) { warns.push('The tag ' + t0 + ' is used on more than one part.'); });
     })();
-    hydroWarnings(); spWarnings(); partWarnings(); materialWarnings(); layoutWarnings();
+    hydroWarnings(); spWarnings(); partWarnings(); materialWarnings(); layoutWarnings(); stWarnings();
     matDirty = true;
-    renderBom(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();   // the ring before the bar: the bar shows the angle
+    renderBom(); stPanel(); showInsp(); updateEgz(); updateHdl(); updateRing(); buildQbar(); updateEndDots();   // the ring before the bar: the bar shows the angle
     $('bomBtn').textContent = warns.length ? 'BOM · ' + warns.length : 'BOM';
     $('undo').disabled = !hist.length;
   }
@@ -3052,6 +3066,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function onTap(e) {
     var hit;
     if (pickLevel) { pickLevelAt(e); return; }
+    if (tool === 'steel') { stTap(e); return; }
     if (tool === 'pipe') {
       if (cursor) {                                                 // a tap on the white start dot ends the run, so another point can be picked
         var cs = scr(V(cursor));
@@ -3242,6 +3257,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     sel = null; msel = {}; changed(); toast('Removed pipe ' + pn + ', the shortest at this fitting. Undo brings it back.');
   }
   function removeItem(kind, i) {
+    if (kind === 'steel') { pushHist(); model.steel.m.splice(i, 1); sel = null; msel = {}; changed(); return; }
     if (kind === 'fit') { removeFitting(i); return; }
     if (!LISTS[kind]) { toast('Nothing to delete there'); return; }
     pushHist(); dropItem(kind, i); sel = null; msel = {}; changed();
@@ -3268,6 +3284,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       return;
     }
     guideLine.visible = false;
+    if (tool === 'steel') { stGhost(e); return; }
     if (tool !== 'pipe' && tool !== 'equip') { ghostLine.visible = marker.visible = false; return; }
     var p = planePoint(e), t = null, ss = tool === 'pipe' ? screenSnap(e) : null, snapKind = null;
     if (tool === 'equip') { if (p) t = planePt(p); }
@@ -3529,7 +3546,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var el = $('insp');
     if (tool === 'sel' && mselCount()) { renderMulti(el); return; }
     if (!sel || tool !== 'sel') { el.hidden = true; return; }
-    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
+    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports, steel: model.steel.m }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
     if (!it) { sel = null; msel = {}; el.hidden = true; return; }
     var h = '';
     if (sel.kind === 'pipe') {
@@ -3557,6 +3574,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = '<h2>' + (it.t === 'bl' ? 'Blind flange' : it.m ? 'Valve flange' : it.e ? 'End flange' : 'Flange pair') + ' ' + (sel.i + 1) + '</h2>'
         + (it.t === 'bl' ? '' : '<div class="row"><label>Type<select id="i-ft">' + opts([['wn', 'Weld-neck'], ['so', 'Slip-on'], ['lj', 'Lap-joint'], ['th', 'Threaded'], ['sw', 'Socket-weld']].concat(isOne(it) ? [] : [['ro', 'Orifice pair']]), it.t) + '</select></label></div>')
         + '<p>' + sz(it.n) + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
+    } else if (sel.kind === 'steel') {
+      h = stInspHtml(it, sel.i);
     } else if (sel.kind === 'support') {
       h = '<h2>Support ' + (sel.i + 1) + '</h2><div class="row"><label class="field">Type<select id="i-st">' + opts(Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }), it.t) + '</select></label></div><p>' + sz(it.n) + '</p>';
     } else if (sel.kind === 'instr') {
@@ -5757,14 +5776,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
     equip: { label: 'Equipment', items: EQ_CHIPS },    // plus one chip per equipment entry of the library
+    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
   };
   var PART_KEYS = Object.keys(PARTS), lastPart = 'branch';
-  function partVal(c) { return { custom: ik, valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
+  function partVal(c) { return { custom: ik, steel: stk, valve: vk, flange: fk, item: ik, cap: ck, equip: eqk, instr: inst, support: sup, branch: bk, reduce: rk }[c]; }
   function setPart(c, v) {
-    if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
+    if (c === 'steel') stk = v; else if (c === 'valve') vk = v; else if (c === 'flange') fk = v; else if (c === 'item') ik = v; else if (c === 'cap') ck = v; else if (c === 'instr') inst = v; else if (c === 'support') sup = v; else if (c === 'branch') bk = v; else if (c === 'reduce') rk = v; else eqk = v;
     updateUi();
   }
   var partOpen = { branch: true };
@@ -5821,7 +5841,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   function setTool(t) {
     egzDrag = null; hdlCancel();
-    tool = t; mA = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
+    tool = t; mA = null; stRun = null; measLine.visible = false; ghostLine.visible = marker.visible = false;
     if (PARTS[t]) { lastPart = t; PART_KEYS.forEach(function (k) { partOpen[k] = k === t; }); }
     if (!PARTS[t]) partsMin = false;                                // the next time the list opens it is open
     $('pset').hidden = true; $('more').hidden = true; $('pstart').hidden = true; guideLine.visible = false;
@@ -5847,6 +5867,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('ang').value = ang45 ? '1' : '0';
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
+    ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).setAttribute('aria-pressed', String(stAx === a)); });
+    $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = stk !== 'beam'; $('st-fin').hidden = stk !== 'beam' || !stRun; $('st-sec').value = stSec;
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
@@ -5863,6 +5885,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       item: 'Tap a pipe to place the fitting inline.',
       instr: 'Tap a pipe, or a vessel for a level instrument.',
       support: 'Tap a pipe to place a support. Hangers and shoes go on horizontal pipe.',
+      steel: stk === 'col' ? 'Tap the floor or the end of a member to stand a column. Section and height are below.' : stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
       cap: ck === 'ret' ? 'Tap an open pipe end. A return bend turns it back on itself. Pick the direction below.' : 'Tap an open pipe end to close it.',
       branch: bk === 'tee' ? 'Tap a pipe where the branch starts. The branch is the same size. Pick its direction below.' : 'Tap a pipe where the branch starts. Set the branch size and direction below.',
       reduce: 'Tap a pipe where the size changes. The part toward the nearer end takes the size below.',
@@ -6640,6 +6663,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (x) {}
 
   // Hook for the headless tests in test/.
+  stInit();
   window.PipeDraft = {
     load: function (m) { model = normalize(m); sel = null; msel = {}; rebuild(); }, look: function (th, ph, d, t) { theta = th; phi = ph; if (d) dist = d; if (t) target.set(t[0], t[1], t[2]); }, isoPages: isoPages, isoStack: isoStack, instrDir: function (i) { return instrDir(model.instr[i]); },
     get model() { return model; },
@@ -6655,7 +6679,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    plRating: plRating, parsePress: parsePress, pen: { sel: function () { return sel; }, partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    steel: stHooks(), plRating: plRating, parsePress: parsePress, pen: { sel: function () { return sel; }, partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };

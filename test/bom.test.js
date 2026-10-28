@@ -2360,5 +2360,98 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// ---------- steel in the same project ----------
+{
+  globalThis.__perf = (globalThis.__perf || 0) + 5000;   // past the palm window of the Pencil block before
+  const ST = PD.steel, near1 = (a, b, tol) => Math.abs(a - b) <= tol;
+  const W = { 'H100x50': 9.3, 'H200x100': 21.3, 'H200x200': 49.9, 'H250x250': 72.4, 'H300x300': 94.0, 'H400x200': 66.0, 'H350x350': 137, 'C100x50': 9.36, 'C200x80': 24.6, 'C250x90': 34.6, 'L50x50x6': 4.43, 'L65x65x6': 5.91, 'L100x100x10': 14.9, 'SHS100x100x5': 14.2 };
+  Object.keys(W).forEach(k => check('steel ' + k + ' weighs about ' + W[k] + ' kg/m', ST.secs[k] && near1(ST.kgm(ST.secs[k]), W[k], W[k] * 0.03), k));
+  check('every steel section outline is closed and close to the section area', Object.keys(ST.secs).every(k => {
+    const P = ST.poly(ST.secs[k]), ar = pts => Math.abs(pts.reduce((a, q, i) => { const n = pts[(i + 1) % pts.length]; return a + q[0] * n[1] - n[0] * q[1]; }, 0)) / 2;
+    return near1(ar(P.o) - (P.hole ? ar(P.hole) : 0), ST.area(ST.secs[k]), ST.area(ST.secs[k]) * 0.06);
+  }));
+
+  PD.load({ pipes: [] });
+  check('a project starts with no steel', PD.model.steel && PD.model.steel.m.length === 0 && PD.model.steel.pl.length === 0);
+  ST.add([0, 0, 0], [0, 4, 0], 'H200x200'); ST.add([3, 0, 0], [3, 4, 0], 'H200x200'); ST.add([0, 4, 0], [3, 4, 0], 'H300x150');
+  check('three steel members', ST.totals().n === 3 && PD.model.steel.m.length === 3);
+  check('the list groups by section and totals the weight', ST.rows().length === 2 && near1(ST.rows().find(r => r.sec === 'H200x200').L, 8, 1e-9) && ST.totals().kg > 400);
+  check('a connected frame has no steel warnings', !PD.warns().some(w => /steel/i.test(w)), PD.warns().join('\n'));
+  ST.add([6, 2, 0], [8, 2, 0], 'L65x65x6');
+  check('a member resting on nothing is reported', PD.warns().some(w => /resting on nothing/.test(w)));
+  els.undo.onclick();
+  check('undo takes the last member back', PD.model.steel.m.length === 3);
+  check('steel is saved with the project and survives a reload', JSON.parse(JSON.stringify(PD.model)).steel.m.length === 3 && (PD.load(JSON.parse(JSON.stringify(PD.model))), PD.model.steel.m.length === 3));
+  check('bad steel is dropped on load', ST.clean({ m: [{ a: [0, 0, 0], b: [1e9, 0, 0], s: 'H200x200' }, { a: [0, 0, 0], b: [1, 0, 0], s: 'nope' }, { a: [0, 0, 0], b: [1, 0, 0], s: 'H200x200', r: 450 }], pl: [{ p: [0, 0, 0], w: 9, d: 0.3, t: 0.02 }] }).m.map(m => m.r).join() === '90');
+  check('the steel list exports in CAD axes', /Section/.test(ST.csv()) && ST.csv().trim().split('\n').length === 4);
+  check('steel is in the 3D scene', PD.model.steel.m.length === 3);
+
+  // generators
+  PD.load({ pipes: [] });
+  check('a 3 bay one tier rack is 8 columns, 4 cross beams and 6 struts', ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000', mid: 'no', bracing: 'none' }) === 18);
+  check('a rack stands up with no warnings', PD.warns().length === 0, PD.warns().join('\n'));
+  PD.load({ pipes: [] });
+  check('a two tier rack with a middle line and end bracing is 67 members', ST.rack({ bays: 4, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'end', mid: 'yes' }) === 67 && PD.warns().length === 0, PD.warns().join('\n'));
+  check('columns reach the top beam centre and the beams sit under the tier level', PD.model.steel.m.filter(m => /-C\d/.test(m.k)).every(m => near1(m.b[1], 5.35, 1e-9) && m.a[1] === 0) && PD.model.steel.m.filter(m => /-B\d/.test(m.k)).some(m => near1(m.a[1], 3.85, 1e-9)));
+  PD.load({ pipes: [] }); ST.rack({ dir: 'y', bays: 2, bay: 5000, w: 3000, tiers: '4000', bracing: 'none', x: 1000, y: 2000 });
+  check('a rack along Y runs along scene Z from the start point', (() => { const m = PD.model.steel.m, zs = m.flatMap(q => [q.a[2], q.b[2]]), xs = m.flatMap(q => [q.a[0], q.b[0]]); return Math.max(...zs) === 12 && Math.min(...zs) === 2 && Math.max(...xs) === 4 && Math.min(...xs) === 1; })());
+  check('bad rack input builds nothing', ST.rack({ bays: 2, bay: 100, w: 3000 }) === 0 && ST.rack({ tiers: 'abc' }) === 0);
+  PD.load({ pipes: [] }); ST.rack({ bays: 2, bay: 6000, w: 4000, tiers: '4000', bracing: 'none' });
+  check('base plates go under all 6 columns', ST.plates({ ove: 75, t: 20, bolt: 'M20', n: 4 }) === 6 && ST.plateRows()[0].name === 'PL 20x350x350' && ST.boltRows()[0].q === 24);
+  check('plates are in the steel weight', near1(ST.totals().kg, ST.rows().reduce((a, x) => a + x.kg, 0) + 6 * 0.35 * 0.35 * 0.02 * 7850, 1e-6));
+  check('running plates again does not double them', ST.plates({}) === 6 && PD.model.steel.pl.length === 6);
+
+  // equipment and steel together
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }] });
+  const f0 = ST.foot(PD.model.equip[0]);
+  check('equipment has a footprint from what is drawn', f0 && f0.c.length === 4 && f0.y1 > f0.y0);
+  check('a frame under a pump is 4 legs and 4 beams and raises the pump', ST.frame(0, { fh: 800, finset: 20, fleg: 'H150x150', fbeam: 'H100x50', fbrace: 'none' }) === 8 && near1(PD.model.equip[0].p[1], 0.8 - ST.foot(PD.model.equip[0]).box.y0, 1e-6));
+  check('a supported pump has no steel warnings', !PD.warns().some(w => /no steel under|runs through/.test(w)), PD.warns().join('\n'));
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0.2, 0], r: 0 }, { k: 'vessel', p: [5, 3, 0], r: 0 }] });
+  check('raised equipment with nothing under it is reported', PD.warns().some(w => /no steel under it/.test(w)), PD.warns().join('\n'));
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0 }, { k: 'pump', p: [0.4, 0, 0], r: 0 }] });
+  check('overlapping equipment is reported', PD.warns().some(w => /overlap/.test(w)), PD.warns().join('\n'));
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [0, 0, 0], r: 0, cl: 1.5 }, { k: 'pump', p: [2.2, 0, 0], r: 0 }] });
+  check('equipment inside a maintenance clearance is reported', PD.warns().some(w => /maintenance clearance/.test(w)), PD.warns().join('\n'));
+  PD.load({ pipes: [], equip: [{ k: 'vessel', p: [0, 0, 0], r: 0 }] }); ST.add([-3, 1, 0], [3, 1, 0], 'H200x100');
+  check('a beam through the equipment is reported', PD.warns().some(w => /runs through/.test(w)), PD.warns().join('\n'));
+
+  // pipe and steel
+  PD.load({ pipes: [{ a: [0, 2, 0], b: [6, 2, 0], n: 4, ln: 'L-001' }] }); ST.add([3, 0, 0], [3, 4, 0], 'H200x200'); ST.add([0, 0, 0.0001], [0, 4, 0.0001], 'H200x200');
+  check('a pipe through a column is reported', PD.warns().some(w => /Pipe 1 \(L-001\) runs into steel member 1/.test(w)), PD.warns().join('\n'));
+  PD.load({ pipes: [{ a: [0, 4.2, 0], b: [6, 4.2, 0], n: 4, ln: 'L-001' }] }); ST.add([0, 4, -1], [0, 4, 1], 'H300x150'); ST.add([0, 0, -1], [0, 4, -1], 'H200x200'); ST.add([0, 0, 1], [0, 4, 1], 'H200x200');
+  check('a pipe lying on a beam is not a clash', !PD.warns().some(w => /runs into steel/.test(w)), PD.warns().join('\n'));
+
+  // the Steel tool: tap the floor to stand a column, tap its top and another point for a beam
+  PD.load({ pipes: [] }); PD.look(Math.PI / 4, 0.9, 12, [3, 0, 0]); els['t-pipe'].onclick(); els['finish'].onclick();
+  for (let i = 0; i < 6; i++) els['down'].onclick();
+  ST.setTool('steel'); ST.setKind('col'); ST.setColH(3); ST.setSec('H200x200');
+  tapOn([2, 0, 0]);
+  check('the steel tool stands a column on the tapped floor point', PD.model.steel.m.length === 1 && near(PD.model.steel.m[0].a, [2, 0, 0]) && near(PD.model.steel.m[0].b, [2, 3, 0]), JSON.stringify(PD.model.steel.m));
+  ST.setKind('beam'); ST.setSec('H300x150'); tapOn([2, 3, 0]);
+  check('the first beam tap only marks the start, on the column top', PD.model.steel.m.length === 1 && ST.run() && near(ST.run(), [2, 3, 0]), JSON.stringify(ST.run()));
+  tapOn([5, 3, 0]);
+  check('the second tap adds the beam along X and the run carries on', PD.model.steel.m.length === 2 && near(PD.model.steel.m[1].a, [2, 3, 0]) && near(PD.model.steel.m[1].b, [5, 3, 0]) && ST.run(), JSON.stringify(PD.model.steel.m));
+
+  // select, inspect, edit, delete
+  els['t-sel'].onclick(); tapOn([2, 1.5, 0]);
+  check('a steel member can be selected', PD.pen.sel() && PD.pen.sel().kind === 'steel' && PD.pen.sel().i === 0, JSON.stringify(PD.pen.sel()));
+  check('and the inspector shows it', /Steel member 1/.test(els.insp.innerHTML), els.insp.innerHTML.slice(0, 80));
+  els['t-del'].onclick(); tapOn([2, 1.5, 0]);
+  check('the delete tool removes a steel member', PD.model.steel.m.length === 1 && PD.model.steel.m[0].s === 'H300x150');
+  els['t-sel'].onclick();
+
+  // drawings
+  PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
+  PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();
+  const pl = ST.sheet('plan', true), fr = ST.sheet('front', false), sd = ST.sheet('side', true), cutd = ST.sheet('side', true, 6);
+  check('the plan is an svg with the vessel tag, a north arrow and a drafting scale', /^<svg/.test(pl) && />N</.test(pl) && /SCALE/.test(pl) && /1:\d+/.test(pl) && /<circle/.test(pl));
+  check('the plan carries the bay dimensions and the overall length', (pl.match(/>6000</g) || []).length >= 2 && />18000</.test(pl), (pl.match(/>\d{4,5}</g) || []).join(','));
+  check('the elevation shows levels', /EL \+3850/.test(fr) && /EL 0/.test(fr));
+  check('a section at X = 6000 draws just that frame', /SECTION AT X = 6000/.test(cutd) && (cutd.match(/stroke-linejoin/g) || []).length === 4 && (sd.match(/stroke-linejoin/g) || []).length > 20);
+  check('with nothing to draw the sheet is null', (PD.load({ pipes: [] }), ST.sheet('plan', true) === null));
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');
