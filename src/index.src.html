@@ -279,6 +279,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div data-for="steel">
         <select id="st-sec" aria-label="Steel section"></select>
         <input type="text" id="st-h" inputmode="decimal" placeholder="Column mm" aria-label="Column height, mm" autocomplete="off">
+        <input type="text" id="st-p1" inputmode="decimal" autocomplete="off"><input type="text" id="st-p2" inputmode="decimal" autocomplete="off"><button id="st-dir"></button>
         <div class="seg" id="st-axis" role="group" aria-label="Beam direction"><button id="sta-auto" aria-pressed="true">Auto</button><button id="sta-free" aria-pressed="false">Free</button><button id="sta-x" aria-pressed="false">X</button><button id="sta-y" aria-pressed="false">Y</button></div>
         <button id="st-fin">Finish</button>
       </div>
@@ -438,7 +439,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list. On the isometric sheet, Options, Move labels lets you drag balloons, weld numbers, tags, elevations and dimension lines; the sheet remembers them, Undo label move and Reset labels put them back. Options also has Stretch crowded pipes (short pipes with several parts get more room on paper, dimensions stay true) and Balloons: tidy (flanges, supports and fittings get one balloon per item number) or every part.</li>
-          <li><b>Steel</b>: Parts, Steel puts a column (tap the floor or a member end) or a beam (tap the start and the end) in the same scene as the pipes. The ⋯ menu, Project, Steel builds a pipe rack, a support frame under equipment and base plates, places equipment by typed position with a maintenance clearance, lists the steel, and Sheets, Steel drawing makes the plan and elevations. Check warns when a pipe runs into steel.</li>
+          <li><b>Steel</b>: Parts, Steel puts a column (tap the floor or a member end) or a beam (tap the start and the end) in the same scene as the pipes. The ⋯ menu, Project, Steel builds a pipe rack, a support frame under equipment and base plates, places equipment by typed position with a maintenance clearance, lists the steel, and Sheets, Steel drawing makes the plan and elevations. Parts, Steel also has grating panels, handrails, stairs and ladders; the Steel panel builds a platform and a pipe stanchion, and Check says when an edge is left open. Check warns when a pipe runs into steel.</li>
       <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
           <li><b>Keep your work</b>: backups are taken as you work, but save a project file from ⋯, File, Save project now and then. Files keep the project name, drawing number and revision.</li>
         </ul>
@@ -1115,7 +1116,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, colByMat = false, curM = 'cs', axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, msel = {}, multiMode = false, pickCyc = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], steel: { m: [], pl: [] }, items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], steel: { m: [], pl: [], a: [] }, items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -3258,6 +3259,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function removeItem(kind, i) {
     if (kind === 'steel') { pushHist(); model.steel.m.splice(i, 1); sel = null; msel = {}; changed(); return; }
+    if (kind === 'sacc') { pushHist(); model.steel.a.splice(i, 1); sel = null; msel = {}; changed(); return; }
     if (kind === 'fit') { removeFitting(i); return; }
     if (!LISTS[kind]) { toast('Nothing to delete there'); return; }
     pushHist(); dropItem(kind, i); sel = null; msel = {}; changed();
@@ -3546,7 +3548,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var el = $('insp');
     if (tool === 'sel' && mselCount()) { renderMulti(el); return; }
     if (!sel || tool !== 'sel') { el.hidden = true; return; }
-    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports, steel: model.steel.m }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
+    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports, steel: model.steel.m, sacc: model.steel.a }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
     if (!it) { sel = null; msel = {}; el.hidden = true; return; }
     var h = '';
     if (sel.kind === 'pipe') {
@@ -3574,6 +3576,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = '<h2>' + (it.t === 'bl' ? 'Blind flange' : it.m ? 'Valve flange' : it.e ? 'End flange' : 'Flange pair') + ' ' + (sel.i + 1) + '</h2>'
         + (it.t === 'bl' ? '' : '<div class="row"><label>Type<select id="i-ft">' + opts([['wn', 'Weld-neck'], ['so', 'Slip-on'], ['lj', 'Lap-joint'], ['th', 'Threaded'], ['sw', 'Socket-weld']].concat(isOne(it) ? [] : [['ro', 'Orifice pair']]), it.t) + '</select></label></div>')
         + '<p>' + sz(it.n) + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
+    } else if (sel.kind === 'sacc') {
+      h = stAccInspHtml(it, sel.i);
     } else if (sel.kind === 'steel') {
       h = stInspHtml(it, sel.i);
     } else if (sel.kind === 'support') {
@@ -5776,7 +5780,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
     equip: { label: 'Equipment', items: EQ_CHIPS },    // plus one chip per equipment entry of the library
-    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace']] },
+    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace'], ['grating', 'Grating panel'], ['rail', 'Handrail'], ['stair', 'Stair'], ['ladder', 'Ladder']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
@@ -5868,7 +5872,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
     ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).setAttribute('aria-pressed', String(stAx === a)); });
-    $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = stk !== 'beam'; $('st-fin').hidden = stk !== 'beam' || !stRun; $('st-sec').value = stSec;
+    stSyncBar();
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
@@ -5885,7 +5889,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       item: 'Tap a pipe to place the fitting inline.',
       instr: 'Tap a pipe, or a vessel for a level instrument.',
       support: 'Tap a pipe to place a support. Hangers and shoes go on horizontal pipe.',
-      steel: stk === 'col' ? 'Tap the floor or the end of a member to stand a column. Section and height are below.' : stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
+      steel: stHint(),
       cap: ck === 'ret' ? 'Tap an open pipe end. A return bend turns it back on itself. Pick the direction below.' : 'Tap an open pipe end to close it.',
       branch: bk === 'tee' ? 'Tap a pipe where the branch starts. The branch is the same size. Pick its direction below.' : 'Tap a pipe where the branch starts. Set the branch size and direction below.',
       reduce: 'Tap a pipe where the size changes. The part toward the nearer end takes the size below.',

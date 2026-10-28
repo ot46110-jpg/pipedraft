@@ -5,7 +5,7 @@ const read = p => fs.readFileSync(path.join(__dirname, p), 'utf8');
 
 let h = read('src/index.src.html');
 if (!h.includes('//@@STEEL@@')) throw new Error('src/index.src.html has no //@@STEEL@@ marker');
-h = h.replace('//@@STEEL@@', () => read('src/steel.part.js') + read('src/steel.ui.part.js'));   // the steel module lives in its own files and is spliced into the app script here
+h = h.replace('//@@STEEL@@', () => read('src/steel.part.js') + read('src/steel.acc.part.js') + read('src/steel.ui.part.js'));   // the steel module lives in its own files and is spliced into the app script here
 const three = read('vendor/three.min.js');
 h = h.replace(/^<link[^\n]*fonts[^\n]*\r?\n/gm, '');
 h = h.replace('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>', () => '<script>' + three + '</script>');

@@ -276,6 +276,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       <div data-for="steel">
         <select id="st-sec" aria-label="Steel section"></select>
         <input type="text" id="st-h" inputmode="decimal" placeholder="Column mm" aria-label="Column height, mm" autocomplete="off">
+        <input type="text" id="st-p1" inputmode="decimal" autocomplete="off"><input type="text" id="st-p2" inputmode="decimal" autocomplete="off"><button id="st-dir"></button>
         <div class="seg" id="st-axis" role="group" aria-label="Beam direction"><button id="sta-auto" aria-pressed="true">Auto</button><button id="sta-free" aria-pressed="false">Free</button><button id="sta-x" aria-pressed="false">X</button><button id="sta-y" aria-pressed="false">Y</button></div>
         <button id="st-fin">Finish</button>
       </div>
@@ -435,7 +436,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
           <li><b>Select</b>: tap anything to edit it. Arrows move equipment (X, Y, Z). A ring around a valve or equipment turns its handwheel or the equipment to any angle: drag it, or type degrees. and slide valves and parts along their pipe. A pipe can take a new size, schedule and line number for its whole run. Drag the orange ball at either end of a selected pipe to stretch it, or an arrow to slide the whole pipe sideways (pipes along the move stretch with it). Run selects the whole run. The bar next to the selection has size − +, Valve, Multi and Delete. Drag a box with the Pencil on empty space, or tap Multi, to select several parts and move, copy, resize or delete them together. Tap again on parts that sit together to reach the next one.</li>
           <li><b>Check list</b>: the number on the BOM button is the count of things to look at. Tap a warning that names a pipe to jump to it.</li>
           <li><b>Sheets</b>: the ⋯ menu has the isometric sheet (pinch to zoom, Save PDF in A3 or A4, one PDF for all lines), the P&amp;ID, the line list and the cut list. On the isometric sheet, Options, Move labels lets you drag balloons, weld numbers, tags, elevations and dimension lines; the sheet remembers them, Undo label move and Reset labels put them back. Options also has Stretch crowded pipes (short pipes with several parts get more room on paper, dimensions stay true) and Balloons: tidy (flanges, supports and fittings get one balloon per item number) or every part.</li>
-          <li><b>Steel</b>: Parts, Steel puts a column (tap the floor or a member end) or a beam (tap the start and the end) in the same scene as the pipes. The ⋯ menu, Project, Steel builds a pipe rack, a support frame under equipment and base plates, places equipment by typed position with a maintenance clearance, lists the steel, and Sheets, Steel drawing makes the plan and elevations. Check warns when a pipe runs into steel.</li>
+          <li><b>Steel</b>: Parts, Steel puts a column (tap the floor or a member end) or a beam (tap the start and the end) in the same scene as the pipes. The ⋯ menu, Project, Steel builds a pipe rack, a support frame under equipment and base plates, places equipment by typed position with a maintenance clearance, lists the steel, and Sheets, Steel drawing makes the plan and elevations. Parts, Steel also has grating panels, handrails, stairs and ladders; the Steel panel builds a platform and a pipe stanchion, and Check says when an edge is left open. Check warns when a pipe runs into steel.</li>
       <li><b>Your own parts</b>: Parts, Equipment, + New, or ⋯, Project, Custom parts. Draw equipment from boxes, cylinders and spheres.</li>
           <li><b>Keep your work</b>: backups are taken as you work, but save a project file from ⋯, File, Save project now and then. Files keep the project name, drawing number and revision.</li>
         </ul>
@@ -1155,12 +1156,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return { p: p, w: st3(w), d: st3(d), t: st3(t), n: [4, 6, 8].indexOf(q.n) >= 0 ? q.n : 4, bolt: OWN(ST_BOLTS, q.bolt) ? q.bolt : 'M20' };
   }
   function stClean(s) {
-    var o = { m: [], pl: [] }; if (!s || typeof s !== 'object') return o;
+    var o = { m: [], pl: [], a: [] }; if (!s || typeof s !== 'object') return o;
     (Array.isArray(s.m) ? s.m : []).slice(0, 6000).forEach(function (p) {
       if (!p || typeof p.s !== 'string' || !OWN(SSEC, p.s)) return; var a = stPt(p.a), b = stPt(p.b); if (!a || !b) return;
       o.m.push({ a: a, b: b, s: p.s, r: ((Math.round(stNum(p.r, 0)) % 360) + 360) % 360, k: String(p.k || '').slice(0, 20) });
     });
     (Array.isArray(s.pl) ? s.pl : []).slice(0, 3000).forEach(function (q) { var c = stCleanPlate(q); if (c) o.pl.push(c); });
+    (Array.isArray(s.a) ? s.a : []).slice(0, 2000).forEach(function (q) { var c = stCleanAcc(q); if (c) o.a.push(c); });
     return o;
   }
   function stLen(p) { return Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]); }
@@ -1220,9 +1222,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var t = Math.max(0, Math.min(1, ((q[0] - a[0]) * u[0] + (q[1] - a[1]) * u[1] + (q[2] - a[2]) * u[2]) / L2));
       return Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < 0.15;
     }
+    function propped(i) {                                           // the end of another member sits on this one part way along: a T beam on its column
+      var P = S[i], a = P.a, b = P.b, u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2]; if (L2 < 1e-9) return false;
+      for (var j = 0; j < S.length; j++) if (j !== i) for (var e = 0; e < 2; e++) {
+        var q = e ? S[j].b : S[j].a, t = ((q[0] - a[0]) * u[0] + (q[1] - a[1]) * u[1] + (q[2] - a[2]) * u[2]) / L2; if (t < 0.1 || t > 0.9) continue;
+        if (Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < 0.15) return true;
+      }
+      return false;
+    }
     if (S.length > 1500) return out;
     S.forEach(function (p, i) {
       var cnt = 0; [p.a, p.b].forEach(function (q) { if (Math.abs(q[1]) < 0.01 || Math.abs(q[1] - lo) < 0.01) { cnt++; return; } for (var j = 0; j < S.length; j++) if (j !== i && near(q, j)) { cnt++; return; } });
+      if (cnt < 2 && propped(i)) cnt = 2;
       if (cnt < 2) out[i] = 1;
     });
     return out;
@@ -1295,12 +1306,13 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (th > 8) warns.push((th - 8) + ' more steel members run through equipment.');
     var pc = stPipeClashes(); pc.slice(0, 8).forEach(function (c) { warns.push('Pipe ' + (c.p + 1) + ' (' + model.pipes[c.p].ln + ') runs into steel member ' + (c.m + 1) + ' (' + SSEC[model.steel.m[c.m].s].name + ').'); });
     if (pc.length > 8) warns.push((pc.length - 8) + ' more pipes run into steel.');
+    stAccWarnings();
   }
 
   // ---------- 3D ----------
   function stBuild() {
     var S = model.steel, anyCl = model.equip.some(function (e) { return stClear(e) > 0; }); stLs = null;
-    if (!S.m.length && !S.pl.length && !anyCl) return;
+    if (!S.m.length && !S.pl.length && !S.a.length && !anyCl) return;
     var ls = stLs = stLoose(), mN = mat(0x6f95b0, 0.6), mL = mat(0xe5604d, 0.6), mS = mat(0xffb21f, 0.5), mP = mat(0x59636b, 0.6), edge = new T.LineBasicMaterial({ color: 0x0b1116 });
     S.m.forEach(function (p, i) {
       var L = stLen(p); if (L < 0.001) return;
@@ -1308,6 +1320,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x, B.y, B.z); m.matrix.setPosition(V(p.a)); m.userData = { kind: 'steel', i: i }; world.add(m);
       var ln = new T.LineSegments(stEdges(p.s, L, m.geometry), edge); ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrix); world.add(ln);
     });
+    stAccBuild();
     S.pl.forEach(function (q) { var m = new T.Mesh(new T.BoxGeometry(q.w, q.t, q.d), mP); m.position.set(q.p[0], q.p[1] + q.t / 2, q.p[2]); world.add(m); });
     model.equip.forEach(function (e) {                              // the maintenance clearance, a dashed box on the floor outline
       var c = stClear(e); if (!c) return; var f = stFoot(e, c); if (!f) return;
@@ -1328,13 +1341,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return Object.keys(g).map(function (k) { var r = g[k]; r.kg = r.kgEach * r.q; return r; });
   }
   function stBoltRows() { var b = {}; model.steel.pl.forEach(function (q) { b[q.bolt] = (b[q.bolt] || 0) + q.n; }); return Object.keys(b).map(function (k) { return { bolt: k, q: b[k] }; }); }
-  function stTotals() { var r = stRows(); return { n: r.reduce(function (a, x) { return a + x.q; }, 0), kg: r.reduce(function (a, x) { return a + x.kg; }, 0) + model.steel.pl.reduce(function (a, q) { return a + stPlateKg(q); }, 0), paint: r.reduce(function (a, x) { return a + x.paint; }, 0) }; }
+  function stTotals() { var r = stRows(); return { n: r.reduce(function (a, x) { return a + x.q; }, 0), kg: r.reduce(function (a, x) { return a + x.kg; }, 0) + model.steel.pl.reduce(function (a, q) { return a + stPlateKg(q); }, 0) + model.steel.a.reduce(function (a, q) { return a + stAccKg(q); }, 0), paint: r.reduce(function (a, x) { return a + x.paint; }, 0) }; }
   function stCsv() {
     var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; }, nl = String.fromCharCode(10);
     var out = 'Mark,Section,Grade,Length mm,kg/m,Weight kg,Start X,Start Y,Start Z,End X,End Y,End Z' + nl;
     model.steel.m.forEach(function (p, i) { var s = SSEC[p.s], L = stLen(p), a = cadOf(p.a), b = cadOf(p.b); out += [q(p.k || (i + 1)), q(s.name), q('S275 / SS400'), Math.round(L * 1000), stKgm(s).toFixed(2), (stKgm(s) * L).toFixed(1)].concat(a.concat(b).map(function (v) { return Math.round(v * 1000); })).join(',') + nl; });
     stPlateRows().forEach(function (r) { out += [q('PL'), q(r.name), '', '', '', r.kg.toFixed(1), r.q].join(',') + nl; });
     stBoltRows().forEach(function (r) { out += [q('AB'), q('Anchor bolt ' + r.bolt), '', '', '', '', r.q].join(',') + nl; });
+    stAccRows().forEach(function (r) { out += [q('ACC'), q(r.name + ' (' + r.q + ' x, ' + r.amt.toFixed(1) + ' ' + r.unit + ')'), '', '', '', r.kg.toFixed(1), r.q].join(',') + nl; });
     return out;
   }
 
@@ -1353,6 +1367,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         if (d < bd) { bd = d; best = { p: q.slice(), kind: k === 2 ? 'mid' : 'end' }; }
       });
     });
+    model.steel.a.forEach(function (a) {                            // grating corners and handrail ends, so a rail starts on the deck edge
+      var P = [];
+      if (a.t === 'g') { var th = a.r * Math.PI / 180, c = Math.cos(th), sn0 = Math.sin(th); [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (q) { var lx = q[0] * a.w / 2, lz = q[1] * a.d / 2; P.push([a.p[0] + lx * c + lz * sn0, a.p[1], a.p[2] - lx * sn0 + lz * c]); }); }
+      else if (a.t === 'h') P.push(a.a, a.b);
+      P.forEach(function (q) { var s = scrOk(q); if (!s) return; var d = Math.hypot(s.x - e.clientX, s.y - e.clientY); if (d < bd) { bd = d; best = { p: q.map(st3), kind: 'end' }; } });
+    });
     if (best) return best;
     var pp = planePoint(e); return pp ? { p: planePt(pp), kind: 'grid' } : null;
   }
@@ -1364,13 +1384,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function stTap(e) {
     var sn = stSnap(e); if (!sn) return;
     if (stk === 'col') { var top = sn.p.slice(); top[1] = st3(sn.p[1] + stColH); if (stAdd(sn.p, top) >= 0) elev = sn.p[1]; return; }
+    if (stk === 'grating') { if (stAccAdd({ t: 'g', p: sn.p, w: stD.gw, d: stD.gd, r: 0, s: stD.gs }) >= 0) elev = sn.p[1]; return; }
+    if (stk === 'stair') { stAccAdd({ t: 's', p: sn.p, dir: stD.sdir, H: stD.sH, w: stD.sW, g: stD.sG, sec: stD.ssec, tread: stD.stread, rail: true, rs: stD.rs }); return; }
+    if (stk === 'ladder') { stAccAdd({ t: 'l', p: sn.p, dir: stD.ldir, h: stD.lh, w: stD.lw, cage: stD.lcage }); return; }
     if (!stRun) { stRun = sn.p.slice(); elev = stRun[1]; updateUi(); return; }
-    var end = stConstrain(stRun, sn); if (stAdd(stRun, end) >= 0) { stRun = end; elev = end[1]; }
+    var end = stConstrain(stRun, sn), made = stk === 'rail' ? stAccAdd({ t: 'h', a: stRun, b: end, h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs }) : stAdd(stRun, end);
+    if (made >= 0) { stRun = end; elev = end[1]; }
     ghostLine.visible = false; updateUi();
   }
   function stGhost(e) {
     var sn = stSnap(e); if (!sn) { marker.visible = ghostLine.visible = false; return; }
-    var a = stk === 'beam' && stRun ? stRun : null, p = a ? stConstrain(a, sn) : sn.p.slice();
+    var a = (stk === 'beam' || stk === 'rail') && stRun ? stRun : null, p = a ? stConstrain(a, sn) : sn.p.slice();
     marker.visible = true; marker.position.set(p[0], p[1], p[2]); markSnap(sn.kind !== 'grid', sn.kind === 'mid' ? 'mid' : 'end');
     var b = a ? p : stk === 'col' ? [p[0], p[1] + stColH, p[2]] : null;
     if (b) { ghostLine.visible = true; setLine(ghostLine, a || p, b); } else ghostLine.visible = false;
@@ -1460,12 +1484,29 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var uv = view === 'plan' ? function (p) { return [p[0], p[2]]; } : view === 'front' ? function (p) { return [p[0], p[1]]; } : function (p) { return [p[2], p[1]]; };
     var ci = view === 'side' ? 0 : 2, inCut = function (q) { return cut == null || view === 'plan' || Math.abs(q[ci] - cut) < 0.06; };
     var items = [], pts = [];
-    model.steel.m.forEach(function (m, i) {
-      if (cut != null && view !== 'plan' && !(inCut(m.a) && inCut(m.b))) return;
+    var mhull = function (m) {
       var s = SSEC[m.s], B = stBasis(m), P = [];
       [m.a, m.b].forEach(function (e) { [-1, 1].forEach(function (a) { [-1, 1].forEach(function (b) { var q = V(e).addScaledVector(B.x, a * s.b / 2000).addScaledVector(B.y, b * s.h / 2000); P.push(uv([q.x, q.y, q.z])); }); }); });
-      var hp = stHull(P); hp.forEach(function (q) { pts.push(q); });
+      return stHull(P);
+    };
+    model.steel.m.forEach(function (m, i) {
+      if (cut != null && view !== 'plan' && !(inCut(m.a) && inCut(m.b))) return;
+      var hp = mhull(m); hp.forEach(function (q) { pts.push(q); });
       items.push({ t: 'm', i: i, poly: hp, mid: uv([(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2, (m.a[2] + m.b[2]) / 2]), L: Math.hypot(uv(m.a)[0] - uv(m.b)[0], uv(m.a)[1] - uv(m.b)[1]) });
+    });
+    model.steel.a.forEach(function (a) {                            // gratings, handrails, stairs and ladders, drawn from their primitives
+      var ref = a.p || a.a; if (cut != null && view !== 'plan' && !inCut(ref)) return;
+      stAccParts(a).forEach(function (q) {
+        var it = { t: 'x', q: q, acc: a };
+        if (q.k === 'box') {
+          var cr = Math.cos(q.r * Math.PI / 180), sr = Math.sin(q.r * Math.PI / 180), P = [];
+          [-1, 1].forEach(function (x) { [-1, 1].forEach(function (y) { [-1, 1].forEach(function (z) { var lx = x * q.w / 2, lz = z * q.d / 2; P.push(uv([q.c[0] + lx * cr + lz * sr, q.c[1] + y * q.h / 2, q.c[2] - lx * sr + lz * cr])); }); }); });
+          it.poly = stHull(P); it.poly.forEach(function (pt) { pts.push(pt); });
+        } else if (q.k === 'mem') { it.poly = mhull(q); it.poly.forEach(function (pt) { pts.push(pt); }); }
+        else if (q.k === 'ring') { it.c = uv(q.c); pts.push(it.c); }
+        else { it.a = uv(q.a); it.b = uv(q.b); pts.push(it.a, it.b); }
+        items.push(it);
+      });
     });
     model.steel.pl.forEach(function (q) {
       if (cut != null && view !== 'plan' && !inCut(q.p)) return;
@@ -1487,7 +1528,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     pm = 1000 / (ratio * 0.35);                                     // 1 px is 0.35 mm of paper on A3 (1200 px = 420 mm): the scale is true
     var ox = ax + (aw - (u1 - u0) * pm) / 2, oy = ay + (ah - (v1 - v0) * pm) / 2 + (v1 - v0) * pm;
     var X = function (u) { return f1(ox + (u - u0) * pm); }, Y = function (v) { return f1(oy - (v - v0) * pm); };
-    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="Arial, sans-serif"><rect width="' + W + '" height="' + H + '" fill="#fff"/><rect x="14" y="14" width="' + (W - 28) + '" height="' + (H - 28) + '" fill="none" stroke="#111" stroke-width="1.4"/>';
+    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" font-family="Arial, sans-serif"><defs><pattern id="stgr" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#eef2f4"/><line x1="0" y1="0" x2="0" y2="4" stroke="#8a98a2" stroke-width="1"/></pattern></defs><rect width="' + W + '" height="' + H + '" fill="#fff"/><rect x="14" y="14" width="' + (W - 28) + '" height="' + (H - 28) + '" fill="none" stroke="#111" stroke-width="1.4"/>';
     var path = function (P) { return P.map(function (q, k) { return (k ? 'L' : 'M') + X(q[0]) + ' ' + Y(q[1]); }).join('') + 'Z'; };
     items.filter(function (it) { return it.t === 'e' && it.cl; }).forEach(function (it) { o += '<path d="' + path(it.cl) + '" fill="none" stroke="#b07a1a" stroke-width="0.8" stroke-dasharray="6 3"/>'; });
     items.filter(function (it) { return it.t === 'p'; }).forEach(function (it) {
@@ -1495,7 +1536,19 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (view === 'plan') { var q = it.q, bx = q.w / 2 - 0.04, bz = q.d / 2 - 0.04; [[-bx, -bz], [bx, -bz], [bx, bz], [-bx, bz]].forEach(function (c) { o += '<circle cx="' + X(q.p[0] + c[0]) + '" cy="' + Y(q.p[2] + c[1]) + '" r="' + Math.max(1.4, f1(ST_BOLTS[q.bolt] / 2000 * pm)) + '" fill="#fff" stroke="#111" stroke-width="0.6"/>'; }); }
     });
     items.filter(function (it) { return it.t === 'm'; }).forEach(function (it) { o += '<path d="' + path(it.poly) + '" fill="#e4e9ec" stroke="#111" stroke-width="0.9" stroke-linejoin="round"/>'; });
+    items.filter(function (it) { return it.t === 'x'; }).forEach(function (it) {
+      var q = it.q;
+      if (it.poly) o += '<path d="' + path(it.poly) + '" fill="' + (q.grat ? 'url(#stgr)' : '#e4e9ec') + '" stroke="#111" stroke-width="0.7" stroke-linejoin="round"/>';
+      else if (it.c) o += '<circle cx="' + X(it.c[0]) + '" cy="' + Y(it.c[1]) + '" r="' + Math.max(1.5, f1(q.rad * pm)) + '" fill="none" stroke="#111" stroke-width="0.5"/>';
+      else if (Math.hypot(X(it.a[0]) - X(it.b[0]), Y(it.a[1]) - Y(it.b[1])) < 0.6) o += '<circle cx="' + X(it.a[0]) + '" cy="' + Y(it.a[1]) + '" r="' + Math.max(1, f1((q.rad || 0.02) * pm)) + '" fill="#111"/>';
+      else o += '<line x1="' + X(it.a[0]) + '" y1="' + Y(it.a[1]) + '" x2="' + X(it.b[0]) + '" y2="' + Y(it.b[1]) + '" stroke="#111" stroke-width="' + Math.max(0.6, f1((q.rad ? 2 * q.rad : q.w || 0.01) * pm)) + '"/>';
+    });
     var used = [];
+    if (labels) model.steel.a.forEach(function (a) {
+      var ref = a.t === 'h' ? [(a.a[0] + a.b[0]) / 2, (a.a[1] + a.b[1]) / 2, (a.a[2] + a.b[2]) / 2] : a.p; if (cut != null && view !== 'plan' && !inCut(ref)) return; var m = uv(ref);
+      var tx = a.t === 'g' ? (a.k || GRAT[a.s].name.replace('Grating ', 'GR ')) : a.t === 's' ? (a.k || 'STAIR') + ' UP' : a.t === 'l' ? (a.k || 'LADDER') : ''; if (!tx) return;
+      o += '<text x="' + X(m[0]) + '" y="' + (Y(m[1]) - (a.t === 'g' ? 0 : 3)) + '" text-anchor="middle" font-size="6.5" fill="#1a3a50" paint-order="stroke" stroke="#fff" stroke-width="2">' + esc(tx) + '</text>';
+    });
     items.filter(function (it) { return it.t === 'e'; }).forEach(function (it) {
       var xs = it.poly.map(function (q) { return q[0]; }), ys = it.poly.map(function (q) { return q[1]; }), cx = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2, cy = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2, tg = stTag(it.i), nm = eqLabel(model.equip[it.i].k);
       o += '<path d="' + path(it.poly) + '" fill="#bfe5e2" fill-opacity="0.75" stroke="#0b5d58" stroke-width="1.3"/><text x="' + X(cx) + '" y="' + Y(cy) + '" text-anchor="middle" font-size="10" font-weight="bold" fill="#063d3a">' + esc(tg) + '</text><text x="' + X(cx) + '" y="' + (Y(cy) + 11) + '" text-anchor="middle" font-size="8" fill="#063d3a">' + esc(nm) + '</text>';
@@ -1506,13 +1559,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (used.some(function (u) { return bx[0] < u[2] && bx[2] > u[0] && bx[1] < u[3] && bx[3] > u[1]; })) return; used.push(bx);
       o += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" font-size="6.5" fill="#1a3a50" paint-order="stroke" stroke="#fff" stroke-width="2">' + tx + '</text>';
     });
-    var colsU = [], colsV = [], lev = [];
+    var colsU = [], colsV = [], lev = [], levA = [];            // levA: tops of gratings, stairs, ladders and equipment, which win over a member centreline nearby
     model.steel.m.forEach(function (m) {
       if (cut != null && view !== 'plan' && !(inCut(m.a) && inCut(m.b))) return;
       if (Math.abs(m.a[0] - m.b[0]) < 1e-6 && Math.abs(m.a[2] - m.b[2]) < 1e-6) { colsU.push(uv(m.a)[0]); if (view === 'plan') colsV.push(m.a[2]); }
       if (view !== 'plan') [m.a, m.b].forEach(function (q) { if (q[1] > 0.01) lev.push(q[1]); });
     });
-    items.filter(function (it) { return it.t === 'e'; }).forEach(function (it) { var E = model.equip[it.i], f = stFoot(E, 0); colsU.push(view === 'side' ? E.p[2] : E.p[0]); if (view === 'plan') colsV.push(E.p[2]); else { lev.push(f.y1); if (f.y0 > 0.01) lev.push(f.y0); } });
+    if (view !== 'plan') model.steel.a.forEach(function (a) { var ref = a.p || a.a; if (cut != null && !inCut(ref)) return; if (a.t === 'g') levA.push(a.p[1]); else if (a.t === 's') levA.push(a.p[1] + a.H); else if (a.t === 'l') levA.push(a.p[1] + a.h); else levA.push(a.a[1]); });
+    items.filter(function (it) { return it.t === 'e'; }).forEach(function (it) { var E = model.equip[it.i], f = stFoot(E, 0); colsU.push(view === 'side' ? E.p[2] : E.p[0]); if (view === 'plan') colsV.push(E.p[2]); else { levA.push(f.y1); if (f.y0 > 0.01) levA.push(f.y0); } });
     var uniq = function (a) { a = a.map(function (v) { return Math.round(v * 1000) / 1000; }).sort(function (x, y) { return x - y; }); return a.filter(function (v, i) { return !i || v - a[i - 1] > 0.0015; }); };
     function chain(vals, horiz, off) {
       vals = uniq(vals); if (vals.length < 2) return '';
@@ -1531,16 +1585,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (colsU.length > 1) o += chain([Math.min.apply(null, colsU), Math.max.apply(null, colsU)], true, by + 18);
     if (view === 'plan') { o += chain(colsV, false, lx); if (colsV.length > 1) o += chain([Math.min.apply(null, colsV), Math.max.apply(null, colsV)], false, lx - 18); }
     else {
-      uniq(lev).reduce(function (r, z) { if (!r.length || z - r[r.length - 1] > 0.12) r.push(z); return r; }, []).forEach(function (z) { o += '<line x1="' + (lx - 6) + '" y1="' + Y(z) + '" x2="' + (X(u1) + 20) + '" y2="' + Y(z) + '" stroke="#7a8a96" stroke-width="0.5" stroke-dasharray="2 4"/><text x="' + (lx - 8) + '" y="' + (Y(z) + 3) + '" text-anchor="end" font-size="9" fill="#111">EL +' + Math.round(z * 1000) + '</text>'; });
+      uniq(lev).map(function (z) { return [z, 0]; }).concat(uniq(levA).map(function (z) { return [z, 1]; })).sort(function (p, q) { return p[0] - q[0] || q[1] - p[1]; }).reduce(function (r, p) { var l = r[r.length - 1]; if (!l || p[0] - l[0] > 0.12) r.push(p); else if (p[1] && !l[1]) r[r.length - 1] = p; return r; }, []).map(function (p) { return p[0]; }).forEach(function (z) { o += '<line x1="' + (lx - 6) + '" y1="' + Y(z) + '" x2="' + (X(u1) + 20) + '" y2="' + Y(z) + '" stroke="#7a8a96" stroke-width="0.5" stroke-dasharray="2 4"/><text x="' + (lx - 8) + '" y="' + (Y(z) + 3) + '" text-anchor="end" font-size="9" fill="#111">EL +' + Math.round(z * 1000) + '</text>'; });
       o += '<line x1="' + (X(u0) - 20) + '" y1="' + Y(0) + '" x2="' + (X(u1) + 20) + '" y2="' + Y(0) + '" stroke="#111" stroke-width="1.6"/><text x="' + (lx - 8) + '" y="' + (Y(0) + 3) + '" text-anchor="end" font-size="9" fill="#111">EL 0</text>';
     }
     if (view === 'plan') o += '<g transform="translate(' + (W - 80) + ' 80)"><circle r="22" fill="none" stroke="#111"/><path d="M0 -22 L6 8 L0 3 L-6 8Z" fill="#111"/><text y="-28" text-anchor="middle" font-size="12" font-weight="bold">N</text></g>';
     var tb = H - 14 - TB, tot = stTotals(), name = view === 'plan' ? 'PLAN' : cut != null ? 'SECTION AT ' + (view === 'side' ? 'X' : 'Y') + ' = ' + Math.round(cut * 1000) : view === 'front' ? 'ELEVATION, LOOKING ALONG Y' : 'ELEVATION, LOOKING ALONG X', d = new Date(), ds = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
     o += '<rect x="14" y="' + tb + '" width="' + (W - 28) + '" height="' + TB + '" fill="none" stroke="#111" stroke-width="1.4"/>';
-    [[0.34, 'PROJECT', title || '-'], [0.56, 'VIEW', name], [0.66, 'SCALE', '1:' + ratio], [0.76, 'STEEL', Math.round(tot.kg) + ' kg, ' + tot.n + ' members'], [0.9, 'DATE', ds]].forEach(function (c, k, a) {
+    [[0.34, 'PROJECT', title || '-'], [0.52, 'VIEW', name], [0.62, 'SCALE', '1:' + ratio], [0.80, 'STEEL', Math.round(tot.kg) + ' kg, ' + tot.n + ' members'], [0.9, 'DATE', ds]].forEach(function (c, k, a) {
       var x0 = 14 + (k ? a[k - 1][0] : 0) * (W - 28); o += (k ? '<line x1="' + x0 + '" y1="' + tb + '" x2="' + x0 + '" y2="' + (H - 14) + '" stroke="#111"/>' : '') + '<text x="' + (x0 + 8) + '" y="' + (tb + 16) + '" font-size="8" fill="#555">' + c[1] + '</text><text x="' + (x0 + 8) + '" y="' + (tb + 44) + '" font-size="14" font-weight="bold" fill="#111">' + esc(c[2]) + '</text>';
     });
-    o += '<text x="' + (W - 20) + '" y="' + (tb + 16) + '" text-anchor="end" font-size="8" fill="#555">DIMENSIONS IN mm. LEVELS ARE TO MEMBER CENTRELINE, EQUIPMENT TO ITS BASE AND TOP</text></svg>';
+    o += '<text x="22" y="' + (tb - 6) + '" font-size="8" fill="#555">DIMENSIONS IN mm. LEVELS ARE TO MEMBER CENTRELINE, EQUIPMENT TO ITS BASE AND TOP</text></svg>';
     return o;
   }
   var stView = 'plan', stLab = true, stCut = null;
@@ -1555,6 +1609,205 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return a.sort(function (x, y) { return x - y; }).filter(function (v, i, b) { return !i || v - b[i - 1] > 0.0015; });
   }
 
+  // ---------- steel accessories: grating, handrail, stair, ladder (spliced after steel.part.js) ----------
+  // model.steel.a: [{t: 'g' grating panel | 'h' handrail | 's' stair | 'l' ladder, ...}], positions in model metres [x, up, z].
+  // Every figure here is a typical value; check the standard that applies to the site (EN ISO 14122, OSHA 1910) before drawing for construction.
+  var GRAT = {                                                      // grating by bearing bar (height x thickness at 30 mm pitch) and chequer plate by thickness
+    G25x3: { name: 'Grating 25x3', h: 25, t: 3, pitch: 30 }, G32x3: { name: 'Grating 32x3', h: 32, t: 3, pitch: 30 }, G32x5: { name: 'Grating 32x5', h: 32, t: 5, pitch: 30 }, G40x5: { name: 'Grating 40x5', h: 40, t: 5, pitch: 30 },
+    CP4: { name: 'Chequer plate 4 mm', plate: 4 }, CP6: { name: 'Chequer plate 6 mm', plate: 6 }, CP8: { name: 'Chequer plate 8 mm', plate: 8 }
+  };
+  var GRAT_KEYS = Object.keys(GRAT);
+  function stGratKgm2(k) { var g = GRAT[k]; return g.plate ? g.plate * ST_RHO / 1000 * 1.1 : (1000 / g.pitch) * (g.h / 1000) * (g.t / 1000) * ST_RHO + 10 * 5e-3 * 5e-3 * ST_RHO; }   // bearing bars plus twisted cross bars at 100 mm; chequer pattern adds about 10 percent
+  function stGratTh(k) { var g = GRAT[k]; return (g.plate ? g.plate : g.h) / 1000; }
+  var RAILS = { '42.4x2.6': { od: 42.4, t: 2.6 }, '48.3x3.2': { od: 48.3, t: 3.2 } };
+  function stRailKgm(k) { var r = RAILS[k]; return Math.PI * (r.od - r.t) * r.t * ST_RHO * 1e-6; }
+  var ST_TOE = { w: 0.005, h: 0.1 };                                 // toe plate 100 x 5
+  var ST_DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  function stDirV(d) { return ST_DIRS[((Math.round(d / 90) % 4) + 4) % 4]; }
+  function stClamp(v, lo, hi, d) { v = stNum(v, d); return Math.max(lo, Math.min(hi, v)); }
+  function stCleanAcc(q) {
+    if (!q || typeof q !== 'object') return null;
+    var k = String(q.k || '').slice(0, 20), o;
+    if (q.t === 'g') {
+      var p = stPt(q.p); if (!p || !OWN(GRAT, q.s)) return null;
+      return { t: 'g', p: p, w: st3(stClamp(q.w, 0.2, 30, 1)), d: st3(stClamp(q.d, 0.2, 30, 1)), r: ((Math.round(stNum(q.r, 0)) % 360) + 360) % 360, s: q.s, k: k };
+    }
+    if (q.t === 'h') {
+      var a = stPt(q.a), b = stPt(q.b); if (!a || !b || !OWN(RAILS, q.rs)) return null;
+      return { t: 'h', a: a, b: b, h: st3(stClamp(q.h, 0.9, 1.4, 1.1)), post: st3(stClamp(q.post, 0.5, 2, 1.2)), mid: [0, 1, 2].indexOf(q.mid) >= 0 ? q.mid : 1, toe: q.toe !== false, rs: q.rs, k: k };
+    }
+    if (q.t === 's') {
+      var ps = stPt(q.p); if (!ps || !OWN(SSEC, q.sec) || !OWN(GRAT, q.tread) || !OWN(RAILS, q.rs)) return null;
+      return { t: 's', p: ps, dir: ((Math.round(stNum(q.dir, 0) / 90) % 4) + 4) % 4 * 90, H: st3(stClamp(q.H, 0.3, 8, 3)), w: st3(stClamp(q.w, 0.5, 3, 0.9)), g: st3(stClamp(q.g, 0.18, 0.4, 0.25)), sec: q.sec, tread: q.tread, rail: q.rail !== false, rs: q.rs, k: k };
+    }
+    if (q.t === 'l') {
+      var pl = stPt(q.p); if (!pl) return null;
+      return { t: 'l', p: pl, dir: ((Math.round(stNum(q.dir, 0) / 90) % 4) + 4) % 4 * 90, h: st3(stClamp(q.h, 0.5, 15, 3)), w: st3(stClamp(q.w, 0.4, 0.8, 0.5)), cage: ['auto', 'yes', 'no'].indexOf(q.cage) >= 0 ? q.cage : 'auto', k: k };
+    }
+    return null;
+  }
+  function stAccName(a) { return a.t === 'g' ? GRAT[a.s].name : a.t === 'h' ? 'Handrail' : a.t === 's' ? 'Stair' : 'Ladder'; }
+  function stHasCage(a) { return a.cage === 'yes' || (a.cage === 'auto' && a.h > 3); }
+  function stStairN(a) { return Math.max(2, Math.ceil(a.H / 0.2 - 1e-9)); }
+
+  // ---------- geometry: every accessory is a few primitives ----------
+  // box {c, w, h, d, r deg}, cyl {a, b, rad}, bar {a, b, w, h} (w across, h up), mem {a, b, s, r} (a section member), ring {c, rad, tube}
+  function stRailParts(A, B, h, post, mid, toe, rs) {
+    var L = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]), n = Math.max(1, Math.ceil(L / post - 1e-9)), rad = RAILS[rs].od / 2000, kgm = stRailKgm(rs), out = [], at = function (f, dy) { return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f + dy, A[2] + (B[2] - A[2]) * f]; };
+    if (L < 0.01) return out;
+    for (var i = 0; i <= n; i++) out.push({ k: 'cyl', a: at(i / n, 0), b: at(i / n, h), rad: rad, kg: h * kgm });
+    out.push({ k: 'cyl', a: at(0, h), b: at(1, h), rad: rad, kg: L * kgm });
+    for (var m = 1; m <= mid; m++) out.push({ k: 'cyl', a: at(0, h * m / (mid + 1)), b: at(1, h * m / (mid + 1)), rad: rad, kg: L * kgm });
+    if (toe) out.push({ k: 'bar', a: at(0, 0.05), b: at(1, 0.05), w: ST_TOE.w, h: ST_TOE.h, kg: L * ST_TOE.w * ST_TOE.h * ST_RHO });
+    return out;
+  }
+  function stAccParts(a) {
+    var out = [], p;
+    if (a.t === 'g') { var th = stGratTh(a.s); out.push({ k: 'box', c: [a.p[0], a.p[1] - th / 2, a.p[2]], w: a.w, h: th, d: a.d, r: a.r, kg: a.w * a.d * stGratKgm2(a.s), grat: true }); }
+    else if (a.t === 'h') out = stRailParts(a.a, a.b, a.h, a.post, a.mid, a.toe, a.rs);
+    else if (a.t === 's') {
+      var n = stStairN(a), r = a.H / n, run = (n - 1) * a.g, d = stDirV(a.dir), lat = [-d[1], d[0]], th2 = stGratTh(a.tread), ang = Math.atan2(d[0], d[1]) * 180 / Math.PI, S = SSEC[a.sec];
+      [-1, 1].forEach(function (sd) {
+        var ox = lat[0] * sd * (a.w / 2 + S.b / 2000), oz = lat[1] * sd * (a.w / 2 + S.b / 2000);
+        out.push({ k: 'mem', a: [a.p[0] + ox, a.p[1], a.p[2] + oz], b: [a.p[0] + d[0] * run + ox, a.p[1] + a.H, a.p[2] + d[1] * run + oz], s: a.sec, r: sd < 0 ? 0 : 180, kg: Math.hypot(run, a.H) * stKgm(S) });
+      });
+      for (var i = 1; i <= n - 1; i++) out.push({ k: 'box', c: [a.p[0] + d[0] * ((i - 0.5) * a.g), a.p[1] + i * r - th2 / 2, a.p[2] + d[1] * ((i - 0.5) * a.g)], w: a.w, h: th2, d: a.g, r: ang, kg: a.w * a.g * stGratKgm2(a.tread), grat: true });
+      if (a.rail) [-1, 1].forEach(function (sd) {
+        var o = a.w / 2 + S.b / 1000, A = [a.p[0] + lat[0] * sd * o, a.p[1], a.p[2] + lat[1] * sd * o], B = [A[0] + d[0] * run, A[1] + a.H, A[2] + d[1] * run];
+        out = out.concat(stRailParts(A, B, 0.9, 1.5, 1, false, a.rs));
+      });
+    }
+    else if (a.t === 'l') {
+      var dd = stDirV(a.dir), lt = [-dd[1], dd[0]], w = a.w, h = a.h;
+      [-1, 1].forEach(function (sd) { var x = a.p[0] + lt[0] * sd * w / 2, z = a.p[2] + lt[1] * sd * w / 2; out.push({ k: 'bar', a: [x, a.p[1], z], b: [x, a.p[1] + h, z], w: 0.01, h: 0.05, kg: h * 0.05 * 0.01 * ST_RHO }); });
+      for (var y = 0.3; y < h - 0.05; y += 0.3) out.push({ k: 'cyl', a: [a.p[0] - lt[0] * w / 2, a.p[1] + y, a.p[2] - lt[1] * w / 2], b: [a.p[0] + lt[0] * w / 2, a.p[1] + y, a.p[2] + lt[1] * w / 2], rad: 0.01, kg: w * Math.PI * 0.01 * 0.01 * ST_RHO });
+      if (stHasCage(a)) {
+        var cr = 0.35, cx = a.p[0] - dd[0] * 0.4, cz = a.p[2] - dd[1] * 0.4;
+        for (var hy = 2.2; hy <= h + 0.9 + 1e-9; hy += 0.9) { var yy = Math.min(hy, h + 0.9); out.push({ k: 'ring', c: [cx, a.p[1] + yy, cz], rad: cr, tube: 0.012, kg: 2 * Math.PI * cr * 0.05 * 0.005 * ST_RHO }); }
+        for (var v = 0; v < 5; v++) { var an = Math.PI * (0.15 + 0.7 * v / 4), vx = cx - dd[0] * cr * Math.sin(an) + lt[0] * cr * Math.cos(an), vz = cz - dd[1] * cr * Math.sin(an) + lt[1] * cr * Math.cos(an); out.push({ k: 'cyl', a: [vx, a.p[1] + 2.2, vz], b: [vx, a.p[1] + h + 0.9, vz], rad: 0.008, kg: (h - 1.3) * 0.04 * 0.005 * ST_RHO }); }
+      }
+    }
+    return out;
+  }
+  function stAccKg(a) { return stAccParts(a).reduce(function (s, q) { return s + (q.kg || 0); }, 0); }
+  function stAccAll() { return model.steel.a; }
+
+  // ---------- 3D ----------
+  var stUC = null, stUB = null, stUR = {};
+  function stAccBuild() {
+    var A = model.steel.a; if (!A.length) return;
+    if (!stUC) { stUC = new T.CylinderGeometry(1, 1, 1, 8); stUB = new T.BoxGeometry(1, 1, 1); }
+    var cols = { g: 0x9aa4ab, h: 0xf2c14e, s: 0x6f95b0, l: 0xf2c14e }, mats = {};
+    A.forEach(function (a, i) {
+      var on = (sel && sel.kind === 'sacc' && sel.i === i), m0 = on ? mat(0xffb21f, 0.5) : (mats[a.t] = mats[a.t] || mat(cols[a.t], 0.6));
+      stAccParts(a).forEach(function (q) {
+        var m, mm = on ? m0 : q.grat ? (mats.gr = mats.gr || mat(0x9aa4ab, 0.7)) : m0;
+        if (q.k === 'box') { m = new T.Mesh(stUB, mm); m.position.set(q.c[0], q.c[1], q.c[2]); m.rotation.y = q.r * Math.PI / 180; m.scale.set(q.w, q.h, q.d); }
+        else if (q.k === 'cyl') { var da = V(q.b).sub(V(q.a)), L = da.length(); m = new T.Mesh(stUC, mm); m.position.copy(V(q.a)).addScaledVector(da, 0.5); m.quaternion.setFromUnitVectors(UP, da.normalize()); m.scale.set(q.rad, L, q.rad); }
+        else if (q.k === 'bar') { var B = stBasis({ a: q.a, b: q.b, r: 0 }), L2 = V(q.b).distanceTo(V(q.a)); m = new T.Mesh(stUB, mm); m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x.clone().multiplyScalar(q.w), B.y.clone().multiplyScalar(q.h), B.z.clone().multiplyScalar(L2)); m.matrix.setPosition(V(q.a).add(V(q.b)).multiplyScalar(0.5)); }
+        else if (q.k === 'mem') { var Lm = stLen(q); if (Lm < 0.001) return; var Bm = stBasis(q); m = new T.Mesh(stGeo(q.s, Lm), mm); m.matrixAutoUpdate = false; m.matrix.makeBasis(Bm.x, Bm.y, Bm.z); m.matrix.setPosition(V(q.a)); }
+        else if (q.k === 'ring') { var key = q.rad + ':' + q.tube; m = new T.Mesh(stUR[key] || (stUR[key] = new T.TorusGeometry(q.rad, q.tube, 6, 20)), mm); m.position.set(q.c[0], q.c[1], q.c[2]); m.rotation.x = Math.PI / 2; }
+        if (!m) return; m.userData = { kind: 'sacc', i: i }; world.add(m);
+      });
+    });
+  }
+
+  // ---------- checks ----------
+  function stAccWarnings() {
+    var A = model.steel.a, w = warns, lo = lowY();
+    A.forEach(function (a, i) {
+      var nm = (a.k || stAccName(a)) + ' (accessory ' + (i + 1) + ')';
+      if (a.t === 'l') {
+        if (a.h > 3 && a.cage === 'no') w.push('Ladder ' + nm + ' is ' + a.h.toFixed(1) + ' m high without a safety cage. A cage is usual above about 3 m: check the standard that applies.');
+        if (a.h > 6) w.push('Ladder ' + nm + ' is ' + a.h.toFixed(1) + ' m high. A rest platform about every 6 m is usual.');
+      }
+      if (a.t === 's') {
+        var n = stStairN(a), slope = Math.atan((a.H / n) / a.g) * 180 / Math.PI;
+        if (a.H > 3.2) w.push('Stair ' + nm + ' rises ' + a.H.toFixed(1) + ' m in one flight. About 3 m between landings is usual.');
+        if (slope > 45 || slope < 20) w.push('Stair ' + nm + ' slopes ' + Math.round(slope) + ' degrees. Industrial stairs are usually 30 to 45 degrees.');
+      }
+    });
+    stOpenEdges().slice(0, 8).forEach(function (o) { w.push('Platform ' + o.name + ' at ' + Math.round(o.y * 1000) + ' mm has about ' + o.len.toFixed(1) + ' m of open edge with no handrail, stair or ladder.'); });
+  }
+  function stOpenEdges() {                                          // gratings above 0.5 m whose edge has nothing at it: [{name, y, len}]
+    var A = model.steel.a, G = [], R = [], out = [], lo = lowY();
+    A.forEach(function (a, i) { if (a.t === 'g') G.push({ a: a, i: i }); else if (a.t === 'h') R.push(a); });
+    if (G.length > 200) return out;
+    G.forEach(function (gi) {
+      var g = gi.a; if (g.p[1] - lo < 0.5) return;
+      var th = g.r * Math.PI / 180, c = Math.cos(th), s = Math.sin(th), loc = function (x, z) { return [g.p[0] + x * c + z * s, g.p[2] - x * s + z * c]; }, open = 0, edges = [[[-g.w / 2, -g.d / 2], [g.w / 2, -g.d / 2]], [[g.w / 2, -g.d / 2], [g.w / 2, g.d / 2]], [[g.w / 2, g.d / 2], [-g.w / 2, g.d / 2]], [[-g.w / 2, g.d / 2], [-g.w / 2, -g.d / 2]]];
+      edges.forEach(function (e) {
+        var L = Math.hypot(e[1][0] - e[0][0], e[1][1] - e[0][1]), n = Math.max(2, Math.round(L / 0.1));
+        for (var k = 0; k < n; k++) {
+          var f = (k + 0.5) / n, q = loc(e[0][0] + (e[1][0] - e[0][0]) * f, e[0][1] + (e[1][1] - e[0][1]) * f), cov = false;
+          G.forEach(function (oi) { if (cov || oi === gi) return; var o = oi.a; if (Math.abs(o.p[1] - g.p[1]) > 0.06) return; var ot = o.r * Math.PI / 180, dx = q[0] - o.p[0], dz = q[1] - o.p[2], lx = dx * Math.cos(ot) - dz * Math.sin(ot), lz = dx * Math.sin(ot) + dz * Math.cos(ot); if (Math.abs(lx) <= o.w / 2 + 0.06 && Math.abs(lz) <= o.d / 2 + 0.06) cov = true; });
+          if (!cov) R.forEach(function (r) { if (cov || Math.abs(Math.min(r.a[1], r.b[1]) - g.p[1]) > 0.15 && Math.abs(Math.max(r.a[1], r.b[1]) - g.p[1]) > 0.15) return; if (stPlanDist(q, r.a, r.b) < 0.12) cov = true; });
+          if (!cov) A.forEach(function (a) {
+            if (cov) return;
+            if (a.t === 's') { var d = stDirV(a.dir), n2 = stStairN(a), tx = a.p[0] + d[0] * (n2 - 1) * a.g, tz = a.p[2] + d[1] * (n2 - 1) * a.g; if (Math.abs(a.p[1] + a.H - g.p[1]) < 0.15 && Math.hypot(q[0] - tx, q[1] - tz) < a.w / 2 + 0.3) cov = true; }
+            else if (a.t === 'l') { if (Math.abs(a.p[1] + a.h - g.p[1]) < 0.6 && Math.hypot(q[0] - a.p[0], q[1] - a.p[2]) < 0.6) cov = true; }
+          });
+          if (!cov) open += L / n;
+        }
+      });
+      if (open > 0.15) out.push({ name: g.k || ('accessory ' + (gi.i + 1)), y: g.p[1], len: open });
+    });
+    return out;
+  }
+  function stPlanDist(q, a, b) {                                    // distance in plan from point q [x, z] to the segment a to b
+    var ax = a[0], az = a[2], dx = b[0] - ax, dz = b[2] - az, L2 = dx * dx + dz * dz, t = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((q[0] - ax) * dx + (q[1] - az) * dz) / L2));
+    return Math.hypot(ax + dx * t - q[0], az + dz * t - q[1]);
+  }
+
+  // ---------- list ----------
+  function stAccRows() {                                            // [{name, q, unit, amt, kg}] grouped by kind and section
+    var g = {};
+    model.steel.a.forEach(function (a) {
+      var key = a.t === 'g' ? 'g:' + a.s : a.t === 's' ? 's:' + a.sec : a.t, e = g[key] || (g[key] = { name: a.t === 'g' ? GRAT[a.s].name : a.t === 'h' ? 'Handrail with toe plate' : a.t === 's' ? 'Stair, stringers ' + SSEC[a.sec].name : 'Ladder', q: 0, amt: 0, kg: 0, unit: a.t === 'g' ? 'm²' : a.t === 'h' ? 'm' : a.t === 's' ? 'm rise' : 'm' });
+      e.q++; e.kg += stAccKg(a);
+      e.amt += a.t === 'g' ? a.w * a.d : a.t === 'h' ? Math.hypot(a.b[0] - a.a[0], a.b[1] - a.a[1], a.b[2] - a.a[2]) : a.t === 's' ? a.H : a.h;
+      if (a.t === 'h' && !a.toe) e.name = 'Handrail';
+    });
+    return Object.keys(g).map(function (k) { return g[k]; });
+  }
+
+  // ---------- generators ----------
+  var stD = { gw: 1, gd: 2, gs: 'G32x5', rh: 1.1, rpost: 1.2, rmid: 1, rtoe: true, rs: '42.4x2.6', sH: 3, sW: 0.9, sG: 0.25, ssec: 'C200x80', stread: 'G32x5', sdir: 0, lh: 4, lw: 0.5, ldir: 0, lcage: 'auto' };
+  function stAccAdd(q) { var c = stCleanAcc(q); if (!c) return -1; pushHist(); model.steel.a.push(c); changed(); return model.steel.a.length - 1; }
+  function stRailAround(i) {                                        // a handrail on the four sides of grating i, at its top level
+    var g = model.steel.a[i]; if (!g || g.t !== 'g') return 0;
+    var th = g.r * Math.PI / 180, c = Math.cos(th), s = Math.sin(th), loc = function (x, z) { return [st3(g.p[0] + x * c + z * s), g.p[1], st3(g.p[2] - x * s + z * c)]; };
+    var P = [loc(-g.w / 2, -g.d / 2), loc(g.w / 2, -g.d / 2), loc(g.w / 2, g.d / 2), loc(-g.w / 2, g.d / 2)], made = [];
+    for (var k = 0; k < 4; k++) { var q = stCleanAcc({ t: 'h', a: P[k], b: P[(k + 1) % 4], h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs, k: g.k ? g.k + '-R' + (k + 1) : '' }); if (q) made.push(q); }
+    pushHist(); made.forEach(function (q) { model.steel.a.push(q); }); changed(); return made.length;
+  }
+  function stPlatform(o) {                                          // a framed deck: corner legs, perimeter beams, secondary beams, one grating panel, handrail round it
+    o = Object.assign({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, leg: 'H150x150', beam: 'H150x75', sec: 'C100x50', grat: 'G32x5', rail: 'all', brace: 'none', mk: 'PF1', pitch: 1000 }, o || {});
+    var X = Number(o.x) / 1000, Z = Number(o.y) / 1000, w = Number(o.w) / 1000, d = Number(o.d) / 1000, tos = Number(o.lvl) / 1000, pitch = Math.max(0.4, Number(o.pitch) / 1000);
+    if (!(w >= 0.6 && d >= 0.6 && tos >= 0.3) || !OWN(SSEC, o.leg) || !OWN(SSEC, o.beam) || !OWN(SSEC, o.sec) || !OWN(GRAT, o.grat)) return 0;
+    var mk = String(o.mk || 'PF').slice(0, 10), made = [], th = stGratTh(o.grat), zb = st3(tos - th - SSEC[o.beam].h / 2000), zs = st3(tos - th - SSEC[o.sec].h / 2000);
+    var nx = Math.max(1, Math.ceil(w / 5 - 1e-9)), nz = Math.max(1, Math.ceil(d / 5 - 1e-9)), n = 0;
+    var xs = [], zz = []; for (var i = 0; i <= nx; i++) xs.push(st3(X + w * i / nx)); for (var j = 0; j <= nz; j++) zz.push(st3(Z + d * j / nz));
+    xs.forEach(function (x) { zz.forEach(function (z) { if ((x === xs[0] || x === xs[xs.length - 1]) || (z === zz[0] || z === zz[zz.length - 1])) made.push({ a: [x, 0, z], b: [x, zb, z], s: o.leg, r: 0, k: mk + '-C' + (++n) }); }); });
+    var nb = 0; for (var a = 0; a < nx; a++) { made.push({ a: [xs[a], zb, zz[0]], b: [xs[a + 1], zb, zz[0]], s: o.beam, r: 0, k: mk + '-B' + (++nb) }, { a: [xs[a], zb, zz[nz]], b: [xs[a + 1], zb, zz[nz]], s: o.beam, r: 0, k: mk + '-B' + (++nb) }); }
+    for (var c = 0; c < nz; c++) made.push({ a: [xs[0], zb, zz[c]], b: [xs[0], zb, zz[c + 1]], s: o.beam, r: 0, k: mk + '-B' + (++nb) }, { a: [xs[nx], zb, zz[c]], b: [xs[nx], zb, zz[c + 1]], s: o.beam, r: 0, k: mk + '-B' + (++nb) });
+    var ns = Math.max(1, Math.ceil(w / pitch - 1e-9)), nsb = 0;                         // secondary beams across the short way, at most `pitch` apart
+    for (var s = 1; s < ns; s++) { var xx = st3(X + w * s / ns); made.push({ a: [xx, zs, zz[0]], b: [xx, zs, zz[nz]], s: o.sec, r: 0, k: mk + '-S' + (++nsb) }); }
+    if (o.brace === 'x' && OWN(SSEC, 'L50x50x6')) [[xs[0], zz[0], xs[0], zz[nz]], [xs[nx], zz[0], xs[nx], zz[nz]]].forEach(function (e, q) { made.push({ a: [st3(e[0]), 0, st3(e[1])], b: [st3(e[2]), zb, st3(e[3])], s: 'L50x50x6', r: 0, k: mk + '-X' + (2 * q + 1) }, { a: [st3(e[2]), 0, st3(e[3])], b: [st3(e[0]), zb, st3(e[1])], s: 'L50x50x6', r: 0, k: mk + '-X' + (2 * q + 2) }); });
+    var acc = [stCleanAcc({ t: 'g', p: [X + w / 2, tos, Z + d / 2], w: w, d: d, r: 0, s: o.grat, k: mk + '-G' })];
+    if (o.rail === 'all') { var Pc = [[X, Z], [X + w, Z], [X + w, Z + d], [X, Z + d]]; for (var k = 0; k < 4; k++) acc.push(stCleanAcc({ t: 'h', a: [Pc[k][0], tos, Pc[k][1]], b: [Pc[(k + 1) % 4][0], tos, Pc[(k + 1) % 4][1]], h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs, k: mk + '-R' + (k + 1) })); }
+    pushHist(); made.forEach(function (m) { model.steel.m.push(m); }); acc.filter(Boolean).forEach(function (q) { model.steel.a.push(q); }); changed(); return made.length + acc.length;
+  }
+  function stStanchion(o) {                                         // a T support for pipes: one column and a head beam across, or two columns
+    o = Object.assign({ x: 0, y: 0, lvl: 1000, width: 1500, dir: 'x', col: 'H150x150', beam: 'H100x50', two: 'no', mk: 'ST1' }, o || {});
+    var X = Number(o.x) / 1000, Z = Number(o.y) / 1000, tos = Number(o.lvl) / 1000, w = Number(o.width) / 1000;
+    if (!(tos >= 0.3) || !(w >= 0.3) || !OWN(SSEC, o.col) || !OWN(SSEC, o.beam)) return 0;
+    var u = o.dir === 'y' ? [0, 1] : [1, 0], zb = stCz(tos, o.beam), mk = String(o.mk || 'ST').slice(0, 10), made = [], pos = o.two === 'yes' ? [-w / 2, w / 2] : [0];
+    pos.forEach(function (t, i) { var x = st3(X + u[0] * t), z = st3(Z + u[1] * t); made.push({ a: [x, 0, z], b: [x, zb, z], s: o.col, r: o.dir === 'y' ? 90 : 0, k: mk + '-C' + (i + 1) }); });
+    made.push({ a: [st3(X - u[0] * w / 2), zb, st3(Z - u[1] * w / 2)], b: [st3(X + u[0] * w / 2), zb, st3(Z + u[1] * w / 2)], s: o.beam, r: 0, k: mk + '-B1' });
+    pushHist(); made.forEach(function (m) { model.steel.m.push(m); }); changed(); return made.length;
+  }
+
   // ---------- steel inspector and panel (spliced after steel.part.js) ----------
   function stInspHtml(it, i) {
     var a = cadOf(it.a), b = cadOf(it.b), s = SSEC[it.s], L = stLen(it), co = function (id, v) { return '<input type="text" inputmode="decimal" id="' + id + '" value="' + mmText(v) + '" autocomplete="off">'; };
@@ -1567,8 +1820,28 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       + '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="st-ox" value="0"><input type="text" inputmode="decimal" id="st-oy" value="0"><input type="text" inputmode="decimal" id="st-oz" value="0"></div></div>'
       + '<div class="row"><button id="st-imove">Move</button><button id="st-icopy">Copy</button><button id="st-idel">Delete</button></div>';
   }
+  function stOffs2() { var f = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }; return sceneOf([f('sa-ox'), f('sa-oy'), f('sa-oz')]); }
   function stOffs() { var f = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }; return sceneOf([f('st-ox'), f('st-oy'), f('st-oz')]); }
   function stBindInsp() {
+  $('insp').addEventListener('change', function (e) {
+    var t = e.target; if (!t || !t.id || t.id.indexOf('sa-') !== 0 || !sel || sel.kind !== 'sacc') return;
+    var a = model.steel.a[sel.i]; if (!a || /^sa-o[xyz]$/.test(t.id)) return;
+    var c = stAccApply(a, t.id.slice(3), t.value); if (!c) { toast('That value is not usable'); showInsp(); return; }
+    pushHist(); model.steel.a[sel.i] = c; changed();
+  });
+  $('insp').addEventListener('click', function (e) {
+    var id = e.target && e.target.id; if (!id || id.indexOf('sa-') !== 0 || !sel || sel.kind !== 'sacc') return;
+    var a = model.steel.a[sel.i]; if (!a) return;
+    if (id === 'sa-del') { removeItem('sacc', sel.i); return; }
+    if (id === 'sa-rail') { var n = stRailAround(sel.i); toast(n ? n + ' handrails added' : 'Could not add handrails'); return; }
+    if (id === 'sa-move' || id === 'sa-copy') {
+      var o = stOffs2(), c = JSON.parse(JSON.stringify(a)), sh = function (P) { return [st3(P[0] + o[0]), st3(P[1] + o[1]), st3(P[2] + o[2])]; };
+      if (c.p) c.p = sh(c.p); if (c.a) { c.a = sh(c.a); c.b = sh(c.b); }
+      var cc = stCleanAcc(c); if (!cc) return; pushHist();
+      if (id === 'sa-copy') { cc.k = ''; model.steel.a.push(cc); sel = { kind: 'sacc', i: model.steel.a.length - 1 }; toast('Copied'); } else model.steel.a[sel.i] = cc;
+      changed();
+    }
+  });
   $('insp').addEventListener('change', function (e) {
     var t = e.target; if (!t || !t.id || t.id.indexOf('st-i') !== 0 || !sel || sel.kind !== 'steel') return;
     var p = model.steel.m[sel.i]; if (!p) return;
@@ -1589,7 +1862,44 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   });
   }
 
+  var YN = [['1', 'Yes'], ['0', 'No']], DIRS = [[0, '+X'], [90, '+Y'], [180, '−X'], [270, '−Y']];
+  function stAccSpec(a) {                                           // [key, label, kind (mm, deg, int, sel, txt), options]
+    var gr = GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; }), rl = Object.keys(RAILS).map(function (k) { return [k, 'CHS ' + k]; }), ch = SSEC_KEYS.filter(function (k) { return SSEC[k].t === 'C'; }).map(function (k) { return [k, SSEC[k].name]; });
+    if (a.t === 'g') return [['px', 'Centre X, mm', 'mm'], ['py', 'Centre Y, mm', 'mm'], ['pz', 'Top level, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['d', 'Depth, mm', 'mm'], ['r', 'Turn, degrees', 'deg'], ['s', 'Section', 'sel', gr], ['k', 'Mark', 'txt']];
+    if (a.t === 'h') return [['ax', 'Start X, mm', 'mm'], ['ay', 'Start Y, mm', 'mm'], ['az', 'Start level, mm', 'mm'], ['bx', 'End X, mm', 'mm'], ['by', 'End Y, mm', 'mm'], ['bz', 'End level, mm', 'mm'], ['h', 'Height, mm', 'mm'], ['post', 'Post spacing, mm', 'mm'], ['mid', 'Intermediate rails', 'sel', [[0, '0'], [1, '1'], [2, '2']]], ['toe', 'Toe plate', 'sel', YN], ['rs', 'Rail', 'sel', rl], ['k', 'Mark', 'txt']];
+    if (a.t === 's') return [['px', 'Foot X, mm', 'mm'], ['py', 'Foot Y, mm', 'mm'], ['pz', 'Foot level, mm', 'mm'], ['dir', 'Climbs toward', 'sel', DIRS], ['H', 'Rise, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['g', 'Going, mm', 'mm'], ['sec', 'Stringers', 'sel', ch], ['tread', 'Treads', 'sel', gr], ['rail', 'Handrails', 'sel', YN], ['rs', 'Rail', 'sel', rl], ['k', 'Mark', 'txt']];
+    return [['px', 'Base X, mm', 'mm'], ['py', 'Base Y, mm', 'mm'], ['pz', 'Base level, mm', 'mm'], ['dir', 'Faces', 'sel', DIRS], ['h', 'Height, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['cage', 'Safety cage', 'sel', [['auto', 'Auto, above 3 m'], ['yes', 'Yes'], ['no', 'No']]], ['k', 'Mark', 'txt']];
+  }
+  function stAccVal(a, key) {
+    var m = /^([pab])([xyz])$/.exec(key); if (m) { var P = a[m[1]], i = { x: 0, y: 2, z: 1 }[m[2]]; return mmText(P[i]); }
+    var v = a[key]; return key === 'toe' || key === 'rail' ? (v ? '1' : '0') : ['h', 'post', 'w', 'd', 'H', 'g'].indexOf(key) >= 0 && !(key === 'h' && a.t === 'l' && false) ? mmText(v) : v;
+  }
+  function stAccInspHtml(a, i) {
+    var spec = stAccSpec(a), h = '<h2>' + esc(stAccName(a)) + ' ' + (i + 1) + '</h2><div class="grid2">';
+    spec.forEach(function (f) {
+      var v = stAccVal(a, f[0]);
+      h += '<label class="field">' + f[1] + (f[2] === 'sel' ? '<select id="sa-' + f[0] + '">' + opts(f[3], v) + '</select>' : '<input type="text" inputmode="' + (f[2] === 'txt' ? 'text' : 'decimal') + '" id="sa-' + f[0] + '" value="' + esc(v) + '" autocomplete="off">') + '</label>';
+    });
+    h += '</div>';
+    if (a.t === 's') { var n = stStairN(a); h += '<p>' + n + ' risers of ' + Math.round(a.H / n * 1000) + ' mm, ' + (n - 1) + ' treads, run ' + Math.round((n - 1) * a.g * 1000) + ' mm, slope ' + Math.round(Math.atan(a.H / n / a.g) * 180 / Math.PI) + ' degrees.</p>'; }
+    if (a.t === 'l') h += '<p>' + (stHasCage(a) ? 'With a safety cage.' : 'No cage.') + '</p>';
+    h += '<p>' + stAccKg(a).toFixed(1) + ' kg' + (a.t === 'g' ? ', ' + (a.w * a.d).toFixed(2) + ' m²' : '') + '</p>';
+    if (a.t === 'g') h += '<div class="row"><button id="sa-rail">Handrail round it</button></div>';
+    h += '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="sa-ox" value="0"><input type="text" inputmode="decimal" id="sa-oy" value="0"><input type="text" inputmode="decimal" id="sa-oz" value="0"></div></div><div class="row"><button id="sa-move">Move</button><button id="sa-copy">Copy</button><button id="sa-del">Delete</button></div>';
+    return h;
+  }
+  function stAccApply(a, key, raw) {                                // a new copy of accessory a with one field changed, cleaned, or null
+    var c = JSON.parse(JSON.stringify(a)), m = /^([pab])([xyz])$/.exec(key);
+    if (m) { var v = parseNum(raw); if (v == null) return null; c[m[1]][{ x: 0, y: 2, z: 1 }[m[2]]] = v / 1000; }
+    else if (['h', 'post', 'w', 'd', 'H', 'g'].indexOf(key) >= 0) { var u = parseNum(raw); if (u == null) return null; c[key] = u / 1000; }
+    else if (key === 'r' || key === 'dir' || key === 'mid') { var n = parseNum(raw); if (n == null) return null; c[key] = n; }
+    else if (key === 'toe' || key === 'rail') c[key] = raw === '1';
+    else c[key] = raw;
+    return stCleanAcc(c);
+  }
   var stA = { x: 0, y: 0, z: 0, r: 0 };
+  var stPf = { x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, pitch: 1000, leg: 'H150x150', beam: 'H150x75', sec: 'C100x50', grat: 'G32x5', rail: 'all', brace: 'none', mk: 'PF1' };
+  var stSn = { x: 0, y: 0, lvl: 1000, width: 1500, dir: 'x', two: 'no', col: 'H150x150', beam: 'H100x50', mk: 'ST1' };
   function stPanel() {
     var el = $('steel'); if (el.hidden) return;
     var T0 = stTotals(), R = stRows(), PR = stPlateRows(), BR = stBoltRows(), line = function (a, b) { return '<div class="row" style="justify-content:space-between"><span>' + a + '</span><span>' + b + '</span></div>'; };
@@ -1603,6 +1913,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if (T0.n) h += '<p class="dim" style="margin:6px 0;font-size:11.5px">Paint area about ' + T0.paint.toFixed(1) + ' m². Weights come from the section shape at ' + ST_RHO + ' kg/m³, without bolts or welds.</p><div class="row"><button id="st-csv">Export steel list (.csv)</button></div>';
     var GR = stGroups(), gk = Object.keys(GR);
     if (gk.length) h += '<h2 style="margin-top:14px">Groups</h2><div class="field">Move or copy a group by, mm<div class="coord"><input type="text" inputmode="decimal" id="stg-x" value="0"><input type="text" inputmode="decimal" id="stg-y" value="0"><input type="text" inputmode="decimal" id="stg-z" value="0"></div></div>' + gk.map(function (x) { return '<div class="row" style="justify-content:space-between"><span>' + esc(x) + ' · ' + GR[x].length + '</span><span><button data-stgm="' + esc(x) + '">Move</button> <button data-stgc="' + esc(x) + '">Copy</button> <button data-stgd="' + esc(x) + '">Delete</button></span></div>'; }).join('') + '<p class="dim" style="margin:6px 0;font-size:11.5px">A group is every member with the same mark before the first dash, such as a rack (PR1) or a frame (E-1 has its own tag). Equipment does not move with its frame.</p>';
+    var AC = stAccRows(), AL = model.steel.a;
+    if (AL.length) h += '<h2 style="margin-top:14px">Grating, rails, stairs, ladders</h2>' + AC.map(function (r) { return line(esc(r.name) + ' × ' + r.q, r.amt.toFixed(1) + ' ' + r.unit + ', ' + Math.round(r.kg) + ' kg'); }).join('') + AL.map(function (a, i) { return '<div class="row"><button data-stsa="' + i + '" style="flex:1;text-align:left">' + esc(a.k || stAccName(a)) + ' · ' + (a.t === 'g' ? Math.round(a.w * 1000) + '×' + Math.round(a.d * 1000) : a.t === 's' ? 'rise ' + Math.round(a.H * 1000) : a.t === 'l' ? Math.round(a.h * 1000) + ' high' : Math.round(Math.hypot(a.b[0] - a.a[0], a.b[2] - a.a[2]) * 1000) + ' long') + '</button></div>'; }).join('');
+    h += '<h2 style="margin-top:14px">Platform</h2><div class="grid2">' + F('Corner X, mm', 'stf-x', stPf.x) + F('Corner Y, mm', 'stf-y', stPf.y) + F('Width (X), mm', 'stf-w', stPf.w) + F('Depth (Y), mm', 'stf-d', stPf.d) + F('Top of grating, mm', 'stf-lvl', stPf.lvl) + F('Secondary beams at most, mm', 'stf-pitch', stPf.pitch) + S('Legs', 'stf-leg', stPf.leg) + S('Perimeter beams', 'stf-beam', stPf.beam) + S('Secondary beams', 'stf-sec', stPf.sec) + O('Grating', 'stf-grat', stPf.grat, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Handrail', 'stf-rail', stPf.rail, [['all', 'All round'], ['none', 'None']]) + O('Bracing', 'stf-brace', stPf.brace, [['none', 'None'], ['x', 'X on both ends']]) + F('Mark prefix', 'stf-mk', stPf.mk, 'text') + '</div><div class="row"><button id="stf-go">Build platform</button></div><p class="dim" style="margin:6px 0;font-size:11.5px">A framed deck on four or more legs with beams, one grating panel and a handrail round it. Add a stair or ladder from Parts, Steel, and the Check list says where an edge is left open.</p>';
+    h += '<h2 style="margin-top:14px">Pipe stanchion</h2><div class="grid2">' + F('X, mm', 'stn-x', stSn.x) + F('Y, mm', 'stn-y', stSn.y) + F('Top of steel, mm', 'stn-lvl', stSn.lvl) + F('Head beam length, mm', 'stn-width', stSn.width) + O('Head beam along', 'stn-dir', stSn.dir, [['x', 'X'], ['y', 'Y']]) + O('Two legs', 'stn-two', stSn.two, [['no', 'No, a T'], ['yes', 'Yes, a goalpost']]) + S('Column', 'stn-col', stSn.col) + S('Head beam', 'stn-beam', stSn.beam) + F('Mark prefix', 'stn-mk', stSn.mk, 'text') + '</div><div class="row"><button id="stn-go">Build stanchion</button></div>';
+    h += '<h2 style="margin-top:14px">Defaults for tapped parts</h2><div class="grid2">' + O('Grating', 'std-gs', stD.gs, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Rail pipe', 'std-rs', stD.rs, Object.keys(RAILS).map(function (k) { return [k, 'CHS ' + k]; })) + F('Rail post spacing, mm', 'std-rpost', Math.round(stD.rpost * 1000)) + O('Intermediate rails', 'std-rmid', String(stD.rmid), [['0', '0'], ['1', '1'], ['2', '2']]) + O('Toe plate', 'std-rtoe', stD.rtoe ? '1' : '0', YN) + F('Stair going, mm', 'std-sG', Math.round(stD.sG * 1000)) + O('Stair stringers', 'std-ssec', stD.ssec, SSEC_KEYS.filter(function (k) { return SSEC[k].t === 'C'; }).map(function (k) { return [k, SSEC[k].name]; })) + O('Stair treads', 'std-stread', stD.stread, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Ladder cage', 'std-lcage', stD.lcage, [['auto', 'Auto, above 3 m'], ['yes', 'Yes'], ['no', 'No']]) + '</div>';
     h += '<h2 style="margin-top:14px">Equipment layout</h2>';
     h += model.equip.map(function (e, i) {
       return '<div class="row" style="justify-content:space-between"><button data-steq="' + i + '" style="flex:1;text-align:left">' + esc(stTag(i)) + ' · ' + esc(eqLabel(e.k)) + '<small> ' + Math.round(e.p[0] * 1000) + ', ' + Math.round(e.p[2] * 1000) + '</small></button><input type="text" inputmode="decimal" data-stcl="' + i + '" value="' + Math.round(stClear(e) * 1000) + '" style="width:64px" aria-label="Maintenance clearance, mm" title="Maintenance clearance, mm"><button data-stfr="' + i + '">Frame</button></div>';
@@ -1624,6 +1939,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('steel').addEventListener('change', function (e) {
     var t = e.target; if (!t) return;
     if (t.id && t.id.indexOf('stp-') === 0) { var k = t.id.slice(4); stP[k] = typeof stP[k] === 'number' ? stNum(parseNum(t.value), stP[k]) : t.value; return; }
+    if (t.id && t.id.indexOf('stf-') === 0) { var fk = t.id.slice(4); stPf[fk] = typeof stPf[fk] === 'number' ? stNum(parseNum(t.value), stPf[fk]) : t.value; return; }
+    if (t.id && t.id.indexOf('stn-') === 0) { var nk = t.id.slice(4); stSn[nk] = typeof stSn[nk] === 'number' ? stNum(parseNum(t.value), stSn[nk]) : t.value; return; }
+    if (t.id && t.id.indexOf('std-') === 0) { var dk = t.id.slice(4), dv = t.value; if (dk === 'rtoe') stD.rtoe = dv === '1'; else if (dk === 'rmid') stD.rmid = Number(dv); else if (['rpost', 'sG'].indexOf(dk) >= 0) { var q0 = parseNum(dv); if (q0 != null) stD[dk] = Math.max(0.2, Math.min(2, q0 / 1000)); } else stD[dk] = dv; return; }
     if (t.id && t.id.indexOf('sta-') === 0) { var q = t.id.slice(4), v = parseNum(t.value); stA[q] = v == null ? stA[q] : v; return; }
     if (t.id === 'stv-cut') { stCut = t.value === '' ? null : Number(t.value); return; }
     if (t.getAttribute && t.getAttribute('data-stcl') != null) { var ei = Number(t.getAttribute('data-stcl')), cm = parseNum(t.value), E = model.equip[ei]; if (!E) return; pushHist(); if (cm != null && cm > 0 && cm <= 20000) E.cl = st3(cm / 1000); else delete E.cl; changed(); }
@@ -1631,6 +1949,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   $('steel').addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b) return;
     if (b.getAttribute('data-steq') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'equip', i: Number(b.getAttribute('data-steq')) }; msel = {}; rebuild(); updateUi(); return; }
+    if (b.getAttribute('data-stsa') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'sacc', i: Number(b.getAttribute('data-stsa')) }; msel = {}; rebuild(); updateUi(); return; }
     if (b.getAttribute('data-stfr') != null) { var nf = stFrame(Number(b.getAttribute('data-stfr'))); if (nf) toast(nf + ' members added'); return; }
     var gm = b.getAttribute('data-stgm'), gc = b.getAttribute('data-stgc'), gd = b.getAttribute('data-stgd');
     if (gm != null || gc != null || gd != null) {
@@ -1641,6 +1960,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var id = b.id;
     if (id === 'st-csv') saveBlob(fname('steel-list', 'csv'), new Blob([stCsv()], { type: 'text/csv' }));
     else if (id === 'stp-go') { var nr = stRack(); if (nr) { toast(nr + ' members added'); fit(); } else toast('Check the rack sizes and levels'); }
+    else if (id === 'stf-go') { var nf2 = stPlatform(stPf); toast(nf2 ? nf2 + ' parts added' : 'Check the platform sizes'); fit(); }
+    else if (id === 'stn-go') { var ns2 = stStanchion(stSn); toast(ns2 ? ns2 + ' members added' : 'Check the stanchion sizes'); }
     else if (id === 'stpl-go') { var np = stPlates({ t: stP.pt, ove: stP.pove, bolt: stP.pbolt, n: Number(stP.pn) }); toast(np ? np + ' plates added' : 'No column stands on the floor, or the sizes are out of range'); }
     else if (id === 'stpl-clr') { pushHist(); model.steel.pl = []; changed(); }
     else if (id === 'sta-go') {
@@ -1665,10 +1986,32 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('st-fin').onclick = function () { stRun = null; ghostLine.visible = marker.visible = false; updateUi(); };
   })();
   }
-  function stInit() { stBindInsp(); stBind(); }
+  function stInit() { stBindInsp(); stBind(); stBindBar(); }
+  var ST_KINDS = { col: 'Column', beam: 'Beam', grating: 'Grating', rail: 'Handrail', stair: 'Stair', ladder: 'Ladder' };
+  function stSyncBar() {                                            // which controls of the Steel context bar apply to the kind in use
+    var mem = stk === 'col' || stk === 'beam', run = stk === 'beam' || stk === 'rail', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
+    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = !run; $('st-fin').hidden = !run || !stRun;
+    $('st-p1').hidden = !f; $('st-p2').hidden = !f || !f[1]; $('st-dir').hidden = stk !== 'stair' && stk !== 'ladder';
+    if (f) {
+      var v = { grating: [stD.gw, stD.gd], rail: [stD.rh, 0], stair: [stD.sH, stD.sW], ladder: [stD.lh, stD.lw] }[stk];
+      $('st-p1').placeholder = f[0]; $('st-p2').placeholder = f[1]; $('st-p1').setAttribute('aria-label', f[0]); $('st-p2').setAttribute('aria-label', f[1]);
+      if (document.activeElement !== $('st-p1')) $('st-p1').value = String(Math.round(v[0] * 1000)); if (document.activeElement !== $('st-p2')) $('st-p2').value = String(Math.round(v[1] * 1000));
+    }
+    var dv = stk === 'stair' ? stD.sdir : stD.ldir; $('st-dir').textContent = (stk === 'stair' ? 'Climbs ' : 'Faces ') + ['+X', '+Y', '−X', '−Y'][(dv / 90) % 4];
+  }
+  function stHint() {
+    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
+      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: stRun ? 'Tap where the handrail ends.' : 'Tap where the handrail starts: a grating corner snaps.',
+      stair: 'Tap the foot of the stair. It climbs the way the button says, to the rise below; the top edge is where the platform starts.', ladder: 'Tap the foot of the ladder. A cage is added above about 3 m.' }[stk];
+  }
+  function stBindBar() {
+    $('st-p1').onchange = function () { var v = parseNum(this.value); if (v == null || v < 100 || v > 30000) { stSyncBar(); return; } v /= 1000; if (stk === 'grating') stD.gw = v; else if (stk === 'rail') stD.rh = Math.min(1.4, Math.max(0.9, v)); else if (stk === 'stair') stD.sH = v; else if (stk === 'ladder') stD.lh = v; stSyncBar(); };
+    $('st-p2').onchange = function () { var v = parseNum(this.value); if (v == null || v < 100 || v > 30000) { stSyncBar(); return; } v /= 1000; if (stk === 'grating') stD.gd = v; else if (stk === 'stair') stD.sW = Math.min(3, Math.max(0.5, v)); else if (stk === 'ladder') stD.lw = Math.min(0.8, Math.max(0.4, v)); stSyncBar(); };
+    $('st-dir').onclick = function () { if (stk === 'stair') stD.sdir = (stD.sdir + 90) % 360; else stD.ldir = (stD.ldir + 90) % 360; stSyncBar(); };
+  }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }
 
   // ---------- state ----------
@@ -1676,7 +2019,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   var tool = 'pipe', curN = 4, curS = 40, curL = 'L-001', snap = 0.1, ang45 = false, vk = 'gate', eqk = 'pump', curRot = 0, ik = 'coupling', fk = 'wn', ck = 'cap', inst = 'PT', sup = 'shoe', curFlow = 1, showFlow = true, colByMat = false, curM = 'cs', axisMode = 'auto', bk = 'tee', rk = 'conc', fsz = 3, bdir = 'up', lastAim = null, ve = 'auto';
   var cursor = null, elev = 0, sample = true, sel = null, msel = {}, multiMode = false, pickCyc = null, mA = null, showDims = false, orthoOn = false;
 
-  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], steel: { m: [], pl: [] }, items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
+  function blank() { return { pipes: [], valves: [], flanges: [], caps: [], equip: [], steel: { m: [], pl: [], a: [] }, items: [], instr: [], supports: [], fluid: 'water20', lines: {}, fit: {}, field: {}, ndeW: {}, title: {}, levels: [], custom: [], pspecs: [], isoLay: {}, spec: { elbow: 'LR', reducer: 'conc', olet: 'weldolet', branch: 'auto', small: 'SW', std: 'asme', sizeMode: 'NPS', eccFlat: 'bottom' } }; }
   function normalize(m) {
     var o = blank(), snapped = 0;
     if (!m || !Array.isArray(m.pipes)) return o;
@@ -3819,6 +4162,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function removeItem(kind, i) {
     if (kind === 'steel') { pushHist(); model.steel.m.splice(i, 1); sel = null; msel = {}; changed(); return; }
+    if (kind === 'sacc') { pushHist(); model.steel.a.splice(i, 1); sel = null; msel = {}; changed(); return; }
     if (kind === 'fit') { removeFitting(i); return; }
     if (!LISTS[kind]) { toast('Nothing to delete there'); return; }
     pushHist(); dropItem(kind, i); sel = null; msel = {}; changed();
@@ -4107,7 +4451,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var el = $('insp');
     if (tool === 'sel' && mselCount()) { renderMulti(el); return; }
     if (!sel || tool !== 'sel') { el.hidden = true; return; }
-    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports, steel: model.steel.m }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
+    var list = { pipe: model.pipes, valve: model.valves, flange: model.flanges, equip: model.equip, item: model.items, instr: model.instr, support: model.supports, steel: model.steel.m, sacc: model.steel.a }[sel.kind], it = sel.kind === 'fit' ? jointInfo[sel.i] : list && list[sel.i];
     if (!it) { sel = null; msel = {}; el.hidden = true; return; }
     var h = '';
     if (sel.kind === 'pipe') {
@@ -4135,6 +4479,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       h = '<h2>' + (it.t === 'bl' ? 'Blind flange' : it.m ? 'Valve flange' : it.e ? 'End flange' : 'Flange pair') + ' ' + (sel.i + 1) + '</h2>'
         + (it.t === 'bl' ? '' : '<div class="row"><label>Type<select id="i-ft">' + opts([['wn', 'Weld-neck'], ['so', 'Slip-on'], ['lj', 'Lap-joint'], ['th', 'Threaded'], ['sw', 'Socket-weld']].concat(isOne(it) ? [] : [['ro', 'Orifice pair']]), it.t) + '</select></label></div>')
         + '<p>' + sz(it.n) + ' class 150, bolts ' + BOLTS[it.n] + '</p>';
+    } else if (sel.kind === 'sacc') {
+      h = stAccInspHtml(it, sel.i);
     } else if (sel.kind === 'steel') {
       h = stInspHtml(it, sel.i);
     } else if (sel.kind === 'support') {
@@ -6337,7 +6683,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
     equip: { label: 'Equipment', items: EQ_CHIPS },    // plus one chip per equipment entry of the library
-    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace']] },
+    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace'], ['grating', 'Grating panel'], ['rail', 'Handrail'], ['stair', 'Stair'], ['ladder', 'Ladder']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)
@@ -6429,7 +6775,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     ['auto', 'x', 'y', 'z'].forEach(function (a) { $('ax-' + a).setAttribute('aria-pressed', String(axisMode === a)); });
     $('ortho').setAttribute('aria-pressed', String(orthoOn));
     ['auto', 'free', 'x', 'y'].forEach(function (a) { $('sta-' + a).setAttribute('aria-pressed', String(stAx === a)); });
-    $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = stk !== 'beam'; $('st-fin').hidden = stk !== 'beam' || !stRun; $('st-sec').value = stSec;
+    stSyncBar();
     $('dims').setAttribute('aria-pressed', String(showDims));
     $('flowBtn').setAttribute('aria-pressed', String(showFlow)); $('matColBtn').setAttribute('aria-pressed', String(colByMat));
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
@@ -6446,7 +6792,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       item: 'Tap a pipe to place the fitting inline.',
       instr: 'Tap a pipe, or a vessel for a level instrument.',
       support: 'Tap a pipe to place a support. Hangers and shoes go on horizontal pipe.',
-      steel: stk === 'col' ? 'Tap the floor or the end of a member to stand a column. Section and height are below.' : stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
+      steel: stHint(),
       cap: ck === 'ret' ? 'Tap an open pipe end. A return bend turns it back on itself. Pick the direction below.' : 'Tap an open pipe end to close it.',
       branch: bk === 'tee' ? 'Tap a pipe where the branch starts. The branch is the same size. Pick its direction below.' : 'Tap a pipe where the branch starts. Set the branch size and direction below.',
       reduce: 'Tap a pipe where the size changes. The part toward the nearer end takes the size below.',

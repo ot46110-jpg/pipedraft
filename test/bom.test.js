@@ -2454,6 +2454,89 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   els.undo.onclick();
   check('and undo brings the group back', !!ST.groups().PR2);
 
+
+  // ---------- grating, handrail, stair, ladder, platform ----------
+  PD.load({ pipes: [] });
+  const kgm2 = k => ST.grat[k] && (ST.grat[k].plate ? ST.grat[k].plate * 7.85 * 1.1 : null);
+  check('chequer plate 6 mm weighs about 52 kg/m2', near1(kgm2('CP6'), 51.8, 0.5));
+  ST.accAdd({ t: 'g', p: [0, 3, 0], w: 1, d: 1, r: 0, s: 'G32x5' });
+  const g1 = ST.accKg(PD.model.steel.a[0]);
+  check('32x5 grating at 30 mm pitch weighs about 44 kg/m2', g1 > 40 && g1 < 48, g1);
+  check('the grating is in the steel weight and the list', ST.totals().kg === g1 && ST.accRows().length === 1 && ST.accRows()[0].unit === 'm²');
+  check('a grating panel stays in the project', JSON.parse(JSON.stringify(PD.model)).steel.a.length === 1 && (PD.load(JSON.parse(JSON.stringify(PD.model))), PD.model.steel.a.length === 1));
+  check('bad accessories are dropped on load', ST.clean({ a: [{ t: 'g', p: [0, 0, 0], w: 1, d: 1, s: 'nope' }, { t: 'x' }, { t: 'l', p: [0, 0, 0], h: 4, cage: 'maybe' }] }).a.length === 1 && ST.clean({ a: [{ t: 'l', p: [0, 0, 0], h: 99, cage: 'maybe' }] }).a[0].h === 15);
+
+  PD.load({ pipes: [] });
+  ST.accAdd({ t: 'h', a: [0, 3, 0], b: [3, 3, 0], h: 1.1, post: 1.2, mid: 1, toe: true, rs: '42.4x2.6' });
+  const rp = ST.accParts(PD.model.steel.a[0]);
+  check('a 3 m handrail has 4 posts, a top rail, one mid rail and a toe plate', rp.filter(q => q.k === 'cyl').length === 4 + 2 && rp.filter(q => q.k === 'bar').length === 1, JSON.stringify(rp.map(q => q.k)));
+  check('rail pipe weight is about 2.5 kg per metre', near1(ST.accKg(PD.model.steel.a[0]) - 3 * 0.1 * 0.005 * 7850, 4 * 1.1 * 2.55 + 3 * 2 * 2.55, 1.5));
+
+  PD.load({ pipes: [] });
+  ST.accAdd({ t: 's', p: [0, 0, 0], dir: 0, H: 3, w: 0.9, g: 0.25, sec: 'C200x80', tread: 'G32x5', rail: true, rs: '42.4x2.6' });
+  const sp = ST.accParts(PD.model.steel.a[0]);
+  check('a 3 m stair has 2 stringers and 14 treads at 200 mm risers', sp.filter(q => q.k === 'mem').length === 2 && sp.filter(q => q.grat).length === 14, JSON.stringify(sp.map(q => q.k)));
+  check('its top is 3 m up and 3.5 m along', sp.filter(q => q.k === 'mem').every(q => near1(q.b[1], 3, 1e-9) && near1(Math.abs(q.b[0]), 14 * 0.25, 1e-9)));
+  check('a 3 m stair at 39 degrees has no stair warnings', !PD.warns().some(w => /Stair/.test(w)), PD.warns().join('\n'));
+  ST.accAdd({ t: 's', p: [0, 0, 5], dir: 90, H: 3.6, w: 0.9, g: 0.25, sec: 'C200x80', tread: 'G32x5', rail: false, rs: '42.4x2.6' });
+  check('a 3.6 m flight is reported', PD.warns().some(w => /rises 3\.6 m/.test(w)), PD.warns().join('\n'));
+  ST.accAdd({ t: 's', p: [0, 0, 9], dir: 0, H: 2, w: 0.9, g: 0.18, sec: 'C200x80', tread: 'G32x5', rail: false, rs: '42.4x2.6' });
+  check('a stair steeper than 45 degrees is reported', PD.warns().some(w => /slopes 4[6-9] degrees|slopes [5-9]\d degrees/.test(w)), PD.warns().join('\n'));
+
+  PD.load({ pipes: [] });
+  ST.accAdd({ t: 'l', p: [0, 0, 0], dir: 0, h: 4, w: 0.5, cage: 'auto' });
+  check('a 4 m ladder gets a cage with 4 hoops', ST.accParts(PD.model.steel.a[0]).filter(q => q.k === 'ring').length === 4);
+  check('and a short one does not', (ST.accAdd({ t: 'l', p: [3, 0, 0], dir: 0, h: 2.5, w: 0.5, cage: 'auto' }), ST.accParts(PD.model.steel.a[1]).filter(q => q.k === 'ring').length === 0));
+  check('a ladder with no cage above 3 m is reported', (ST.accAdd({ t: 'l', p: [6, 0, 0], dir: 0, h: 5, w: 0.5, cage: 'no' }), PD.warns().some(w => /without a safety cage/.test(w))), PD.warns().join('\n'));
+  check('a ladder over 6 m wants a rest platform', (ST.accAdd({ t: 'l', p: [9, 0, 0], dir: 0, h: 7, w: 0.5, cage: 'yes' }), PD.warns().some(w => /rest platform/.test(w))));
+
+  // platform
+  PD.load({ pipes: [] });
+  const npf = ST.platform({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'all' });
+  check('a 3 x 2 m platform is 10 steel members, a grating and 4 handrails', npf === 15 && PD.model.steel.m.length === 10 && PD.model.steel.a.length === 5, npf);
+  check('it stands with no warnings', PD.warns().length === 0, PD.warns().join('\n'));
+  check('grating top is at the level', PD.model.steel.a[0].p[1] === 3);
+  PD.load({ pipes: [] }); ST.platform({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'none' });
+  const oe = ST.openEdges();
+  check('a platform with no rail has its whole 10 m edge open', oe.length === 1 && near1(oe[0].len, 10, 0.3) && PD.warns().some(w => /open edge/.test(w)), JSON.stringify(oe));
+  check('a handrail round it closes the edge', (ST.railAround(0) === 4, ST.openEdges().length === 0));
+  PD.load({ pipes: [] }); ST.platform({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'all' });
+  check('two platforms side by side leave the shared edge alone', (ST.platform({ x: 3000, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'none', mk: 'PF2' }), ST.openEdges().length === 1 && ST.openEdges()[0].len < 10));
+  PD.load({ pipes: [] }); ST.platform({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'none' });
+  check('a stair at a platform edge is not an open edge', (ST.accAdd({ t: 's', p: [-3.5, 0, 1], dir: 0, H: 3, w: 0.9, g: 0.25, sec: 'C200x80', tread: 'G32x5', rail: true, rs: '42.4x2.6' }), true) && ST.openEdges()[0].len < 10 - 0.5, JSON.stringify(ST.openEdges()));
+  PD.load({ pipes: [] });
+  check('a stanchion is a column and a head beam', ST.stanchion({ x: 0, y: 0, lvl: 1000, width: 1500 }) === 2 && PD.warns().length === 0, PD.warns().join('\n'));
+  check('a goalpost stanchion has two columns', (PD.load({ pipes: [] }), ST.stanchion({ x: 0, y: 0, lvl: 1000, width: 1500, two: 'yes' }) === 3));
+
+  // tools
+  PD.load({ pipes: [] }); PD.look(Math.PI / 4, 0.9, 12, [3, 0, 0]); els['t-pipe'].onclick(); els['finish'].onclick();
+  for (let i = 0; i < 6; i++) els['down'].onclick();
+  ST.setTool('steel'); ST.setKind('grating'); globalThis.__perf += 5000; tapOn([2, 0, 0]);
+  check('tapping with the grating kind places a panel at the default size', PD.model.steel.a.length === 1 && PD.model.steel.a[0].t === 'g' && PD.model.steel.a[0].w === 1 && PD.model.steel.a[0].d === 2, JSON.stringify(PD.model.steel.a));
+  ST.setKind('stair'); tapOn([4, 0, 0]);
+  check('and with the stair kind a stair at the default rise', PD.model.steel.a[1].t === 's' && PD.model.steel.a[1].H === 3);
+  ST.setKind('ladder'); tapOn([6, 0, 0]);
+  check('and a ladder', PD.model.steel.a[2].t === 'l' && PD.model.steel.a[2].h === 4);
+  ST.setKind('rail'); tapOn([0, 0, 2]); tapOn([3, 0, 2]);
+  check('two taps with the rail kind make a handrail', PD.model.steel.a.length === 4 && PD.model.steel.a[3].t === 'h' && ST.run(), JSON.stringify(PD.model.steel.a[3]));
+  check('the bar hint follows the kind', /handrail/i.test(ST.hint()));
+  els['t-sel'].onclick(); tapOn([2, 0, 0]);
+  check('an accessory can be selected', PD.pen.sel() && PD.pen.sel().kind === 'sacc', JSON.stringify(PD.pen.sel()));
+  check('and the inspector shows it', /Grating/.test(els.insp.innerHTML) && /Handrail round it/.test(els.insp.innerHTML), els.insp.innerHTML.slice(0, 120));
+  check('editing a field gives a cleaned copy', (() => { const c = ST.accApply(PD.model.steel.a[0], 'w', '2500'); return c && c.w === 2.5; })() && ST.accApply(PD.model.steel.a[0], 'w', 'abc') === null && ST.accApply(PD.model.steel.a[0], 's', 'nope') === null);
+  check('and the position fields map CAD axes', (() => { const c = ST.accApply(PD.model.steel.a[0], 'pz', '1500'); return c && c.p[1] === 1.5; })());
+  els['t-del'].onclick(); tapOn([2, 0, 0]);
+  check('the delete tool removes an accessory', PD.model.steel.a.length === 3 && PD.model.steel.a.every(a => a.t !== 'g'));
+  els['t-sel'].onclick();
+
+  // drawings
+  PD.load({ pipes: [] }); ST.platform({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, rail: 'all' });
+  ST.accAdd({ t: 's', p: [-3.5, 0, 1], dir: 0, H: 3, w: 0.9, g: 0.25, sec: 'C200x80', tread: 'G32x5', rail: true, rs: '42.4x2.6' }); ST.accAdd({ t: 'l', p: [4, 0, 1], dir: 180, h: 4, w: 0.5, cage: 'auto' });
+  const ap = ST.sheet('plan', true), af = ST.sheet('front', true);
+  check('the plan shows the grating hatch, the stair and the ladder', /url\(#stgr\)/.test(ap) && /UP</.test(ap) && /LADDER/.test(ap) && /GR 32x5|PF1-G/.test(ap));
+  check('the elevation shows the platform level', /EL \+3000/.test(af));
+  check('accessories are in the csv', /"ACC","Grating/.test(ST.csv()) && /Stair/.test(ST.csv()) && /Ladder/.test(ST.csv()));
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();

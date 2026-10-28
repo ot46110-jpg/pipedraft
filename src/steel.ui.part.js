@@ -11,8 +11,28 @@
       + '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="st-ox" value="0"><input type="text" inputmode="decimal" id="st-oy" value="0"><input type="text" inputmode="decimal" id="st-oz" value="0"></div></div>'
       + '<div class="row"><button id="st-imove">Move</button><button id="st-icopy">Copy</button><button id="st-idel">Delete</button></div>';
   }
+  function stOffs2() { var f = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }; return sceneOf([f('sa-ox'), f('sa-oy'), f('sa-oz')]); }
   function stOffs() { var f = function (id) { var v = parseNum($(id).value); return v == null ? 0 : v / 1000; }; return sceneOf([f('st-ox'), f('st-oy'), f('st-oz')]); }
   function stBindInsp() {
+  $('insp').addEventListener('change', function (e) {
+    var t = e.target; if (!t || !t.id || t.id.indexOf('sa-') !== 0 || !sel || sel.kind !== 'sacc') return;
+    var a = model.steel.a[sel.i]; if (!a || /^sa-o[xyz]$/.test(t.id)) return;
+    var c = stAccApply(a, t.id.slice(3), t.value); if (!c) { toast('That value is not usable'); showInsp(); return; }
+    pushHist(); model.steel.a[sel.i] = c; changed();
+  });
+  $('insp').addEventListener('click', function (e) {
+    var id = e.target && e.target.id; if (!id || id.indexOf('sa-') !== 0 || !sel || sel.kind !== 'sacc') return;
+    var a = model.steel.a[sel.i]; if (!a) return;
+    if (id === 'sa-del') { removeItem('sacc', sel.i); return; }
+    if (id === 'sa-rail') { var n = stRailAround(sel.i); toast(n ? n + ' handrails added' : 'Could not add handrails'); return; }
+    if (id === 'sa-move' || id === 'sa-copy') {
+      var o = stOffs2(), c = JSON.parse(JSON.stringify(a)), sh = function (P) { return [st3(P[0] + o[0]), st3(P[1] + o[1]), st3(P[2] + o[2])]; };
+      if (c.p) c.p = sh(c.p); if (c.a) { c.a = sh(c.a); c.b = sh(c.b); }
+      var cc = stCleanAcc(c); if (!cc) return; pushHist();
+      if (id === 'sa-copy') { cc.k = ''; model.steel.a.push(cc); sel = { kind: 'sacc', i: model.steel.a.length - 1 }; toast('Copied'); } else model.steel.a[sel.i] = cc;
+      changed();
+    }
+  });
   $('insp').addEventListener('change', function (e) {
     var t = e.target; if (!t || !t.id || t.id.indexOf('st-i') !== 0 || !sel || sel.kind !== 'steel') return;
     var p = model.steel.m[sel.i]; if (!p) return;
@@ -33,7 +53,44 @@
   });
   }
 
+  var YN = [['1', 'Yes'], ['0', 'No']], DIRS = [[0, '+X'], [90, '+Y'], [180, '−X'], [270, '−Y']];
+  function stAccSpec(a) {                                           // [key, label, kind (mm, deg, int, sel, txt), options]
+    var gr = GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; }), rl = Object.keys(RAILS).map(function (k) { return [k, 'CHS ' + k]; }), ch = SSEC_KEYS.filter(function (k) { return SSEC[k].t === 'C'; }).map(function (k) { return [k, SSEC[k].name]; });
+    if (a.t === 'g') return [['px', 'Centre X, mm', 'mm'], ['py', 'Centre Y, mm', 'mm'], ['pz', 'Top level, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['d', 'Depth, mm', 'mm'], ['r', 'Turn, degrees', 'deg'], ['s', 'Section', 'sel', gr], ['k', 'Mark', 'txt']];
+    if (a.t === 'h') return [['ax', 'Start X, mm', 'mm'], ['ay', 'Start Y, mm', 'mm'], ['az', 'Start level, mm', 'mm'], ['bx', 'End X, mm', 'mm'], ['by', 'End Y, mm', 'mm'], ['bz', 'End level, mm', 'mm'], ['h', 'Height, mm', 'mm'], ['post', 'Post spacing, mm', 'mm'], ['mid', 'Intermediate rails', 'sel', [[0, '0'], [1, '1'], [2, '2']]], ['toe', 'Toe plate', 'sel', YN], ['rs', 'Rail', 'sel', rl], ['k', 'Mark', 'txt']];
+    if (a.t === 's') return [['px', 'Foot X, mm', 'mm'], ['py', 'Foot Y, mm', 'mm'], ['pz', 'Foot level, mm', 'mm'], ['dir', 'Climbs toward', 'sel', DIRS], ['H', 'Rise, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['g', 'Going, mm', 'mm'], ['sec', 'Stringers', 'sel', ch], ['tread', 'Treads', 'sel', gr], ['rail', 'Handrails', 'sel', YN], ['rs', 'Rail', 'sel', rl], ['k', 'Mark', 'txt']];
+    return [['px', 'Base X, mm', 'mm'], ['py', 'Base Y, mm', 'mm'], ['pz', 'Base level, mm', 'mm'], ['dir', 'Faces', 'sel', DIRS], ['h', 'Height, mm', 'mm'], ['w', 'Width, mm', 'mm'], ['cage', 'Safety cage', 'sel', [['auto', 'Auto, above 3 m'], ['yes', 'Yes'], ['no', 'No']]], ['k', 'Mark', 'txt']];
+  }
+  function stAccVal(a, key) {
+    var m = /^([pab])([xyz])$/.exec(key); if (m) { var P = a[m[1]], i = { x: 0, y: 2, z: 1 }[m[2]]; return mmText(P[i]); }
+    var v = a[key]; return key === 'toe' || key === 'rail' ? (v ? '1' : '0') : ['h', 'post', 'w', 'd', 'H', 'g'].indexOf(key) >= 0 && !(key === 'h' && a.t === 'l' && false) ? mmText(v) : v;
+  }
+  function stAccInspHtml(a, i) {
+    var spec = stAccSpec(a), h = '<h2>' + esc(stAccName(a)) + ' ' + (i + 1) + '</h2><div class="grid2">';
+    spec.forEach(function (f) {
+      var v = stAccVal(a, f[0]);
+      h += '<label class="field">' + f[1] + (f[2] === 'sel' ? '<select id="sa-' + f[0] + '">' + opts(f[3], v) + '</select>' : '<input type="text" inputmode="' + (f[2] === 'txt' ? 'text' : 'decimal') + '" id="sa-' + f[0] + '" value="' + esc(v) + '" autocomplete="off">') + '</label>';
+    });
+    h += '</div>';
+    if (a.t === 's') { var n = stStairN(a); h += '<p>' + n + ' risers of ' + Math.round(a.H / n * 1000) + ' mm, ' + (n - 1) + ' treads, run ' + Math.round((n - 1) * a.g * 1000) + ' mm, slope ' + Math.round(Math.atan(a.H / n / a.g) * 180 / Math.PI) + ' degrees.</p>'; }
+    if (a.t === 'l') h += '<p>' + (stHasCage(a) ? 'With a safety cage.' : 'No cage.') + '</p>';
+    h += '<p>' + stAccKg(a).toFixed(1) + ' kg' + (a.t === 'g' ? ', ' + (a.w * a.d).toFixed(2) + ' m²' : '') + '</p>';
+    if (a.t === 'g') h += '<div class="row"><button id="sa-rail">Handrail round it</button></div>';
+    h += '<div class="field">Move or copy by, mm<div class="coord"><input type="text" inputmode="decimal" id="sa-ox" value="0"><input type="text" inputmode="decimal" id="sa-oy" value="0"><input type="text" inputmode="decimal" id="sa-oz" value="0"></div></div><div class="row"><button id="sa-move">Move</button><button id="sa-copy">Copy</button><button id="sa-del">Delete</button></div>';
+    return h;
+  }
+  function stAccApply(a, key, raw) {                                // a new copy of accessory a with one field changed, cleaned, or null
+    var c = JSON.parse(JSON.stringify(a)), m = /^([pab])([xyz])$/.exec(key);
+    if (m) { var v = parseNum(raw); if (v == null) return null; c[m[1]][{ x: 0, y: 2, z: 1 }[m[2]]] = v / 1000; }
+    else if (['h', 'post', 'w', 'd', 'H', 'g'].indexOf(key) >= 0) { var u = parseNum(raw); if (u == null) return null; c[key] = u / 1000; }
+    else if (key === 'r' || key === 'dir' || key === 'mid') { var n = parseNum(raw); if (n == null) return null; c[key] = n; }
+    else if (key === 'toe' || key === 'rail') c[key] = raw === '1';
+    else c[key] = raw;
+    return stCleanAcc(c);
+  }
   var stA = { x: 0, y: 0, z: 0, r: 0 };
+  var stPf = { x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, pitch: 1000, leg: 'H150x150', beam: 'H150x75', sec: 'C100x50', grat: 'G32x5', rail: 'all', brace: 'none', mk: 'PF1' };
+  var stSn = { x: 0, y: 0, lvl: 1000, width: 1500, dir: 'x', two: 'no', col: 'H150x150', beam: 'H100x50', mk: 'ST1' };
   function stPanel() {
     var el = $('steel'); if (el.hidden) return;
     var T0 = stTotals(), R = stRows(), PR = stPlateRows(), BR = stBoltRows(), line = function (a, b) { return '<div class="row" style="justify-content:space-between"><span>' + a + '</span><span>' + b + '</span></div>'; };
@@ -47,6 +104,11 @@
     if (T0.n) h += '<p class="dim" style="margin:6px 0;font-size:11.5px">Paint area about ' + T0.paint.toFixed(1) + ' m². Weights come from the section shape at ' + ST_RHO + ' kg/m³, without bolts or welds.</p><div class="row"><button id="st-csv">Export steel list (.csv)</button></div>';
     var GR = stGroups(), gk = Object.keys(GR);
     if (gk.length) h += '<h2 style="margin-top:14px">Groups</h2><div class="field">Move or copy a group by, mm<div class="coord"><input type="text" inputmode="decimal" id="stg-x" value="0"><input type="text" inputmode="decimal" id="stg-y" value="0"><input type="text" inputmode="decimal" id="stg-z" value="0"></div></div>' + gk.map(function (x) { return '<div class="row" style="justify-content:space-between"><span>' + esc(x) + ' · ' + GR[x].length + '</span><span><button data-stgm="' + esc(x) + '">Move</button> <button data-stgc="' + esc(x) + '">Copy</button> <button data-stgd="' + esc(x) + '">Delete</button></span></div>'; }).join('') + '<p class="dim" style="margin:6px 0;font-size:11.5px">A group is every member with the same mark before the first dash, such as a rack (PR1) or a frame (E-1 has its own tag). Equipment does not move with its frame.</p>';
+    var AC = stAccRows(), AL = model.steel.a;
+    if (AL.length) h += '<h2 style="margin-top:14px">Grating, rails, stairs, ladders</h2>' + AC.map(function (r) { return line(esc(r.name) + ' × ' + r.q, r.amt.toFixed(1) + ' ' + r.unit + ', ' + Math.round(r.kg) + ' kg'); }).join('') + AL.map(function (a, i) { return '<div class="row"><button data-stsa="' + i + '" style="flex:1;text-align:left">' + esc(a.k || stAccName(a)) + ' · ' + (a.t === 'g' ? Math.round(a.w * 1000) + '×' + Math.round(a.d * 1000) : a.t === 's' ? 'rise ' + Math.round(a.H * 1000) : a.t === 'l' ? Math.round(a.h * 1000) + ' high' : Math.round(Math.hypot(a.b[0] - a.a[0], a.b[2] - a.a[2]) * 1000) + ' long') + '</button></div>'; }).join('');
+    h += '<h2 style="margin-top:14px">Platform</h2><div class="grid2">' + F('Corner X, mm', 'stf-x', stPf.x) + F('Corner Y, mm', 'stf-y', stPf.y) + F('Width (X), mm', 'stf-w', stPf.w) + F('Depth (Y), mm', 'stf-d', stPf.d) + F('Top of grating, mm', 'stf-lvl', stPf.lvl) + F('Secondary beams at most, mm', 'stf-pitch', stPf.pitch) + S('Legs', 'stf-leg', stPf.leg) + S('Perimeter beams', 'stf-beam', stPf.beam) + S('Secondary beams', 'stf-sec', stPf.sec) + O('Grating', 'stf-grat', stPf.grat, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Handrail', 'stf-rail', stPf.rail, [['all', 'All round'], ['none', 'None']]) + O('Bracing', 'stf-brace', stPf.brace, [['none', 'None'], ['x', 'X on both ends']]) + F('Mark prefix', 'stf-mk', stPf.mk, 'text') + '</div><div class="row"><button id="stf-go">Build platform</button></div><p class="dim" style="margin:6px 0;font-size:11.5px">A framed deck on four or more legs with beams, one grating panel and a handrail round it. Add a stair or ladder from Parts, Steel, and the Check list says where an edge is left open.</p>';
+    h += '<h2 style="margin-top:14px">Pipe stanchion</h2><div class="grid2">' + F('X, mm', 'stn-x', stSn.x) + F('Y, mm', 'stn-y', stSn.y) + F('Top of steel, mm', 'stn-lvl', stSn.lvl) + F('Head beam length, mm', 'stn-width', stSn.width) + O('Head beam along', 'stn-dir', stSn.dir, [['x', 'X'], ['y', 'Y']]) + O('Two legs', 'stn-two', stSn.two, [['no', 'No, a T'], ['yes', 'Yes, a goalpost']]) + S('Column', 'stn-col', stSn.col) + S('Head beam', 'stn-beam', stSn.beam) + F('Mark prefix', 'stn-mk', stSn.mk, 'text') + '</div><div class="row"><button id="stn-go">Build stanchion</button></div>';
+    h += '<h2 style="margin-top:14px">Defaults for tapped parts</h2><div class="grid2">' + O('Grating', 'std-gs', stD.gs, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Rail pipe', 'std-rs', stD.rs, Object.keys(RAILS).map(function (k) { return [k, 'CHS ' + k]; })) + F('Rail post spacing, mm', 'std-rpost', Math.round(stD.rpost * 1000)) + O('Intermediate rails', 'std-rmid', String(stD.rmid), [['0', '0'], ['1', '1'], ['2', '2']]) + O('Toe plate', 'std-rtoe', stD.rtoe ? '1' : '0', YN) + F('Stair going, mm', 'std-sG', Math.round(stD.sG * 1000)) + O('Stair stringers', 'std-ssec', stD.ssec, SSEC_KEYS.filter(function (k) { return SSEC[k].t === 'C'; }).map(function (k) { return [k, SSEC[k].name]; })) + O('Stair treads', 'std-stread', stD.stread, GRAT_KEYS.map(function (k) { return [k, GRAT[k].name]; })) + O('Ladder cage', 'std-lcage', stD.lcage, [['auto', 'Auto, above 3 m'], ['yes', 'Yes'], ['no', 'No']]) + '</div>';
     h += '<h2 style="margin-top:14px">Equipment layout</h2>';
     h += model.equip.map(function (e, i) {
       return '<div class="row" style="justify-content:space-between"><button data-steq="' + i + '" style="flex:1;text-align:left">' + esc(stTag(i)) + ' · ' + esc(eqLabel(e.k)) + '<small> ' + Math.round(e.p[0] * 1000) + ', ' + Math.round(e.p[2] * 1000) + '</small></button><input type="text" inputmode="decimal" data-stcl="' + i + '" value="' + Math.round(stClear(e) * 1000) + '" style="width:64px" aria-label="Maintenance clearance, mm" title="Maintenance clearance, mm"><button data-stfr="' + i + '">Frame</button></div>';
@@ -68,6 +130,9 @@
   $('steel').addEventListener('change', function (e) {
     var t = e.target; if (!t) return;
     if (t.id && t.id.indexOf('stp-') === 0) { var k = t.id.slice(4); stP[k] = typeof stP[k] === 'number' ? stNum(parseNum(t.value), stP[k]) : t.value; return; }
+    if (t.id && t.id.indexOf('stf-') === 0) { var fk = t.id.slice(4); stPf[fk] = typeof stPf[fk] === 'number' ? stNum(parseNum(t.value), stPf[fk]) : t.value; return; }
+    if (t.id && t.id.indexOf('stn-') === 0) { var nk = t.id.slice(4); stSn[nk] = typeof stSn[nk] === 'number' ? stNum(parseNum(t.value), stSn[nk]) : t.value; return; }
+    if (t.id && t.id.indexOf('std-') === 0) { var dk = t.id.slice(4), dv = t.value; if (dk === 'rtoe') stD.rtoe = dv === '1'; else if (dk === 'rmid') stD.rmid = Number(dv); else if (['rpost', 'sG'].indexOf(dk) >= 0) { var q0 = parseNum(dv); if (q0 != null) stD[dk] = Math.max(0.2, Math.min(2, q0 / 1000)); } else stD[dk] = dv; return; }
     if (t.id && t.id.indexOf('sta-') === 0) { var q = t.id.slice(4), v = parseNum(t.value); stA[q] = v == null ? stA[q] : v; return; }
     if (t.id === 'stv-cut') { stCut = t.value === '' ? null : Number(t.value); return; }
     if (t.getAttribute && t.getAttribute('data-stcl') != null) { var ei = Number(t.getAttribute('data-stcl')), cm = parseNum(t.value), E = model.equip[ei]; if (!E) return; pushHist(); if (cm != null && cm > 0 && cm <= 20000) E.cl = st3(cm / 1000); else delete E.cl; changed(); }
@@ -75,6 +140,7 @@
   $('steel').addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b) return;
     if (b.getAttribute('data-steq') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'equip', i: Number(b.getAttribute('data-steq')) }; msel = {}; rebuild(); updateUi(); return; }
+    if (b.getAttribute('data-stsa') != null) { if (tool !== 'sel') setTool('sel'); sel = { kind: 'sacc', i: Number(b.getAttribute('data-stsa')) }; msel = {}; rebuild(); updateUi(); return; }
     if (b.getAttribute('data-stfr') != null) { var nf = stFrame(Number(b.getAttribute('data-stfr'))); if (nf) toast(nf + ' members added'); return; }
     var gm = b.getAttribute('data-stgm'), gc = b.getAttribute('data-stgc'), gd = b.getAttribute('data-stgd');
     if (gm != null || gc != null || gd != null) {
@@ -85,6 +151,8 @@
     var id = b.id;
     if (id === 'st-csv') saveBlob(fname('steel-list', 'csv'), new Blob([stCsv()], { type: 'text/csv' }));
     else if (id === 'stp-go') { var nr = stRack(); if (nr) { toast(nr + ' members added'); fit(); } else toast('Check the rack sizes and levels'); }
+    else if (id === 'stf-go') { var nf2 = stPlatform(stPf); toast(nf2 ? nf2 + ' parts added' : 'Check the platform sizes'); fit(); }
+    else if (id === 'stn-go') { var ns2 = stStanchion(stSn); toast(ns2 ? ns2 + ' members added' : 'Check the stanchion sizes'); }
     else if (id === 'stpl-go') { var np = stPlates({ t: stP.pt, ove: stP.pove, bolt: stP.pbolt, n: Number(stP.pn) }); toast(np ? np + ' plates added' : 'No column stands on the floor, or the sizes are out of range'); }
     else if (id === 'stpl-clr') { pushHist(); model.steel.pl = []; changed(); }
     else if (id === 'sta-go') {
@@ -109,8 +177,30 @@
     $('st-fin').onclick = function () { stRun = null; ghostLine.visible = marker.visible = false; updateUi(); };
   })();
   }
-  function stInit() { stBindInsp(); stBind(); }
+  function stInit() { stBindInsp(); stBind(); stBindBar(); }
+  var ST_KINDS = { col: 'Column', beam: 'Beam', grating: 'Grating', rail: 'Handrail', stair: 'Stair', ladder: 'Ladder' };
+  function stSyncBar() {                                            // which controls of the Steel context bar apply to the kind in use
+    var mem = stk === 'col' || stk === 'beam', run = stk === 'beam' || stk === 'rail', f = { grating: ['W, mm', 'D, mm'], rail: ['Height, mm', ''], stair: ['Rise, mm', 'Width, mm'], ladder: ['Height, mm', 'Width, mm'] }[stk];
+    $('st-sec').hidden = !mem; $('st-sec').value = stSec; $('st-h').hidden = stk !== 'col'; $('st-axis').hidden = !run; $('st-fin').hidden = !run || !stRun;
+    $('st-p1').hidden = !f; $('st-p2').hidden = !f || !f[1]; $('st-dir').hidden = stk !== 'stair' && stk !== 'ladder';
+    if (f) {
+      var v = { grating: [stD.gw, stD.gd], rail: [stD.rh, 0], stair: [stD.sH, stD.sW], ladder: [stD.lh, stD.lw] }[stk];
+      $('st-p1').placeholder = f[0]; $('st-p2').placeholder = f[1]; $('st-p1').setAttribute('aria-label', f[0]); $('st-p2').setAttribute('aria-label', f[1]);
+      if (document.activeElement !== $('st-p1')) $('st-p1').value = String(Math.round(v[0] * 1000)); if (document.activeElement !== $('st-p2')) $('st-p2').value = String(Math.round(v[1] * 1000));
+    }
+    var dv = stk === 'stair' ? stD.sdir : stD.ldir; $('st-dir').textContent = (stk === 'stair' ? 'Climbs ' : 'Faces ') + ['+X', '+Y', '−X', '−Y'][(dv / 90) % 4];
+  }
+  function stHint() {
+    return { col: 'Tap the floor or the end of a member to stand a column. Section and height are below.', beam: stRun ? 'Tap where the beam ends. Auto and X, Y lock the direction, Free takes the point as it is.' : 'Tap where the beam starts: the floor or the end or middle of a member.',
+      grating: 'Tap where the grating panel goes (its centre). Size is below, the level is the working height. Corners snap for the next one.', rail: stRun ? 'Tap where the handrail ends.' : 'Tap where the handrail starts: a grating corner snaps.',
+      stair: 'Tap the foot of the stair. It climbs the way the button says, to the rise below; the top edge is where the platform starts.', ladder: 'Tap the foot of the ladder. A cage is added above about 3 m.' }[stk];
+  }
+  function stBindBar() {
+    $('st-p1').onchange = function () { var v = parseNum(this.value); if (v == null || v < 100 || v > 30000) { stSyncBar(); return; } v /= 1000; if (stk === 'grating') stD.gw = v; else if (stk === 'rail') stD.rh = Math.min(1.4, Math.max(0.9, v)); else if (stk === 'stair') stD.sH = v; else if (stk === 'ladder') stD.lh = v; stSyncBar(); };
+    $('st-p2').onchange = function () { var v = parseNum(this.value); if (v == null || v < 100 || v > 30000) { stSyncBar(); return; } v /= 1000; if (stk === 'grating') stD.gd = v; else if (stk === 'stair') stD.sW = Math.min(3, Math.max(0.5, v)); else if (stk === 'ladder') stD.lw = Math.min(0.8, Math.max(0.4, v)); stSyncBar(); };
+    $('st-dir').onclick = function () { if (stk === 'stair') stD.sdir = (stD.sdir + 90) % 360; else stD.ldir = (stD.ldir + 90) % 360; stSyncBar(); };
+  }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return stRun; }, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }
