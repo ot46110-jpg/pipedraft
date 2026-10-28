@@ -20,7 +20,8 @@
     var k = String(q.k || '').slice(0, 20), o;
     if (q.t === 'g') {
       var p = stPt(q.p); if (!p || !OWN(GRAT, q.s)) return null;
-      return { t: 'g', p: p, w: st3(stClamp(q.w, 0.2, 30, 1)), d: st3(stClamp(q.d, 0.2, 30, 1)), r: ((Math.round(stNum(q.r, 0)) % 360) + 360) % 360, s: q.s, k: k };
+      var gw = st3(stClamp(q.w, 0.2, 30, 1)), gd = st3(stClamp(q.d, 0.2, 30, 1));
+      return { t: 'g', p: p, w: gw, d: gd, r: ((Math.round(stNum(q.r, 0)) % 360) + 360) % 360, s: q.s, k: k, o: stCleanHoles(q.o, gw, gd) };
     }
     if (q.t === 'h') {
       var a = stPt(q.a), b = stPt(q.b); if (!a || !b || !OWN(RAILS, q.rs)) return null;
@@ -35,6 +36,24 @@
       return { t: 'l', p: pl, dir: ((Math.round(stNum(q.dir, 0) / 90) % 4) + 4) % 4 * 90, h: st3(stClamp(q.h, 0.5, 15, 3)), w: st3(stClamp(q.w, 0.4, 0.8, 0.5)), cage: ['auto', 'yes', 'no'].indexOf(q.cage) >= 0 ? q.cage : 'auto', k: k };
     }
     return null;
+  }
+  function stCleanHoles(list, w, d) {                              // holes in a grating panel, in its own frame: x along the width, z along the depth, from the centre
+    var out = [];
+    (Array.isArray(list) ? list : []).slice(0, 40).forEach(function (h) {
+      if (!h || typeof h !== 'object') return; var x = stNum(h.x, NaN), z = stNum(h.z, NaN); if (!isFinite(x) || !isFinite(z) || Math.abs(x) > w / 2 + 0.5 || Math.abs(z) > d / 2 + 0.5) return;
+      var o = { k: h.k === 'r' ? 'r' : 'c', x: st3(x), z: st3(z), kick: h.kick !== false, src: h.src === 'auto' ? 'auto' : '' };
+      if (o.k === 'c') o.d = st3(stClamp(h.d, 0.03, 5, 0.2)); else { o.w = st3(stClamp(h.w, 0.03, 8, 0.3)); o.d = st3(stClamp(h.d, 0.03, 8, 0.3)); o.a = ((Math.round(stNum(h.a, 0)) % 360) + 360) % 360; }
+      out.push(o);
+    });
+    return out;
+  }
+  function stHoleArea(o) { return o.k === 'c' ? Math.PI * o.d * o.d / 4 : o.w * o.d; }
+  function stHoleW(cx, cz, rdeg, o) {                              // a hole in plan: its centre and corners (or just the centre and radius) in model coordinates, for a panel centred on cx, cz turned rdeg
+    var t = rdeg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t), W = function (x, z) { return [cx + x * c + z * s, cz - x * s + z * c]; }, out = { c: W(o.x, o.z) };
+    if (o.k === 'c') { out.r = o.d / 2; return out; }
+    var a = (o.a || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    out.pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(function (q) { var lx = q[0] * o.w / 2, lz = q[1] * o.d / 2; return W(o.x + lx * ca + lz * sa, o.z - lx * sa + lz * ca); });
+    return out;
   }
   function stAccName(a) { return a.t === 'g' ? GRAT[a.s].name : a.t === 'h' ? 'Handrail' : a.t === 's' ? 'Stair' : 'Ladder'; }
   function stHasCage(a) { return a.cage === 'yes' || (a.cage === 'auto' && a.h > 3); }
@@ -53,7 +72,15 @@
   }
   function stAccParts(a) {
     var out = [], p;
-    if (a.t === 'g') { var th = stGratTh(a.s); out.push({ k: 'box', c: [a.p[0], a.p[1] - th / 2, a.p[2]], w: a.w, h: th, d: a.d, r: a.r, kg: a.w * a.d * stGratKgm2(a.s), grat: true }); }
+    if (a.t === 'g') {
+      var th = stGratTh(a.s), holes = a.o || [], ha = Math.min(a.w * a.d * 0.95, holes.reduce(function (t, o) { return t + stHoleArea(o); }, 0));
+      out.push({ k: 'box', c: [a.p[0], a.p[1] - th / 2, a.p[2]], w: a.w, h: th, d: a.d, r: a.r, kg: (a.w * a.d - ha) * stGratKgm2(a.s), grat: true, holes: holes });
+      holes.forEach(function (o) {                                  // a toe plate round the hole
+        if (!o.kick) return; var hw = stHoleW(a.p[0], a.p[2], a.r, o), y = a.p[1] + 0.05;
+        if (o.k === 'c') out.push({ k: 'tube', c: [hw.c[0], y, hw.c[1]], rad: o.d / 2 + 0.003, h: ST_TOE.h, kg: Math.PI * o.d * ST_TOE.h * ST_TOE.w * ST_RHO });
+        else for (var i = 0; i < 4; i++) { var P = hw.pts[i], Q = hw.pts[(i + 1) % 4]; out.push({ k: 'bar', a: [P[0], y, P[1]], b: [Q[0], y, Q[1]], w: ST_TOE.w, h: ST_TOE.h, kg: Math.hypot(Q[0] - P[0], Q[1] - P[1]) * ST_TOE.h * ST_TOE.w * ST_RHO }); }
+      });
+    }
     else if (a.t === 'h') out = stRailParts(a.a, a.b, a.h, a.post, a.mid, a.toe, a.rs);
     else if (a.t === 's') {
       var n = stStairN(a), r = a.H / n, run = (n - 1) * a.g, d = stDirV(a.dir), lat = [-d[1], d[0]], th2 = stGratTh(a.tread), ang = Math.atan2(d[0], d[1]) * 180 / Math.PI, S = SSEC[a.sec];
@@ -83,16 +110,32 @@
   function stAccAll() { return model.steel.a; }
 
   // ---------- 3D ----------
-  var stUC = null, stUB = null, stUR = {};
+  var stUC = null, stUB = null, stUR = {}, stPG = {}, stUTC = {};
+  function stUT(rad, h) { var k = rad.toFixed(4) + ':' + h; return stUTC[k] || (stUTC[k] = new T.CylinderGeometry(rad, rad, h, 24, 1, true)); }
+  function stPlateGeo(w, d, th, holes) {                            // a panel with holes: the outline and the holes in the x, z plane, extruded down by the thickness
+    var key = [w, d, th, JSON.stringify(holes.map(function (o) { return [o.k, o.x, o.z, o.d, o.w, o.a]; }))].join('|');
+    if (stPG[key]) return stPG[key]; if (Object.keys(stPG).length > 200) stPG = {};
+    var sh = new T.Shape([new T.Vector2(-w / 2, -d / 2), new T.Vector2(w / 2, -d / 2), new T.Vector2(w / 2, d / 2), new T.Vector2(-w / 2, d / 2)]);
+    holes.forEach(function (o) {
+      var p = new T.Path();
+      if (o.k === 'c') p.absarc(o.x, o.z, o.d / 2, 0, Math.PI * 2, false);
+      else { var a = (o.a || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), P = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(function (q) { var lx = q[0] * o.w / 2, lz = q[1] * o.d / 2; return new T.Vector2(o.x + lx * ca + lz * sa, o.z - lx * sa + lz * ca); }); p.setFromPoints(P); }
+      sh.holes.push(p);
+    });
+    var g = new T.ExtrudeGeometry(sh, { depth: th, bevelEnabled: false, curveSegments: 20 }); g.rotateX(Math.PI / 2);
+    return (stPG[key] = g);
+  }
   function stAccBuild() {
     var A = model.steel.a; if (!A.length) return;
     if (!stUC) { stUC = new T.CylinderGeometry(1, 1, 1, 8); stUB = new T.BoxGeometry(1, 1, 1); }
-    var cols = { g: 0x9aa4ab, h: 0xf2c14e, s: 0x6f95b0, l: 0xf2c14e }, mats = {};
+    var cols = { g: 0x9aa4ab, h: 0xf2c14e, s: 0x6f95b0, l: 0xf2c14e }, mats = {}, matTube = mat(0xf2c14e, 0.6); matTube.side = T.DoubleSide;
     A.forEach(function (a, i) {
       var on = (sel && sel.kind === 'sacc' && sel.i === i) || msel['sacc:' + i], m0 = on ? mat(0xffb21f, 0.5) : (mats[a.t] = mats[a.t] || mat(cols[a.t], 0.6));
       stAccParts(a).forEach(function (q) {
         var m, mm = on ? m0 : q.grat ? (mats.gr = mats.gr || mat(0x9aa4ab, 0.7)) : m0;
-        if (q.k === 'box') { m = new T.Mesh(stUB, mm); m.position.set(q.c[0], q.c[1], q.c[2]); m.rotation.y = q.r * Math.PI / 180; m.scale.set(q.w, q.h, q.d); }
+        if (q.k === 'box' && q.holes && q.holes.length) { m = new T.Mesh(stPlateGeo(q.w, q.d, q.h, q.holes), mm); m.position.set(q.c[0], q.c[1] + q.h / 2, q.c[2]); m.rotation.y = q.r * Math.PI / 180; }
+        else if (q.k === 'box') { m = new T.Mesh(stUB, mm); m.position.set(q.c[0], q.c[1], q.c[2]); m.rotation.y = q.r * Math.PI / 180; m.scale.set(q.w, q.h, q.d); }
+        else if (q.k === 'tube') { m = new T.Mesh(stUT(q.rad, q.h), on ? mm : matTube); m.position.set(q.c[0], q.c[1], q.c[2]); }
         else if (q.k === 'cyl') { var da = V(q.b).sub(V(q.a)), L = da.length(); m = new T.Mesh(stUC, mm); m.position.copy(V(q.a)).addScaledVector(da, 0.5); m.quaternion.setFromUnitVectors(UP, da.normalize()); m.scale.set(q.rad, L, q.rad); }
         else if (q.k === 'bar') { var B = stBasis({ a: q.a, b: q.b, r: 0 }), L2 = V(q.b).distanceTo(V(q.a)); m = new T.Mesh(stUB, mm); m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x.clone().multiplyScalar(q.w), B.y.clone().multiplyScalar(q.h), B.z.clone().multiplyScalar(L2)); m.matrix.setPosition(V(q.a).add(V(q.b)).multiplyScalar(0.5)); }
         else if (q.k === 'mem') { var Lm = stLen(q); if (Lm < 0.001) return; var Bm = stBasis(q); m = new T.Mesh(stGeo(q.s, Lm), mm); m.matrixAutoUpdate = false; m.matrix.makeBasis(Bm.x, Bm.y, Bm.z); m.matrix.setPosition(V(q.a)); }
@@ -100,6 +143,41 @@
         if (!m) return; m.userData = { kind: 'sacc', i: i }; world.add(m);
       });
     });
+  }
+
+  // ---------- holes for what goes through a grating ----------
+  function stGratLocal(g, x, z) { var t = g.r * Math.PI / 180, dx = x - g.p[0], dz = z - g.p[2]; return [dx * Math.cos(t) - dz * Math.sin(t), dx * Math.sin(t) + dz * Math.cos(t)]; }
+  function stNeedHoles(g) {                                         // the holes the pipes and equipment passing through panel g call for: [{k, x, z, d | w, d, a, what}]
+    var out = [], top = g.p[1], clr = stD.hclr;
+    model.pipes.forEach(function (p, i) {
+      if (p.ghost) return; var ya = p.a[1], yb = p.b[1], dy = yb - ya, L = Math.hypot(p.b[0] - p.a[0], dy, p.b[2] - p.a[2]);
+      if (L < 0.01 || Math.abs(dy) / L < 0.5 || Math.min(ya, yb) > top - 0.01 || Math.max(ya, yb) < top + 0.01) return;
+      var t = (top - ya) / dy, x = p.a[0] + (p.b[0] - p.a[0]) * t, z = p.a[2] + (p.b[2] - p.a[2]) * t, l = stGratLocal(g, x, z), od = OD[p.n] / 1000, d = od / (Math.abs(dy) / L) + clr;
+      if (Math.abs(l[0]) > g.w / 2 + d / 2 || Math.abs(l[1]) > g.d / 2 + d / 2) return;
+      out.push({ k: 'c', x: st3(l[0]), z: st3(l[1]), d: st3(d), what: 'Pipe ' + (i + 1) + (p.ln ? ' (' + p.ln + ')' : '') });
+    });
+    model.equip.forEach(function (e, i) {
+      var f = stFoot(e, 0); if (!f || f.y0 > top - 0.02 || f.y1 < top + 0.02) return;
+      var xs = f.c.map(function (q) { return q[0]; }), zs = f.c.map(function (q) { return q[1]; }), l = f.c.map(function (q) { return stGratLocal(g, q[0], q[1]); });
+      var x0 = Math.min.apply(null, l.map(function (q) { return q[0]; })) - clr, x1 = Math.max.apply(null, l.map(function (q) { return q[0]; })) + clr, z0 = Math.min.apply(null, l.map(function (q) { return q[1]; })) - clr, z1 = Math.max.apply(null, l.map(function (q) { return q[1]; })) + clr;
+      if (x1 < -g.w / 2 || x0 > g.w / 2 || z1 < -g.d / 2 || z0 > g.d / 2) return;
+      var def = eqDef(e.k), round = def && (def.custom ? def.shape === 'cyl' : e.k === 'vessel');
+      if (round) out.push({ k: 'c', x: st3((x0 + x1) / 2), z: st3((z0 + z1) / 2), d: st3(Math.max(x1 - x0, z1 - z0)), what: stTag(i) });
+      else out.push({ k: 'r', x: st3((x0 + x1) / 2), z: st3((z0 + z1) / 2), w: st3(x1 - x0), d: st3(z1 - z0), a: 0, what: stTag(i) });
+    });
+    return out;
+  }
+  function stHoleCovers(h, n) {                                     // does existing hole h take in the needed hole n
+    var dx = n.x - h.x, dz = n.z - h.z, nw = n.k === 'c' ? n.d : n.w, nd = n.d;
+    if (h.k === 'c') return n.k === 'c' ? Math.hypot(dx, dz) + n.d / 2 <= h.d / 2 + 0.012 : Math.hypot(Math.abs(dx) + nw / 2, Math.abs(dz) + nd / 2) <= h.d / 2 + 0.012;
+    var a = (h.a || 0) * Math.PI / 180, lx = dx * Math.cos(a) - dz * Math.sin(a), lz = dx * Math.sin(a) + dz * Math.cos(a);
+    return Math.abs(lx) + nw / 2 <= h.w / 2 + 0.012 && Math.abs(lz) + nd / 2 <= h.d / 2 + 0.012;
+  }
+  function stCutHoles(i) {                                          // replace the automatic holes of panel i with the ones its pipes and equipment need; holes made by hand stay
+    var g = model.steel.a[i]; if (!g || g.t !== 'g') return -1;
+    var keep = (g.o || []).filter(function (o) { return o.src !== 'auto'; }), made = [];
+    stNeedHoles(g).forEach(function (n) { if (keep.some(function (h) { return stHoleCovers(h, n); })) return; var h = { k: n.k, x: n.x, z: n.z, kick: stD.hkick, src: 'auto' }; if (n.k === 'c') h.d = n.d; else { h.w = n.w; h.d = n.d; h.a = 0; } made.push(h); });
+    pushHist(); g.o = stCleanHoles(keep.concat(made), g.w, g.d); changed(); return made.length;
   }
 
   // ---------- checks ----------
@@ -117,6 +195,14 @@
         if (slope > 45 || slope < 20) w.push('Stair ' + nm + ' slopes ' + Math.round(slope) + ' degrees. Industrial stairs are usually 30 to 45 degrees.');
       }
     });
+    var G = A.filter(function (a) { return a.t === 'g'; });
+    if (G.length && G.length * (model.pipes.length + model.equip.length + 1) < 60000) {
+      var seenN = {};
+      A.forEach(function (g, gi) {
+        if (g.t !== 'g') return;
+        stNeedHoles(g).forEach(function (n) { if ((g.o || []).some(function (h) { return stHoleCovers(h, n); })) return; var kk = n.what + '@' + gi; if (seenN[kk]) return; seenN[kk] = 1; w.push(n.what + ' goes through grating ' + (g.k || 'accessory ' + (gi + 1)) + ' with no hole. Cut one: select the panel, Cut holes.'); });
+      });
+    }
     stOpenEdges().slice(0, 8).forEach(function (o) { w.push('Platform ' + o.name + ' at ' + Math.round(o.y * 1000) + ' mm has about ' + o.len.toFixed(1) + ' m of open edge with no handrail, stair or ladder.'); });
   }
   function stOpenEdges() {                                          // gratings above 0.5 m whose edge has nothing at it: [{name, y, len}]
@@ -162,7 +248,7 @@
   }
 
   // ---------- generators ----------
-  var stD = { gw: 1, gd: 2, gs: 'G32x5', rh: 1.1, rpost: 1.2, rmid: 1, rtoe: true, rs: '42.4x2.6', sH: 3, sW: 0.9, sG: 0.25, ssec: 'C200x80', stread: 'G32x5', sdir: 0, lh: 4, lw: 0.5, ldir: 0, lcage: 'auto' };
+  var stD = { gw: 1, gd: 2, gs: 'G32x5', rh: 1.1, rpost: 1.2, rmid: 1, rtoe: true, rs: '42.4x2.6', sH: 3, sW: 0.9, sG: 0.25, ssec: 'C200x80', stread: 'G32x5', sdir: 0, lh: 4, lw: 0.5, ldir: 0, lcage: 'auto', hd: 0.2, hclr: 0.05, hkick: true };
   function stAccAdd(q) { var c = stCleanAcc(q); if (!c) return -1; pushHist(); model.steel.a.push(c); changed(); return model.steel.a.length - 1; }
   function stRailAround(i) {                                        // a handrail on the four sides of grating i, at its top level
     var g = model.steel.a[i]; if (!g || g.t !== 'g') return 0;

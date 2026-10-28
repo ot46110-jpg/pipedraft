@@ -5786,7 +5786,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     item: { label: 'Inline', items: [['coupling', 'Coupling'], ['nipple', 'Pipe nipple'], ['union', 'Union'], ['strainer', 'Y-strainer'], ['basket', 'Basket strainer'], ['expansion', 'Expansion joint'], ['spectacle', 'Spectacle blind'], ['orifice', 'Orifice plate'], ['sight', 'Sight glass'], ['flowmeter', 'Flow meter'], ['trap', 'Steam trap'], ['rupture', 'Rupture disc'], ['flame', 'Flame arrestor'], ['hose', 'Flexible hose']] },
     cap: { label: 'Ends', items: [['cap', 'Cap'], ['plug', 'Plug THD'], ['ret', 'Return bend 180°'], ['vent', 'Vent, on top'], ['drain', 'Drain, underneath']] },
     equip: { label: 'Equipment', items: EQ_CHIPS },    // plus one chip per equipment entry of the library
-    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace'], ['grating', 'Grating panel'], ['rail', 'Handrail'], ['stair', 'Stair'], ['ladder', 'Ladder']] },
+    steel: { label: 'Steel', items: [['col', 'Column'], ['beam', 'Beam or brace'], ['grating', 'Grating panel'], ['hole', 'Grating hole'], ['rail', 'Handrail'], ['stair', 'Stair'], ['ladder', 'Ladder']] },
     support: { label: 'Supports', items: Object.keys(SUPPORT_NAME).map(function (k) { return [k, SUPPORT_NAME[k]]; }) },
     instr: { label: 'Instruments', items: Object.keys(INSTR).map(function (k) { return [k, k + ' · ' + INSTR[k].name]; }) },
     custom: { label: 'Custom', items: [] }                          // one chip per model.custom entry, placed like inline items (tool 'item', ik = 'cu:' + id)

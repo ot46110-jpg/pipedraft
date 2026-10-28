@@ -305,7 +305,16 @@
     if (sn.kind !== 'grid') return sn.p.slice();
     var am = aim(e); return am ? am.q : null;
   }
+  function stHoleTap(e) {                                           // tap a grating panel: a hole where a pipe or equipment goes through there, else a round one at the tap
+    var hit = pickMeshes(e).filter(function (h) { var u = h.object.userData, a = u.kind === 'sacc' && model.steel.a[u.i]; return a && a.t === 'g'; })[0];
+    if (!hit) { toast('Tap a grating panel'); return; }
+    var gi = hit.object.userData.i, g = model.steel.a[gi], l = stGratLocal(g, hit.point.x, hit.point.z);
+    var need = stNeedHoles(g).filter(function (n) { return Math.hypot(n.x - l[0], n.z - l[1]) < 0.4; }).sort(function (a, b) { return Math.hypot(a.x - l[0], a.z - l[1]) - Math.hypot(b.x - l[0], b.z - l[1]); })[0];
+    var h = need ? { k: need.k, x: need.x, z: need.z, d: need.d, w: need.w, a: 0, kick: stD.hkick, src: '' } : { k: 'c', x: Math.round(l[0] * 20) / 20, z: Math.round(l[1] * 20) / 20, d: stD.hd, kick: stD.hkick, src: '' };
+    pushHist(); g.o = stCleanHoles((g.o || []).concat([h]), g.w, g.d); changed(); if (need) toast('Hole for ' + need.what);
+  }
   function stTap(e) {
+    if (stk === 'hole') { stHoleTap(e); return; }
     var sn = stSnap(e); if (!sn) return;
     if (stk === 'col') { var top = sn.p.slice(); top[1] = st3(sn.p[1] + stColH); if (stAdd(sn.p, top) >= 0) elev = sn.p[1]; return; }
     if (stk === 'grating') { if (stAccAdd({ t: 'g', p: sn.p, w: stD.gw, d: stD.gd, r: 0, s: stD.gs }) >= 0) elev = sn.p[1]; return; }
@@ -491,7 +500,7 @@
           [-1, 1].forEach(function (x) { [-1, 1].forEach(function (y) { [-1, 1].forEach(function (z) { var lx = x * q.w / 2, lz = z * q.d / 2; P.push(uv([q.c[0] + lx * cr + lz * sr, q.c[1] + y * q.h / 2, q.c[2] - lx * sr + lz * cr])); }); }); });
           it.poly = stHull(P); it.poly.forEach(function (pt) { pts.push(pt); });
         } else if (q.k === 'mem') { it.poly = mhull(q); it.poly.forEach(function (pt) { pts.push(pt); }); }
-        else if (q.k === 'ring') { it.c = uv(q.c); pts.push(it.c); }
+        else if (q.k === 'ring' || q.k === 'tube') { it.c = uv(q.c); pts.push(it.c); }
         else { it.a = uv(q.a); it.b = uv(q.b); pts.push(it.a, it.b); }
         items.push(it);
       });
@@ -526,7 +535,14 @@
     items.filter(function (it) { return it.t === 'm'; }).forEach(function (it) { o += '<path d="' + path(it.poly) + '" fill="#e4e9ec" stroke="#111" stroke-width="0.9" stroke-linejoin="round"/>'; });
     items.filter(function (it) { return it.t === 'x'; }).forEach(function (it) {
       var q = it.q;
-      if (it.poly) o += '<path d="' + path(it.poly) + '" fill="' + (q.grat ? 'url(#stgr)' : '#e4e9ec') + '" stroke="#111" stroke-width="0.7" stroke-linejoin="round"/>';
+      if (it.poly) {
+        o += '<path d="' + path(it.poly) + '" fill="' + (q.grat ? 'url(#stgr)' : '#e4e9ec') + '" stroke="#111" stroke-width="0.7" stroke-linejoin="round"/>';
+        if (view === 'plan' && q.holes) q.holes.forEach(function (h) {
+          var hw = stHoleW(q.c[0], q.c[2], q.r, h);
+          if (hw.r) o += '<circle cx="' + X(hw.c[0]) + '" cy="' + Y(hw.c[1]) + '" r="' + f1(hw.r * pm) + '" fill="#fff" stroke="#111" stroke-width="0.8"/>';
+          else o += '<path d="' + path(hw.pts) + '" fill="#fff" stroke="#111" stroke-width="0.8"/>';
+        });
+      }
       else if (it.c) o += '<circle cx="' + X(it.c[0]) + '" cy="' + Y(it.c[1]) + '" r="' + Math.max(1.5, f1(q.rad * pm)) + '" fill="none" stroke="#111" stroke-width="0.5"/>';
       else if (Math.hypot(X(it.a[0]) - X(it.b[0]), Y(it.a[1]) - Y(it.b[1])) < 0.6) o += '<circle cx="' + X(it.a[0]) + '" cy="' + Y(it.a[1]) + '" r="' + Math.max(1, f1((q.rad || 0.02) * pm)) + '" fill="#111"/>';
       else o += '<line x1="' + X(it.a[0]) + '" y1="' + Y(it.a[1]) + '" x2="' + X(it.b[0]) + '" y2="' + Y(it.b[1]) + '" stroke="#111" stroke-width="' + Math.max(0.6, f1((q.rad ? 2 * q.rad : q.w || 0.01) * pm)) + '"/>';

@@ -2651,6 +2651,55 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [{ a: [8, 0, 8], b: [10, 0, 8], n: 4, ln: 'A' }] }); ST.add([0, 0, 0], [0, 3, 0], 'H200x200');
   PD.model.steel.a.length;
 
+
+  // ---------- holes in grating for pipes and equipment ----------
+  PD.load({ pipes: [{ a: [1, 0, 1], b: [1, 5, 1], n: 4, ln: 'L-001' }] });
+  ST.accAdd({ t: 'g', p: [1, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' });
+  check('a vertical pipe through a grating panel with no hole is reported', PD.warns().some(w => /Pipe 1 \(L-001\) goes through grating accessory 1 with no hole/.test(w)), PD.warns().join('\n'));
+  const nd = ST.needHoles(PD.model.steel.a[0]);
+  check('the hole it needs is round, centred on the pipe, 4 in OD 114.3 plus 50 clearance', nd.length === 1 && nd[0].k === 'c' && Math.abs(nd[0].x) < 1e-9 && Math.abs(nd[0].z) < 1e-9 && near1(nd[0].d, 0.1143 + 0.05, 0.002), JSON.stringify(nd));
+  check('Cut holes makes it and the warning goes', ST.cutHoles(0) === 1 && PD.model.steel.a[0].o.length === 1 && PD.model.steel.a[0].o[0].src === 'auto' && !PD.warns().some(w => /with no hole/.test(w)), JSON.stringify(PD.model.steel.a[0].o));
+  check('cutting again does not double it', ST.cutHoles(0) === 1 && PD.model.steel.a[0].o.length === 1);
+  const full = 3 * 2 * 43.9, net = ST.accParts(PD.model.steel.a[0]).find(q => q.k === 'box').kg;
+  check('the hole comes off the weight', net < full - 0.5 && net > full - 5, net);
+  check('a hole gets a toe plate round it: a tube in the parts', ST.accParts(PD.model.steel.a[0]).some(q => q.k === 'tube' && near1(q.rad, 0.0821 + 0.003, 0.002)));
+  check('and not when the toe plate is off', (PD.model.steel.a[0].o[0].kick = false, !ST.accParts(PD.model.steel.a[0]).some(q => q.k === 'tube')));
+  check('an off-centre pipe puts the hole in the panel frame', (PD.load({ pipes: [{ a: [1.8, 0, 1.4], b: [1.8, 5, 1.4], n: 2, ln: 'A' }] }), ST.accAdd({ t: 'g', p: [1, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' }), (() => { const n = ST.needHoles(PD.model.steel.a[0])[0]; return near1(n.x, 0.8, 1e-9) && near1(n.z, 0.4, 1e-9); })()));
+  check('and a panel turned 90 degrees turns the hole position with it', (() => { PD.model.steel.a[0].r = 90; const n = ST.needHoles(PD.model.steel.a[0])[0]; return near1(n.x, -0.4, 1e-6) && near1(n.z, 0.8, 1e-6); })(), JSON.stringify(ST.needHoles(PD.model.steel.a[0])));
+  PD.load({ pipes: [{ a: [8, 0, 8], b: [8, 5, 8], n: 4 }] }); ST.accAdd({ t: 'g', p: [1, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' });
+  check('a pipe nowhere near the panel needs no hole', ST.needHoles(PD.model.steel.a[0]).length === 0 && !PD.warns().some(w => /with no hole/.test(w)));
+  PD.load({ pipes: [{ a: [1, 0, 1], b: [1, 2, 1], n: 4 }] }); ST.accAdd({ t: 'g', p: [1, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' });
+  check('a pipe that stops under the panel needs no hole', ST.needHoles(PD.model.steel.a[0]).length === 0);
+  PD.load({ pipes: [{ a: [0, 0, 1], b: [3, 5, 1], n: 4 }] }); ST.accAdd({ t: 'g', p: [1.8, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' });
+  check('a sloping pipe gets a larger hole', (() => { const n = ST.needHoles(PD.model.steel.a[0])[0]; return n && n.d > 0.1143 + 0.05 + 0.01; })(), JSON.stringify(ST.needHoles(PD.model.steel.a[0])));
+  PD.load({ pipes: [], equip: [{ k: 'vessel', p: [1, 0, 1], r: 0 }] }); ST.accAdd({ t: 'g', p: [1, 1.5, 1], w: 4, d: 4, r: 0, s: 'G32x5' });
+  const ne = ST.needHoles(PD.model.steel.a[0]);
+  check('a vessel standing through the panel needs a round hole round it', ne.length === 1 && ne[0].k === 'c' && ne[0].d > 1, JSON.stringify(ne));
+  PD.load({ pipes: [], equip: [{ k: 'pump', p: [1, 0, 1], r: 0 }] }); ST.accAdd({ t: 'g', p: [1, 0.3, 1], w: 4, d: 4, r: 0, s: 'G32x5' });
+  check('a pump through a panel needs a rectangular one', (() => { const n = ST.needHoles(PD.model.steel.a[0]); return n.length === 1 && n[0].k === 'r' && n[0].w > 0.5 && n[0].d > 0.3; })());
+  check('holes in a panel turn and stay with it, and survive a reload', (() => { PD.model.steel.a[0].o = [{ k: 'r', x: 0.1, z: 0.2, w: 0.5, d: 0.4, a: 30, kick: true }]; PD.rebuild(); PD.load(JSON.parse(JSON.stringify(PD.model))); const o = PD.model.steel.a[0].o[0]; return o.k === 'r' && o.a === 30 && o.w === 0.5; })());
+  check('bad holes are dropped on load', ST.clean({ a: [{ t: 'g', p: [0, 0, 0], w: 2, d: 2, s: 'G32x5', o: [{ k: 'c', x: 0, z: 0, d: 0.2 }, { k: 'c', x: 9, z: 0, d: 0.2 }, { k: 'c', x: 'a', z: 0 }, null] }] }).a[0].o.length === 1);
+  check('a hole size is clamped', ST.clean({ a: [{ t: 'g', p: [0, 0, 0], w: 2, d: 2, s: 'G32x5', o: [{ k: 'c', x: 0, z: 0, d: 99 }] }] }).a[0].o[0].d === 5);
+
+  // placing and editing by hand
+  PD.load({ pipes: [{ a: [1, 0, 1], b: [1, 5, 1], n: 4, ln: 'L-001' }] }); ST.add([0, 0, 0], [0, 3, 0], 'H200x200');
+  ST.accAdd({ t: 'g', p: [1, 3, 1], w: 3, d: 2, r: 0, s: 'G32x5' });
+  PD.look(Math.PI / 4, 0.9, 12, [1, 3, 1]); els['t-pipe'].onclick(); els['finish'].onclick(); ST.setTool('steel'); ST.setKind('hole'); globalThis.__perf += 5000;
+  const hp = PD.project([1.05, 3, 1.05]); tapAt(hp.x, hp.y);
+  check('tapping a panel near a pipe cuts the hole to fit that pipe', PD.model.steel.a[0].o.length === 1 && PD.model.steel.a[0].o[0].k === 'c' && near1(PD.model.steel.a[0].o[0].d, 0.1643, 0.002), JSON.stringify(PD.model.steel.a[0].o));
+  const hq = PD.project([2.2, 3, 1.6]); tapAt(hq.x, hq.y);
+  check('and away from any pipe a round hole of the default size', PD.model.steel.a[0].o.length === 2 && near1(PD.model.steel.a[0].o[1].d, 0.2, 1e-9), JSON.stringify(PD.model.steel.a[0].o));
+  tapAt(5, 5);
+  check('tapping elsewhere says so and adds nothing', PD.model.steel.a[0].o.length === 2);
+  check('a hole can be edited by field, and each edit gives a manual hole', (() => { const c = ST.holeApply(PD.model.steel.a[0], 1, 'd', '300'); return c && c.o[1].d === 0.3 && c.o[1].src === ''; })() && ST.holeApply(PD.model.steel.a[0], 1, 'd', 'abc') === null);
+  check('turning a round hole into a rectangular one keeps its size', (() => { const c = ST.holeApply(PD.model.steel.a[0], 1, 'k', 'r'); return c && c.o[1].k === 'r' && c.o[1].w === 0.2 && c.o[1].d === 0.2; })());
+  check('the inspector lists the holes', (els['t-sel'].onclick(), PD.model.steel.a.length === 1) && /Holes/.test(ST.accInspHtml(PD.model.steel.a[0], 0)) && /Cut holes for pipes and equipment/.test(ST.accInspHtml(PD.model.steel.a[0], 0)));
+
+  // drawing
+  const ph = ST.sheet('plan', true);
+  check('the plan draws the holes as white shapes in the hatched panel', /<circle[^>]*fill="#fff"/.test(ph) && /url\(#stgr\)/.test(ph));
+  check('the toe plates are in the weight and the csv', ST.accKg(PD.model.steel.a[0]) > 0 && /Grating/.test(ST.csv()));
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();
