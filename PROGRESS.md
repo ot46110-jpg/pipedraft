@@ -122,3 +122,8 @@
 - ค้าง: ขนาดท่อพลาสติกยังใช้ OD ของ NPS (ตรงกับ PVC ASTM D1785 และ HDPE IPS แต่ PP/PVDF จริงเป็น OD เมตริก), ขนาดหน้าแปลนและฟิตติ้งยังเป็นของเหล็ก
 - Lowest level under the floor (project spec), for pits and trenches.
 - PVC and FRP joints are J with a diamond, not W with a dot.
+
+## Piping, what is left (as of 2026-10-28)
+- Done: plastic valves to NPS 2 are socket or fusion ended (`endType(kind, n, e, pt)` looks at the pipe under `pt`), open-end warning on lines that have a class, plastic flange and gasket rows, support spans and temperature limits per material, thermal growth, dead leg, NDE limits on plastic, bonded joints as J.
+- Not done: pressure rating of PVC and similar by schedule or SDR and temperature (needs a real table), plastic fitting and flange dimensions (steel tables still used; PP and PVDF OD still NPS), span check on vertical pipe, general reducer orientation rules, automatic drain and vent at low and high points (needs fluid data), take-out table from the owner's company (needs their file), Thai UI.
+- Not verified on a real iPad: every touch and Pencil interaction listed under the Pencil workflow.

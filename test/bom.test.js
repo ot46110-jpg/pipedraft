@@ -2324,5 +2324,25 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] });
 }
 
+
+// Plastic valve ends up to NPS 2, open ends on classed lines
+{
+  const fl = (m, n, e) => { PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n, ln: 'A', m }], valves: [Object.assign({ p: [2, 0, 0], d: [1, 0, 0], n, s: 40, k: 'ball' }, e ? { e } : {})] }); return PD.addValveFlanges(PD.model.valves[0]); };
+  check('a 2 inch PVC ball valve is socket ended: no flanges fitted', fl('pvc', 2) === 0);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [4, 0, 0], n: 2, ln: 'A', m: 'pvc' }], valves: [{ p: [2, 0, 0], d: [1, 0, 0], n: 2, s: 40, k: 'ball' }] });
+  check('and no bolted joint in the cut list', !PD.fab().joints.some(j => j.kind === 'BOLT'));
+  check('a 3 inch PVC ball valve is still flanged', fl('pvc', 3) === 2);
+  check('a 2 inch steel ball valve is still flanged', fl(undefined, 2) === 2);
+  check('a flanged end typed on a 2 inch PVC valve is kept', fl('pvc', 2, 'flg') === 2);
+  // open ends
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4, ln: 'A' }] });
+  check('open ends are not reported on a line without a class', !PD.warns().some(w => /open end/.test(w)));
+  const c = PD.spec.add('ss316'); PD.spec.assign('A', c.e.id); PD.rebuild();
+  check('on a line with a class they are', PD.warns().some(w => /open end/.test(w)), JSON.stringify(PD.warns()));
+  PD.model.caps.push([3, 0, 0, 'cap']); PD.model.caps.push([0, 0, 0, 'cap']); PD.rebuild();
+  check('capped ends are not', !PD.warns().some(w => /open end/.test(w)), JSON.stringify(PD.warns()));
+  PD.load({ pipes: [] });
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

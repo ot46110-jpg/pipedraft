@@ -576,16 +576,18 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     angle: 'Angle valve', needle: 'Needle valve', diaphragm: 'Diaphragm valve', knife: 'Knife gate valve', threeway: 'Three-way valve', footv: 'Foot valve'
   };
   var VALVE_END = { butterfly: 'wafer 150#', knife: 'wafer 150#' };
-  function endType(kind, n, e) {                                    // flg, wafer, thd, sw or bw: what the valve is joined to the pipe with
+  function plasticAt(pt) { var h = pt ? hostOf(pt) : -1, M = h >= 0 && model.pipes[h] ? matRec(model.pipes[h].m) : null; return !!(M && (M.join === 'SC' || M.join === 'BF' || M.join === 'LAM')); }   // the pipe at this point is plastic or FRP
+  function endType(kind, n, e, pt) {                                // flg, wafer, thd, sw or bw: what the valve is joined to the pipe with; pt is where it sits, to know the pipe material
     if (VALVE_END[kind]) return 'wafer';
+    if (!e && n > 1.5 && n <= 2 && plasticAt(pt)) return 'sw';        // plastic valves to NPS 2 are socket or fusion ended (true union), flanged above that
     var s = (model.spec || {}).small || 'SW';
     if (e === 'flg') return 'flg';
     if (e === 'thd') return 'thd';
     if (e === 'weld') return n <= 1.5 ? 'sw' : 'bw';
     return n <= 1.5 ? (s === 'THD' ? 'thd' : 'sw') : 'flg';
   }
-  function valveEnd(kind, n, e) {
-    var t = endType(kind, n, e), M = cm();
+  function valveEnd(kind, n, e, pt) {
+    var t = endType(kind, n, e, pt), M = cm();
     if (M && M.join && (t === 'sw' || t === 'bw' || t === 'thd')) return M.conn;
     return t === 'wafer' ? VALVE_END[kind] : t === 'flg' ? 'flanged 150#' : t === 'thd' ? (n <= 1.5 ? 'THD 800#' : 'THD 150#') : t === 'sw' ? 'SW 800#' : 'BW';
   }
@@ -1791,7 +1793,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var r = OD[v.n] / 2000, R = r * 1.9, L = VALVE_FF[kind][v.n];
       var g = new T.Group(), bm = mat({ check: 0x6bb0ff, ball: 0x6bd18f, butterfly: 0xb48cff, plug: 0xff9d5c, control: 0x4fd1c5, angle: 0xff8f5c, needle: 0xd6c34a, diaphragm: 0x9a7fd1, knife: 0x7fa8d1, threeway: 0x49b3a0, footv: 0x6bb0ff }[kind] || 0xff6b5e, 0.4);
       valveShape(g, kind, r, R, L, bm);
-      if (endType(kind, v.n, v.e) === 'flg' && FL[v.n]) {              // the flanges cast on a flanged valve, so a valve between pipe flanges shows four
+      if (endType(kind, v.n, v.e, v.p) === 'flg' && FL[v.n]) {              // the flanges cast on a flanged valve, so a valve between pipe flanges shows four
         var vft = FL[v.n][1], vfr = FL[v.n][0] / 2;
         [1, -1].forEach(function (sg) { var vf = new T.Mesh(new T.CylinderGeometry(vfr, vfr, vft, 28), bm); vf.position.y = sg * (L / 2 - vft / 2); g.add(vf); });
       }
@@ -1816,7 +1818,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       g.traverse(function (m) { m.userData = { kind: 'valve', i: i }; });
       world.add(g);
       if (port) nozList.push(port);
-      add('valve', VALVE_NAME[kind] + ' ' + valveEnd(kind, v.n, v.e) + ', ' + sz(v.n), 1, 'pc');
+      add('valve', VALVE_NAME[kind] + ' ' + valveEnd(kind, v.n, v.e, v.p) + ', ' + sz(v.n), 1, 'pc');
       add('pipe', 'Pipe, ' + sz(v.n) + ' SCH ' + (v.s || 40) + ', ' + pipeEnd(v.n), -L, 'm');
       total -= L; weight -= L * lineWeight(v.n, v.s || 40, (cm() || MATS.cs).key);
       var hv = hostOf(v.p); if (hv >= 0) pipeLen[hv] = Math.max(0, (pipeLen[hv] || 0) - L);
@@ -2011,7 +2013,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function weldKindFor(n) { var s = (model.spec || {}).small || 'SW'; return n > 1.5 ? 'BW' : s === 'THD' ? 'THD' : s === 'BW' ? 'BW' : 'SW'; }
   function elEnd(el) {                                              // how a pipe meets an in-line part: a weld, a thread or bolting
     var n = el.n;
-    if (el.what === 'valve') { var t = valveEnd(el.kind, n, el.e); return /flanged|wafer/.test(t) ? 'BOLT' : /THD/.test(t) ? 'THD' : /BW/.test(t) ? 'BW' : 'SW'; }
+    if (el.what === 'valve') { var t = valveEnd(el.kind, n, el.e, el.p); return /flanged|wafer/.test(t) ? 'BOLT' : /THD/.test(t) ? 'THD' : /BW/.test(t) ? 'BW' : 'SW'; }
     if (el.what === 'item') { var nm = ITEM_NAME[el.kind] || ''; return /flanged/.test(nm) ? 'BOLT' : /THD/.test(nm) ? 'THD' : /SW/.test(nm) ? 'SW' : 'BW'; }
     var f = el.kind;
     return f === 'so' ? 'FW' : f === 'th' ? 'THD' : f === 'sw' ? 'SW' : weldKindFor(n);
@@ -2336,7 +2338,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     model.valves.forEach(function (v, i) {
       var hi = hostOf(v.p); if (hi < 0) return;
       if (model.pipes[hi].n !== v.n) warns.push('Valve ' + tg1.valves[i] + ' is ' + sz(v.n) + ' but sits on ' + sz(model.pipes[hi].n) + ' pipe (pipe ' + (hi + 1) + '). Select the pipe and set the size again.');
-      var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e);
+      var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e, v.p);
       if ((t === 'flg' || t === 'wafer') && !valveFaceFlanges(v).length) warns.push('Flanged valve ' + tg1.valves[i] + ' has no flanges against it, so the list has no flanges, gaskets or bolts. Select it and use Add flanges.');
     });
     ['items', 'flanges'].forEach(function (g) { model[g].forEach(function (x) { var hi = hostOf(x.p); if (hi >= 0 && model.pipes[hi].n !== x.n && n++ < 6) warns.push((g === 'items' ? 'An inline part' : 'A flange') + ' is ' + sz(x.n) + ' but sits on ' + sz(model.pipes[hi].n) + ' pipe (pipe ' + (hi + 1) + ').'); }); });
@@ -2407,6 +2409,22 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       }
     });
     if (dead.length) warns.push('Pipe ' + dead[0] + (dead.length > 1 ? ' (and ' + (dead.length - 1) + ' more)' : '') + ' is a dead leg: a branch closed at its end, longer than 6 pipe diameters, with no valve. The fluid stands still in it. Shorten it or put a valve on it.');
+    (function () {                                                  // an open pipe end on a line that has a piping class: nothing closes or ends it
+      var use = {}, openN = {};
+      P.forEach(function (p) { if (p.ghost) return; [p.a, p.b].forEach(function (pt) { var k = key(pt); use[k] = (use[k] || 0) + 1; }); });
+      model.caps.forEach(function (c) { use[key(c)] = 9; });
+      model.flanges.forEach(function (f) { if (isOne(f)) use[key(f.p)] = 9; });
+      nozList.forEach(function (z) { use[key(mm3(z.p))] = 9; });
+      P.forEach(function (p, i) {
+        if (p.ghost || !spOf(p.ln)) return;
+        [p.a, p.b].forEach(function (pt) {
+          if (use[key(pt)] !== 1) return;
+          if (model.valves.some(function (v) { return V(v.p).distanceTo(V(pt)) < 0.2; }) || model.items.some(function (it) { return V(it.p).distanceTo(V(pt)) < 0.2; })) return;   // a valve or part on the end is the end
+          (openN[p.ln] = openN[p.ln] || []).push(i + 1);
+        });
+      });
+      Object.keys(openN).forEach(function (ln) { var l = openN[ln]; warns.push('Pipe ' + l[0] + ' (line ' + ln + ') has an open end' + (l.length > 1 ? ', and ' + (l.length - 1) + ' more on that line' : '') + '. Cap it, end it with a flange or a valve, or join it to something.'); });
+    })();
     if (model.pspecs.length) { var nc = {}; P.forEach(function (p) { if (!p.ghost && !spOf(p.ln) && !(model.lines[p.ln] || {}).cls && !nc[p.ln]) { nc[p.ln] = 1; warns.push('Line ' + p.ln + ' has no piping class, while other lines are set up with one.'); } }); }
   }
   function spWarnings() {                                           // pipes and valves that break the class of their line
@@ -2983,7 +3001,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     return out;
   }
   function addValveFlanges(v) {                                     // a flanged valve gets a flange against each face, unless the pipe ends there
-    var kind = VALVE_FF[v.k] ? v.k : 'gate', t = endType(kind, v.n, v.e); if (t !== 'flg' && t !== 'wafer') return 0;
+    var kind = VALVE_FF[v.k] ? v.k : 'gate', t = endType(kind, v.n, v.e, v.p); if (t !== 'flg' && t !== 'wafer') return 0;
     var h2 = hostOf(v.p); if (h2 < 0) return 0;
     var pp = model.pipes[h2], a = V(pp.a), dv = V(pp.b).sub(a).normalize(), L = a.distanceTo(V(pp.b)), half = VALVE_FF[kind][v.n] / 2, span = flangeSpan({ n: v.n, m: 1 }), tv = V(v.p).distanceTo(a), added = 0;
     [-1, 1].forEach(function (sg) {
@@ -2998,7 +3016,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function fitValveFlanges() {                                      // a pipe now runs on from the open face of a flanged valve: give that face its mating flange
     var added = 0;
     model.valves.forEach(function (v) {
-      var kind = VALVE_FF[v.k] ? v.k : 'gate', t = endType(kind, v.n, v.e); if (t !== 'flg' && t !== 'wafer') return;
+      var kind = VALVE_FF[v.k] ? v.k : 'gate', t = endType(kind, v.n, v.e, v.p); if (t !== 'flg' && t !== 'wafer') return;
       var dvv = V(v.d).normalize(), half = VALVE_FF[kind][v.n] / 2, span = flangeSpan({ n: v.n, m: 1 });
       [-1, 1].forEach(function (sg) {
         var fp = V(v.p).addScaledVector(dvv, sg * half), away = dvv.clone().multiplyScalar(sg);
@@ -3044,7 +3062,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var op = onPipe(hit); if (!op) return;
       if (tool === 'item' && isCu(ik) && !(CUX[ik] && CUX[ik].lib)) { toast('That custom part is not in the library any more'); return; }
       var len = tool === 'valve' ? VALVE_FF[vk][op.pipe.n] : tool === 'item' ? itemLen(ik, op.pipe.n) : FL[op.pipe.n][1] * 2 + 0.01;
-      var vflg = tool === 'valve' && ['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, ve === 'auto' ? undefined : ve)) >= 0, mspan = flangeSpan({ n: op.pipe.n, m: 1 });
+      var vflg = tool === 'valve' && ['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, ve === 'auto' ? undefined : ve, op.pt)) >= 0, mspan = flangeSpan({ n: op.pipe.n, m: 1 });
       var need = len / 2 + 0.05 + (vflg ? mspan : 0);
       var nearEnd = (tool === 'valve' || (tool === 'flange' && fk !== 'ro')) && Math.min(op.s, op.L - op.s) < Math.min(0.35, op.L / 3);
       if (nearEnd) {                                                // at a free pipe end: the flange or valve goes on the end itself
@@ -3057,7 +3075,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
             var vh = VALVE_FF[vk][op.pipe.n] / 2, vrec = { p: mm3(V(endPt).addScaledVector(outd, -vh)), d: [op.dir.x, op.dir.y, op.dir.z], n: op.pipe.n, s: op.pipe.s || 40, k: vk };
             if (ve !== 'auto') vrec.e = ve;
             model.valves.push(vrec); addValveFlanges(vrec);
-            if (['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, vrec.e)) >= 0) toast('Valve on the pipe end: one flange on the pipe side. Draw on from the valve and the mating flange is added.');
+            if (['flg', 'wafer'].indexOf(endType(vk, op.pipe.n, vrec.e, vrec.p)) >= 0) toast('Valve on the pipe end: one flange on the pipe side. Draw on from the valve and the mating flange is added.');
           }
           changed(); return;
         }
@@ -3510,8 +3528,8 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
         + geomHtml(it);
     } else if (sel.kind === 'valve') {
       h = '<h2>Valve ' + (sel.i + 1) + '</h2><div class="row"><label>Type<select id="i-k">' + opts(Object.keys(VALVE_NAME).map(function (k) { return [k, VALVE_NAME[k].replace(' valve', '')]; }), it.k) + '</select></label></div>'
-        + (VALVE_END[it.k] ? '' : '<div class="row"><label class="field">Ends<select id="i-ve">' + opts([['', 'Automatic (' + (endType(it.k, it.n) === 'flg' ? 'flanged' : endType(it.k, it.n) === 'thd' ? 'threaded' : 'welded') + ')'], ['flg', 'Flanged'], ['thd', 'Threaded'], ['weld', 'Welded']], it.e || '') + '</select></label></div>')
-        + (['flg', 'wafer'].indexOf(endType(it.k, it.n, it.e)) >= 0 ? '<p>' + valveFaceFlanges(it).length + ' flange' + (valveFaceFlanges(it).length === 1 ? '' : 's') + ' against this valve</p><div class="row"><button id="i-vfl">Add flanges against the valve</button></div>' : '')
+        + (VALVE_END[it.k] ? '' : '<div class="row"><label class="field">Ends<select id="i-ve">' + opts([['', 'Automatic (' + (endType(it.k, it.n, undefined, it.p) === 'flg' ? 'flanged' : endType(it.k, it.n, undefined, it.p) === 'thd' ? 'threaded' : 'welded') + ')'], ['flg', 'Flanged'], ['thd', 'Threaded'], ['weld', 'Welded']], it.e || '') + '</select></label></div>')
+        + (['flg', 'wafer'].indexOf(endType(it.k, it.n, it.e, it.p)) >= 0 ? '<p>' + valveFaceFlanges(it).length + ' flange' + (valveFaceFlanges(it).length === 1 ? '' : 's') + ' against this valve</p><div class="row"><button id="i-vfl">Add flanges against the valve</button></div>' : '')
         + (it.k === 'check' ? '<div class="row"><button id="i-flip">Flip direction</button></div>' : '')
         + (it.k === 'threeway' ? '<div class="row"><button id="i-rotv">Turn the side port</button></div>' : '<div class="row"><label class="field">Handwheel or actuator, angle around the pipe<select id="i-hw">' + opts([[0, Math.abs(it.d[1]) > 0.9 ? '0° (toward X)' : 'Up'], [45, '45°'], [90, '90°'], [135, '135°'], [180, Math.abs(it.d[1]) > 0.9 ? '180°' : 'Down'], [225, '225°'], [270, '270°'], [315, '315°']].concat((it.hw || 0) % 45 ? [[it.hw, it.hw + '°']] : []), it.hw || 0) + '</select></label><label class="field">Angle in degrees, or drag the ring<input type="text" inputmode="decimal" id="i-hwn" value="' + (it.hw || 0) + '"></label></div>')
         + '<p>' + sz(it.n) + ', face to face ' + Math.round(VALVE_FF[it.k][it.n] * 1000) + ' mm</p>';
@@ -3562,7 +3580,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     if ($('i-m')) $('i-m').onchange = edit(function (v) { if (matRec(v)) it.m = v; else delete it.m; });
     if ($('i-mln')) $('i-mln').onclick = function () { var c = setLineMat(it.ln, pmat(it)); toast(c + ' pipe' + (c === 1 ? '' : 's') + ' of ' + it.ln + ' now ' + matName(pmat(it))); };
     if ($('i-k')) $('i-k').onchange = edit(function (v) { var had = valveFaceFlanges(it).length > 0; dropValveFlanges(it); it.k = v; if (had) addValveFlanges(it); });
-    if ($('i-ve')) $('i-ve').onchange = edit(function (v) { dropValveFlanges(it); if (v) it.e = v; else delete it.e; if (['flg', 'wafer'].indexOf(endType(it.k, it.n, it.e)) >= 0) addValveFlanges(it); });
+    if ($('i-ve')) $('i-ve').onchange = edit(function (v) { dropValveFlanges(it); if (v) it.e = v; else delete it.e; if (['flg', 'wafer'].indexOf(endType(it.k, it.n, it.e, it.p)) >= 0) addValveFlanges(it); });
     if ($('i-vfl')) $('i-vfl').onclick = function () { pushHist(); var n0 = addValveFlanges(it); changed(); if (!n0) toast('No room for flanges, or they are already there'); };
     if ($('i-fl')) $('i-fl').onchange = edit(function (v) { it.fl = +v; });
     if (sel.kind === 'pipe' && $('i-len')) bindGeom(it);
@@ -4306,12 +4324,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // A flange bolted to a valve is drawn against the end of the valve symbol, which has a size of its own on paper (an iso is not to scale),
     // so the flange, its balloon and the weld behind it move along the pipe to where the symbol ends.
     function vLpx(v) { return clampPx(VALVE_FF[VALVE_FF[v.k] ? v.k : 'gate'][v.n], SYM_V[0], SYM_V[1]) * szF('v'); }
-    function vFlanged(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return t === 'flg' || t === 'wafer'; }
+    function vFlanged(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e, v.p); return t === 'flg' || t === 'wafer'; }
     function vHalf(v) { return v.k === 'butterfly' ? 6 : v.k === 'knife' ? 7 : isoCtx.style === 'pic' && !vFlanged(v) ? 8 : 10; }   // half the body in symbol units (20 is the face to face); a picture without its flanges ends at 8
     var IT_HALF = { coupling: [5, 7], union: [10, 10], strainer: [10, 10], expansion: [10, 10], spectacle: [4, 6], orifice: [3, 4], sight: [8, 10], flowmeter: [8, 10], nipple: [10, 10], basket: [10, 10], trap: [10, 10], rupture: [3.5, 3.5], flame: [10, 10], hose: [10, 10] };   // half of each inline part's symbol along the pipe: Symbols, Pictures
     function iHalf(t) { var h = IT_HALF[t]; return h ? h[isoCtx.style === 'pic' ? 1 : 0] : 10; }
     function iLpx(it) { return clampPx(itemLen(it.t, it.n), SYM_I[0], SYM_I[1]) * szF('p'); }
-    function vFlgBars(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e); return isoCtx.style !== 'pic' && (t === 'flg' || t === 'wafer'); }   // the Symbols style draws the flange bars inside the valve symbol
+    function vFlgBars(v) { var t = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e, v.p); return isoCtx.style !== 'pic' && (t === 'flg' || t === 'wafer'); }   // the Symbols style draws the flange bars inside the valve symbol
     function symEnd(v, away, units) { return symEndP(v.p, vLpx(v), away, units); }
     function symEndP(p0, Lpx, away, units) {                        // the point along the pipe this far (symbol units, 10 = the body end) from a part's centre, on the side away points to
       var c0 = sp(p0), want = Lpx / 20 * (units == null ? 10 : units), lo = 0, hi = 3;
@@ -4434,7 +4452,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     // Valves, flanges, inline fittings and supports.
     model.valves.forEach(function (v, i) {
       var kk = SYM[v.k] ? v.k : 'gate';
-      var et = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e), marks = isoCtx.style === 'pic' ? '' : et === 'sw' ? ISOS.endSW : et === 'thd' ? ISOS.endTHD : vFlgBars(v) ? ISOS.endFL(vHalf(v)) : '';
+      var et = endType(VALVE_FF[v.k] ? v.k : 'gate', v.n, v.e, v.p), marks = isoCtx.style === 'pic' ? '' : et === 'sw' ? ISOS.endSW : et === 'thd' ? ISOS.endTHD : vFlgBars(v) ? ISOS.endFL(vHalf(v)) : '';
       body += isoSym(kk, v.p, v.d, vLpx(v), kk === 'check' && v.rev, Math.abs(v.d[1]) < 0.9 && (v.hw || 0) > 112 && (v.hw || 0) < 248, marks, !vFlanged(v));
       balloon(compDesc.valve[i], v.p, SYM[kk].act ? 14 : 0);
     });
