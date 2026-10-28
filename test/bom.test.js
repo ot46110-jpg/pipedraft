@@ -2341,6 +2341,22 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('on a line with a class they are', PD.warns().some(w => /open end/.test(w)), JSON.stringify(PD.warns()));
   PD.model.caps.push([3, 0, 0, 'cap']); PD.model.caps.push([0, 0, 0, 'cap']); PD.rebuild();
   check('capped ends are not', !PD.warns().some(w => /open end/.test(w)), JSON.stringify(PD.warns()));
+  // plastic pressure rating
+  const bar = x => x / 0.0689476;
+  check('PVC 1/2 SCH 40 is about 600 psi', Math.abs(bar(PD.plRating('pvc', 0.5, 40, 23)) - 600) < 10, bar(PD.plRating('pvc', 0.5, 40, 23)));
+  check('PVC 2 SCH 40 is about 280 psi', Math.abs(bar(PD.plRating('pvc', 2, 40, 23)) - 280) < 6);
+  check('PVC 4 SCH 40 is about 220 psi', Math.abs(bar(PD.plRating('pvc', 4, 40, 23)) - 220) < 6);
+  check('PVC 1/2 SCH 80 is about 850 psi', Math.abs(bar(PD.plRating('pvc', 0.5, 80, 23)) - 850) < 10);
+  check('PVC at 49 C (120 F) keeps 40 percent', Math.abs(PD.plRating('pvc', 2, 40, 49) / PD.plRating('pvc', 2, 40, 23) - 0.4) < 0.01);
+  check('PVC above 60 C has no rating', PD.plRating('pvc', 2, 40, 65) === 0);
+  check('CPVC keeps more at 60 C than PVC', PD.plRating('cpvc', 2, 80, 60) > PD.plRating('pvc', 2, 80, 55));
+  check('design pressure units parse', Math.abs(PD.parsePress('10 bar g') - 10) < 1e-9 && Math.abs(PD.parsePress('150 psi') - 10.34) < 0.01 && PD.parsePress('1.6 MPa') === 16 && PD.parsePress('') === null);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [3, 0, 0], n: 4, s: 40, ln: 'A', m: 'pvc' }] }); PD.model.lines.A = { pdes: '20 bar g', tdes: '20' }; PD.rebuild();
+  check('20 bar on 4 SCH 40 PVC is reported', PD.warns().some(w => /good for about/.test(w)), JSON.stringify(PD.warns()));
+  PD.model.lines.A = { pdes: '5 bar g', tdes: '20' }; PD.rebuild();
+  check('5 bar on it is fine', !PD.warns().some(w => /good for about/.test(w)));
+  PD.model.lines.A = { pdes: '8 bar g', tdes: '45' }; PD.rebuild();
+  check('8 bar at 45 C is too much for it', PD.warns().some(w => /good for about/.test(w)), JSON.stringify(PD.warns()));
   PD.load({ pipes: [] });
 }
 

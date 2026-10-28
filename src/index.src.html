@@ -533,6 +533,20 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var m = /(-?\d+(?:[.,]\d+)?)/.exec(String(t == null ? '' : t)); if (!m) return null;
     var v = parseFloat(m[1].replace(',', '.')); return /f/i.test(String(t).slice(m.index + m[0].length)) ? (v - 32) * 5 / 9 : v;
   }
+  // PVC-U and CPVC pressure pipe: ASTM D1785 / F441 rating P = 2 S t / (OD - t), S = 2000 psi (HDB 4000 psi at 23 C, design factor 0.5), t the minimum wall; checked against maker tables (1/2 SCH 40 = 600 psi, 2 SCH 40 = 280, 4 SCH 40 = 220, 1/2 SCH 80 = 850)
+  var PL_OD = { 0.5: 0.840, 0.75: 1.050, 1: 1.315, 1.5: 1.900, 2: 2.375, 2.5: 2.875, 3: 3.500, 4: 4.500, 6: 6.625, 8: 8.625, 10: 10.750, 12: 12.750 };
+  var PL_T = { 40: { 0.5: 0.109, 0.75: 0.113, 1: 0.133, 1.5: 0.145, 2: 0.154, 2.5: 0.203, 3: 0.216, 4: 0.237, 6: 0.280, 8: 0.322, 10: 0.365, 12: 0.406 }, 80: { 0.5: 0.147, 0.75: 0.154, 1: 0.179, 1.5: 0.200, 2: 0.218, 2.5: 0.276, 3: 0.300, 4: 0.337, 6: 0.432, 8: 0.500, 10: 0.593, 12: 0.687 } };
+  var PL_DER = { pvc: [[23, 1], [27, 0.88], [32, 0.75], [38, 0.62], [43, 0.51], [49, 0.40], [54, 0.31], [60, 0.22]], cpvc: [[23, 1], [27, 1], [32, 0.91], [38, 0.82], [43, 0.72], [49, 0.65], [54, 0.57], [60, 0.50], [66, 0.42], [71, 0.40], [77, 0.29], [82, 0.25], [93, 0.20]] };   // factor on the 23 C rating, from 73 F up in 10 F steps
+  function plRating(m, n, sch, tC) {                                // bar, allowable pressure of PVC-U or CPVC pipe at tC; null when not known
+    var t = OWN(PL_DER, m) && PL_T[sch] && PL_T[sch][n], od = PL_OD[n]; if (!t) return null;
+    var f = 1, d = PL_DER[m]; if (tC != null && tC > 23) { if (tC > d[d.length - 1][0]) return 0; for (var i = 1; i < d.length; i++) if (tC <= d[i][0]) { f = d[i - 1][1] + (d[i][1] - d[i - 1][1]) * (tC - d[i - 1][0]) / (d[i][0] - d[i - 1][0]); break; } }
+    return 2 * 2000 * t / (od - t) * f * 0.0689476;
+  }
+  function parsePress(t) {                                          // a design pressure typed as text (10 bar g, 150 psi, 1.6 MPa, 5 kg/cm2) in bar, or null
+    var m = /(\d+(?:[.,]\d+)?)/.exec(String(t == null ? '' : t)); if (!m) return null;
+    var v = parseFloat(m[1].replace(',', '.')), u = String(t).slice(m.index + m[0].length).toLowerCase();
+    return /psi/.test(u) ? v * 0.0689476 : /mpa/.test(u) ? v * 10 : /kpa/.test(u) ? v / 100 : /kg/.test(u) ? v * 0.980665 : v;
+  }
   var MAT_CAT = { pipe: 1, elbow: 1, reducer: 1, tee: 1, olet: 1, cross: 1, cap: 1, flange: 1, valve: 1, item: 1 };
   function matRec(m) { return m && m !== 'cs' && OWN(MATS, m) ? MATS[m] : null; }    // null: carbon steel, the project standard
   function pmat(p) { return p && p.m && OWN(MATS, p.m) ? p.m : 'cs'; }
@@ -2371,6 +2385,11 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       var M = MATS[pmat(p)], ld = model.lines[p.ln] || {}, T = parseTemp(ld.tdes);
       if (T != null && M.tmax && T > M.tmax) warns.push('Line ' + p.ln + ' is ' + M.name + ' but its design temperature is ' + Math.round(T) + ' °C. Usual limit for ' + M.name + ' is about ' + M.tmax + ' °C: choose another material or check the supplier data.');
       if (T != null && M.tmin && T < M.tmin) warns.push('Line ' + p.ln + ' is ' + M.name + ' but its design temperature is ' + Math.round(T) + ' °C. Usual lower limit for ' + M.name + ' is about ' + M.tmin + ' °C' + (pmat(p) === 'cs' ? ': use low temperature carbon steel.' : '.'));
+      var Pd = parsePress(ld.pdes), pk = pmat(p);
+      if (Pd != null && (pk === 'pvc' || pk === 'cpvc')) {
+        var worst = null; model.pipes.forEach(function (q) { if (q.ln === p.ln && pmat(q) === pk && !q.ghost) { var r = plRating(pk, q.n, q.s, T); if (r != null && (worst == null || r < worst.r)) worst = { r: r, n: q.n, s: q.s }; } });
+        if (worst && Pd > worst.r + 1e-6) warns.push('Line ' + p.ln + ' is ' + M.name + ' SCH ' + worst.s + ' NPS ' + worst.n + ' with design pressure ' + ld.pdes + ', but that pipe is good for about ' + worst.r.toFixed(1) + ' bar' + (T != null && T > 23 ? ' at ' + Math.round(T) + ' °C' : ' at 23 °C') + ' (ASTM D1785 / F441 rating, threaded pipe only half of it). Use a heavier schedule or a smaller size, or check the maker table.');
+      }
       if (isPlastic(M) && /\b(RT|MT|PT)\b/i.test(ld.nde || '') && !seenL[p.ln + 'nde']) { seenL[p.ln + 'nde'] = 1; warns.push('Line ' + p.ln + ' is ' + M.name + ' but its NDE extent says ' + ld.nde + '. Radiography, dye penetrant and magnetic particle tests do not apply to plastic joints: use visual (VT) and pressure test.'); }
     });
     var par = {}, P = model.pipes;                                  // runs of straight plastic pipe: free growth = alpha x length x temperature change
@@ -6636,7 +6655,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     runPipes: runPipes, setRunSize: setRunSize, setRunProps: setRunProps, renameLine: renameLine,
     eqMove: function (i, ax, d) { var st = eqMoveStart(i, ax); if (!st) return null; var ok = eqMoveTo(st, d); if (ok) changed(); return { ok: ok, follow: st.ends.length, before: st.before, after: eqNozEnds(i) }; },
     custom: { prevGz: function () { return { gz: cuPrevGz, cam: cuPrevCam }; }, tpl: EQ_TPL, onFace: nozOnFace, eqParts: function () { return PARTS.equip.items; }, add: cuAdd, update: cuUpdate, setImg: cuSetImg, dup: cuDup, del: cuDelete, count: cuCount, exp: cuExport, imp: cuImport, html: cuHtml, imgSize: cuImgSize, imgOk: cuImgOk, imgEncode: cuImgEncode, validate: cuValidate, ux: function () { return CUX; }, parts: function () { return PARTS.custom.items; }, open: showCu },
-    pen: { sel: function () { return sel; }, partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
+    plRating: plRating, parsePress: parsePress, pen: { sel: function () { return sel; }, partsMin: function () { return partsMin; }, tool: function () { return tool; }, cube: { dir: vcDir, go: function (d) { viewDir(d, true); placeCamera(); camera.updateMatrixWorld(); return [theta, phi]; }, sideAxis: sideAxis, angles: function () { return [theta, phi]; } }, rotMode: function (on) { rotMode = !!on; rebuild(); }, ring: function () { return rotInfo ? { vis: rgz.visible, R: RING_R * rgz.scale.x, c: rotInfo.c.toArray(), n: rotInfo.n.toArray(), ref: rotInfo.ref.toArray(), deg: rotInfo.deg, kind: rotInfo.kind } : null; }, slideStart: pipeSlideStart, slideTo: slideTo, moveStart: mselMoveStart, quick: qbarAct, box: boxSelect, msel: function () { return msel; }, mgroup: mselGroup, del: deleteMsel, finger: function () { return fingerPlace; }, setFinger: setFinger, dots: function () { return endDots ? endDots.geometry.attributes.position.count : 0; }, segUndo: segUndo, pickSel: pickSel, qbar: function () { return { hidden: $('qbar').hidden, html: $('qbar').innerHTML }; }, hdl: function () { return { vis: hdl.visible, n: hdl.children.length }; } },
     startAtNozzle: startAtNozzle, routeTo: routeTo, cursor: function () { return cursor; },
     project: function (p) { var r = cv.getBoundingClientRect(), v = V(p).project(camera); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }
   };
