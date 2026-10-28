@@ -3222,7 +3222,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     } else if (tool === 'sel') {
       var pk = pickSel(e, true);
       if (multiMode || e.shiftKey) {                                // several parts: a tap adds or removes one
-        if (pk && MK[pk.kind]) { if (sel && MK[sel.kind] && !mselCount()) mselToggle(sel.kind, sel.i); sel = null; mselToggle(pk.kind, pk.i); }
+        if (pk && isMk(pk.kind)) { if (sel && isMk(sel.kind) && !mselCount()) mselToggle(sel.kind, sel.i); sel = null; mselToggle(pk.kind, pk.i); }
       } else { msel = {}; sel = pk ? { kind: pk.kind, i: pk.i } : null; }
       rebuild(); updateUi();
     } else if (tool === 'del') {
@@ -5379,16 +5379,17 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   function mselToggle(kind, i) { var k = kind + ':' + i; if (msel[k]) delete msel[k]; else msel[k] = 1; }
   function setMulti(on) {
     multiMode = on;
-    if (on && sel && MK[sel.kind] && !mselCount()) { msel = {}; mselToggle(sel.kind, sel.i); sel = null; }
+    if (on && sel && isMk(sel.kind) && !mselCount()) { msel = {}; mselToggle(sel.kind, sel.i); sel = null; }
     rebuild(); updateUi();
   }
   function boxSelect(r) {
-    if (multiMode && sel && MK[sel.kind] && !mselCount()) mselToggle(sel.kind, sel.i);
+    if (multiMode && sel && isMk(sel.kind) && !mselCount()) mselToggle(sel.kind, sel.i);
     if (!multiMode) msel = {};
     sel = null;
     function inside(pt) { var s = scrOk(pt); return !!s && s.x >= r.x0 && s.x <= r.x1 && s.y >= r.y0 && s.y <= r.y1; }
     model.pipes.forEach(function (p, i) { if ((inside(p.a) && inside(p.b)) || inside([(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2])) msel['pipe:' + i] = 1; });
     ['valve', 'item', 'support', 'instr', 'flange'].forEach(function (kd) { model[MK[kd]].forEach(function (it, i) { if (it.p && !(kd === 'flange' && it.m) && inside(it.p)) msel[kd + ':' + i] = 1; }); });
+    stBoxSelect(inside);
     rebuild(); updateUi();
     toast(mselCount() ? mselCount() + ' selected' : 'Nothing in the box');
   }
@@ -5407,8 +5408,9 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     mselKeys().forEach(function (k) { var p = k.split(':'), o = model[MK[p[0]]] && model[MK[p[0]]][+p[1]]; if (!o) return; gone[MK[p[0]]].add(o); if (p[0] === 'pipe') pset[+p[1]] = 1; });
     ['valves', 'items', 'flanges', 'supports', 'instr'].forEach(function (g) { model[g].forEach(function (it, k) { if (it.eq == null && pset[hosts[g + ':' + k]]) gone[g].add(it); }); });
     var n = 0; Object.keys(gone).forEach(function (g) { n += gone[g].size; });
-    if (!n) return;
-    pushHist();
+    var nst = stMselIdx('steel').length + stMselIdx('sacc').length;
+    if (!n && !nst) return;
+    pushHist(); n += stMselDelete();
     gone.valves.forEach(function (v) { gone.valves.has(v) && valveFaceFlanges(v).forEach(function (k) { gone.flanges.add(model.flanges[k]); }); });
     var vmap = {}, nv = [];
     model.valves.forEach(function (v, i) { if (!gone.valves.has(v)) { vmap[i] = nv.length; nv.push(v); } });
@@ -5420,15 +5422,15 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     msel = {}; sel = null; changed(); toast(n + ' part' + (n === 1 ? '' : 's') + ' deleted. Undo brings them back.');
   }
   function renderMulti(el) {
-    var ks = mselKeys().filter(function (k) { var p = k.split(':'); if (MK[p[0]] && model[MK[p[0]]][+p[1]]) return true; delete msel[k]; return false; });
+    var ks = mselKeys().filter(function (k) { var p = k.split(':'); if ((MK[p[0]] && model[MK[p[0]]][+p[1]]) || stMselOk(p[0], +p[1])) return true; delete msel[k]; return false; });
     if (!ks.length) { el.hidden = true; return; }
     var cnt = {}, nm = { pipe: 'pipe', valve: 'valve', item: 'inline part', support: 'support', instr: 'instrument', flange: 'flange' };
     ks.forEach(function (k) { var kd = k.split(':')[0]; cnt[kd] = (cnt[kd] || 0) + 1; });
-    var h = '<h2>Selection · ' + ks.length + '</h2><p>' + Object.keys(cnt).map(function (kd) { return cnt[kd] + ' ' + nm[kd] + (cnt[kd] === 1 ? '' : 's'); }).join(', ') + '. Tap Multi to add or remove parts, or drag a box with the Pencil.</p>';
-    if (cnt.pipe) {
-      h += '<div class="row"><label class="field">Size of the selected pipes<select id="m-n"><option value="">Change…</option>' + NPS_LIST.map(function (n) { return '<option value="' + n + '">' + esc(sz(n)) + '</option>'; }).join('') + '</select></label></div>'
+    var h = '<h2>Selection · ' + ks.length + '</h2><p>' + Object.keys(cnt).map(function (kd) { return cnt[kd] + ' ' + (kd === 'steel' ? 'steel member' : kd === 'sacc' ? 'steel accessor' : nm[kd]) + (cnt[kd] === 1 ? (kd === 'sacc' ? 'y' : '') : (kd === 'sacc' ? 'ies' : 's')); }).join(', ') + '. Tap Multi to add or remove parts, or drag a box with the Pencil.</p>';
+    if (cnt.pipe || cnt.steel || cnt.sacc) {
+      h += (cnt.pipe ? '<div class="row"><label class="field">Size of the selected pipes<select id="m-n"><option value="">Change…</option>' + NPS_LIST.map(function (n) { return '<option value="' + n + '">' + esc(sz(n)) + '</option>'; }).join('') + '</select></label></div>'
         + '<div class="row"><label class="field">Line number<input type="text" id="m-ln" placeholder="keep" maxlength="12" autocomplete="off"></label></div>'
-        + '<div class="row"><label class="field">Material of the selected pipes<select id="m-m"><option value="">Change…</option>' + matOpts('') + '</select></label></div>'
+        + '<div class="row"><label class="field">Material of the selected pipes<select id="m-m"><option value="">Change…</option>' + matOpts('') + '</select></label></div>' : '') + stMultiRows(cnt)
         + '<div class="field" style="margin-bottom:8px">Offset X · Y · Z, mm<div class="coord"><input type="text" inputmode="text" id="m-x" value="0"><input type="text" inputmode="text" id="m-y" value="0"><input type="text" inputmode="text" id="m-z" value="0"></div></div>'
         + '<div class="row"><label class="field">Copies<input type="text" inputmode="numeric" id="m-c" value="1"></label></div>'
         + '<div class="row"><button id="m-move">Move</button><button id="m-copy">Copy</button></div>';
@@ -5437,10 +5439,12 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     inspSet(el, h);
     function pipesSel() { return ks.filter(function (k) { return k.indexOf('pipe:') === 0; }).map(function (k) { return +k.split(':')[1]; }); }
     function offs() { return [numField('m-x') || 0, numField('m-y') || 0, numField('m-z') || 0]; }
+    stMultiBind();
     if ($('m-n')) $('m-n').onchange = function () { var nn = +this.value; if (!nn) return; pushHist(); pipesSel().forEach(function (k) { resizePipe(k, nn); }); changed(); toast(pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's') + ' now ' + sz(nn)); };
     if ($('m-m')) $('m-m').onchange = function () { var v = this.value; if (!OWN(MATS, v)) return; pushHist(); pipesSel().forEach(function (k) { if (matRec(v)) model.pipes[k].m = v; else delete model.pipes[k].m; }); changed(); toast(pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's') + ' now ' + matName(v)); };
     if ($('m-ln')) $('m-ln').onchange = function () { var l = safeLn(this.value); if (!l) return; pushHist(); pipesSel().forEach(function (k) { model.pipes[k].ln = l; }); changed(); toast('Line ' + l + ' on ' + pipesSel().length + ' pipe' + (pipesSel().length === 1 ? '' : 's')); };
     function go(copies) {
+      if (stMselAny()) { stMselGo(copies, offs(), Math.max(1, Math.min(50, Math.round(numField('m-c') || 1)))); if (!mselGroup()) return; }
       var g = mselGroup(); if (!g) return;
       if (g.eq) { toast('A selected pipe is tied to equipment. Move the equipment first.'); return; }
       var o = offs(), n = Math.max(1, Math.min(50, Math.round(numField('m-c') || 1)));

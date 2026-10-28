@@ -89,7 +89,7 @@
     if (!stUC) { stUC = new T.CylinderGeometry(1, 1, 1, 8); stUB = new T.BoxGeometry(1, 1, 1); }
     var cols = { g: 0x9aa4ab, h: 0xf2c14e, s: 0x6f95b0, l: 0xf2c14e }, mats = {};
     A.forEach(function (a, i) {
-      var on = (sel && sel.kind === 'sacc' && sel.i === i), m0 = on ? mat(0xffb21f, 0.5) : (mats[a.t] = mats[a.t] || mat(cols[a.t], 0.6));
+      var on = (sel && sel.kind === 'sacc' && sel.i === i) || msel['sacc:' + i], m0 = on ? mat(0xffb21f, 0.5) : (mats[a.t] = mats[a.t] || mat(cols[a.t], 0.6));
       stAccParts(a).forEach(function (q) {
         var m, mm = on ? m0 : q.grat ? (mats.gr = mats.gr || mat(0x9aa4ab, 0.7)) : m0;
         if (q.k === 'box') { m = new T.Mesh(stUB, mm); m.position.set(q.c[0], q.c[1], q.c[2]); m.rotation.y = q.r * Math.PI / 180; m.scale.set(q.w, q.h, q.d); }

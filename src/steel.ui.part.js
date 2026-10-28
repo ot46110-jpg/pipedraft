@@ -203,7 +203,44 @@
     $('st-p2').onchange = function () { var v = parseNum(this.value); if (v == null || v < 100 || v > 30000) { stSyncBar(); return; } v /= 1000; if (stk === 'grating') stD.gd = v; else if (stk === 'stair') stD.sW = Math.min(3, Math.max(0.5, v)); else if (stk === 'ladder') stD.lw = Math.min(0.8, Math.max(0.4, v)); stSyncBar(); };
     $('st-dir').onclick = function () { if (stk === 'stair') stD.sdir = (stD.sdir + 90) % 360; else stD.ldir = (stD.ldir + 90) % 360; stSyncBar(); };
   }
+  // ---------- several steel parts at once: box select, Multi, move, copy, section, delete ----------
+  function isMk(k) { return !!MK[k] || k === 'steel' || k === 'sacc'; }
+  function stMselOk(k, i) { return k === 'steel' ? !!model.steel.m[i] : k === 'sacc' ? !!model.steel.a[i] : false; }
+  function stMselIdx(kind) { return Object.keys(msel).filter(function (k) { return k.indexOf(kind + ':') === 0; }).map(function (k) { return +k.split(':')[1]; }).filter(function (i) { return stMselOk(kind, i); }); }
+  function stMselAny() { return stMselIdx('steel').length + stMselIdx('sacc').length > 0; }
+  function stBoxSelect(inside) {
+    model.steel.m.forEach(function (p, i) { if ((inside(p.a) && inside(p.b)) || inside([(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2, (p.a[2] + p.b[2]) / 2])) msel['steel:' + i] = 1; });
+    model.steel.a.forEach(function (a, i) { if (inside(a.p || [(a.a[0] + a.b[0]) / 2, (a.a[1] + a.b[1]) / 2, (a.a[2] + a.b[2]) / 2])) msel['sacc:' + i] = 1; });
+  }
+  function stMultiRows(cnt) { return cnt.steel ? '<div class="row"><label class="field">Section of the selected steel<select id="m-ss"><option value="">Change…</option>' + opts(SSEC_KEYS.map(function (k) { return [k, SSEC[k].name]; }), '') + '</select></label></div>' : ''; }
+  function stMultiBind() {
+    if ($('m-ss')) $('m-ss').onchange = function () {
+      var v = this.value, ids = stMselIdx('steel'); if (!OWN(SSEC, v) || !ids.length) return;
+      pushHist(); ids.forEach(function (i) { model.steel.m[i].s = v; }); changed(); toast(ids.length + ' member' + (ids.length === 1 ? '' : 's') + ' now ' + SSEC[v].name);
+    };
+  }
+  function stMselDelete() { var m = stMselIdx('steel'), a = stMselIdx('sacc'); if (!m.length && !a.length) return 0; var ms = {}, as = {}; m.forEach(function (i) { ms[i] = 1; }); a.forEach(function (i) { as[i] = 1; }); model.steel.m = model.steel.m.filter(function (p, i) { return !ms[i]; }); model.steel.a = model.steel.a.filter(function (p, i) { return !as[i]; }); return m.length + a.length; }
+  function stMselGo(copies, o, n) {                                 // move the picked steel by o (CAD mm), or make n stepped copies; the copies become the selection
+    var ms = stMselIdx('steel'), as = stMselIdx('sacc'); if (!ms.length && !as.length) return false;
+    if (copies && !o[0] && !o[1] && !o[2]) { toast('Type an offset for the copy'); return true; }
+    var d = sceneOf([o[0] / 1000, o[1] / 1000, o[2] / 1000]), sh = function (P, k) { return [st3(P[0] + d[0] * k), st3(P[1] + d[1] * k), st3(P[2] + d[2] * k)]; };
+    var low = lowY(), bad = ms.some(function (i) { var p = model.steel.m[i]; return Math.min(p.a[1], p.b[1]) + Math.min(d[1] * (copies ? n : 1), 0) < low - 1e-9; });
+    if (bad) { toast('That takes steel under the floor'); return true; }
+    pushHist();
+    var plain1 = function (x) { return JSON.parse(JSON.stringify(x)); };
+    if (!copies) {
+      ms.forEach(function (i) { var p = model.steel.m[i]; p.a = sh(p.a, 1); p.b = sh(p.b, 1); });
+      as.forEach(function (i) { var q = plain1(model.steel.a[i]); if (q.p) q.p = sh(q.p, 1); if (q.a) { q.a = sh(q.a, 1); q.b = sh(q.b, 1); } var c = stCleanAcc(q); if (c) model.steel.a[i] = c; });
+      changed(); toast('Moved'); return true;
+    }
+    Object.keys(msel).forEach(function (k) { if (k.indexOf('steel:') === 0 || k.indexOf('sacc:') === 0) delete msel[k]; });
+    for (var c = 1; c <= n; c++) {
+      ms.forEach(function (i) { var q = plain1(model.steel.m[i]); q.a = sh(q.a, c); q.b = sh(q.b, c); q.k = ''; model.steel.m.push(q); if (c === n) msel['steel:' + (model.steel.m.length - 1)] = 1; });
+      as.forEach(function (i) { var q = plain1(model.steel.a[i]); if (q.p) q.p = sh(q.p, c); if (q.a) { q.a = sh(q.a, c); q.b = sh(q.b, c); } q.k = ''; var cc = stCleanAcc(q); if (cc) { model.steel.a.push(cc); if (c === n) msel['sacc:' + (model.steel.a.length - 1)] = 1; } });
+    }
+    sel = null; changed(); toast((ms.length + as.length) * n + ' copied'); return true;
+  }
   function stHooks() {
     return { secs: SSEC, kgm: stKgm, area: stArea, paint: stPaint, poly: stPoly, rows: stRows, totals: stTotals, csv: stCsv, add: stAdd, rack: stRack, frame: stFrame, plates: stPlates, plateRows: stPlateRows, boltRows: stBoltRows, sheet: stSheet, clean: stClean,
-      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return cursor; }, ext: stCalcExt, setLen: stSetLen, stretch: stStretch, addTyped: stAddTyped, segUndo: stSegUndo, setCarry: function (v) { stCarry = !!v; }, alignEnds: alignEnds, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
+      setTool: setTool, foot: stFoot, loose: stLoose, through: stThrough, pipeClashes: stPipeClashes, move: stMove, tap: stTap, setKind: function (k) { stk = k; }, setSec: function (s) { stSec = s; }, setColH: function (h) { stColH = h; }, run: function () { return cursor; }, boxSelect: stBoxSelect, mselGo: stMselGo, mselIdx: stMselIdx, ext: stCalcExt, setLen: stSetLen, stretch: stStretch, addTyped: stAddTyped, segUndo: stSegUndo, setCarry: function (v) { stCarry = !!v; }, alignEnds: alignEnds, accAdd: stAccAdd, accRows: stAccRows, accParts: stAccParts, accKg: stAccKg, openEdges: stOpenEdges, railAround: stRailAround, platform: stPlatform, stanchion: stStanchion, defaults: stD, accInspHtml: stAccInspHtml, accApply: stAccApply, grat: GRAT, hint: stHint, groups: stGroups, groupMove: stGroupMove, groupDelete: stGroupDelete, panel: stPanel, inspHtml: stInspHtml };
   }

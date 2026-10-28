@@ -2622,6 +2622,35 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   PD.load({ pipes: [] }); ST.rack({ bays: 2, bay: 6000, w: 4000, tiers: '4000', bracing: 'end' });
   check('braces and sloping members are not touched', PD.model.steel.m.every((m, i) => !/-X\d/.test(m.k) || (ST.ext()[i].a === 0 && ST.ext()[i].b === 0)));
 
+
+  // ---------- several steel parts at once ----------
+  PD.load({ pipes: [] }); PD.look(Math.PI / 4, 0.9, 12, [3, 0, 0]); els['t-sel'].onclick(); globalThis.__perf += 5000;
+  ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([0, 3, 0], [4, 3, 0], 'H300x150'); ST.add([20, 0, 20], [20, 3, 20], 'H200x200');
+  ST.accAdd({ t: 'g', p: [2, 3, 0], w: 1, d: 1, r: 0, s: 'G32x5' });
+  const bp = [[0, 0, 0], [0, 3, 0], [4, 3, 0], [2, 3, 0]].map(p => PD.project(p));
+  const bx0 = Math.min(...bp.map(p => p.x)) - 40, bx1 = Math.max(...bp.map(p => p.x)) + 40, by0 = Math.min(...bp.map(p => p.y)) - 40, by1 = Math.max(...bp.map(p => p.y)) + 40;
+  penDrag(bx0, by0, bx1, by1);
+  const mk2 = Object.keys(PD.pen.msel()).sort();
+  check('a Pencil box selects the steel members and the grating inside it, not the one far away', mk2.join() === 'sacc:0,steel:0,steel:1', mk2.join());
+  check('the selection panel counts them and offers a section', /2 steel members, 1 steel accessory/.test(els.insp.innerHTML) && /Section of the selected steel/.test(els.insp.innerHTML) && /Offset X/.test(els.insp.innerHTML), els.insp.innerHTML.slice(0, 200));
+  check('Multi accepts steel too', (els['t-sel'].onclick(), true));
+  ST.mselGo(false, [1000, 500, 0], 1);
+  check('Move shifts the picked steel by the typed offset (CAD X, Y)', near(PD.model.steel.m[0].a, [1, 0, 0.5]) && near(PD.model.steel.m[1].b, [5, 3, 0.5]) && near(PD.model.steel.a[0].p, [3, 3, 0.5]) && near(PD.model.steel.m[2].a, [20, 0, 20]), JSON.stringify(PD.model.steel.m));
+  check('and it is one undo step', (els.undo.onclick(), near(PD.model.steel.m[0].a, [0, 0, 0]) && near(PD.model.steel.a[0].p, [2, 3, 0])));
+  penDrag(bx0, by0, bx1, by1);
+  ST.mselGo(true, [0, 6000, 0], 2);
+  check('Copy makes stepped copies and selects the last ones', PD.model.steel.m.length === 3 + 4 && PD.model.steel.a.length === 3 && near(PD.model.steel.m[5].a, [0, 0, 12]) && Object.keys(PD.pen.msel()).join() !== '', JSON.stringify(Object.keys(PD.pen.msel())));
+  check('copies start without marks', PD.model.steel.m.slice(3).every(m => m.k === ''));
+  check('a copy with no offset is refused', (ST.mselGo(true, [0, 0, 0], 1), PD.model.steel.m.length === 7));
+  els['t-sel'].onclick(); penDrag(bx0, by0, bx1, by1);
+  els['m-ss'].value = 'H400x200'; els['m-ss'].onchange.call(els['m-ss']);
+  check('the section of every picked member changes together', PD.model.steel.m[0].s === 'H400x200' && PD.model.steel.m[1].s === 'H400x200' && PD.model.steel.m[2].s === 'H200x200');
+  PD.pen.del();
+  check('Delete removes the picked steel and its accessories', PD.model.steel.m.length === 5 && PD.model.steel.a.length === 2 && Object.keys(PD.pen.msel()).length === 0, PD.model.steel.m.length + ' ' + PD.model.steel.a.length);
+  check('and undo brings them back', (els.undo.onclick(), PD.model.steel.m.length === 7 && PD.model.steel.a.length === 3));
+  PD.load({ pipes: [{ a: [8, 0, 8], b: [10, 0, 8], n: 4, ln: 'A' }] }); ST.add([0, 0, 0], [0, 3, 0], 'H200x200');
+  PD.model.steel.a.length;
+
   // drawings
   PD.load({ pipes: [] }); ST.rack({ bays: 3, bay: 6000, w: 4000, tiers: '4000, 5500', bracing: 'none' }); ST.plates({});
   PD.model.equip.push({ k: 'vessel', p: [9, 0, -5], r: 0, cl: 1 }); PD.rebuild();
