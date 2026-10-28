@@ -1170,14 +1170,16 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var r = (p.r || 0) * Math.PI / 180, cx = Math.cos(r), sx = Math.sin(r);
     return { x: x.clone().multiplyScalar(cx).add(y.clone().multiplyScalar(sx)), y: y.clone().multiplyScalar(cx).sub(x.clone().multiplyScalar(sx)), z: d };
   }
-  var stGeoC = {};
+  var stGeoC = {}, stEdgeC = {}, stLs = null;                       // cached shapes; stLs is the loose-end result of the rebuild in progress
   function stGeo(sec, L) {
     var k = sec + '@' + L.toFixed(3); if (stGeoC[k]) return stGeoC[k];
-    if (Object.keys(stGeoC).length > 400) stGeoC = {};
+    if (Object.keys(stGeoC).length > 400) { stGeoC = {}; stEdgeC = {}; }
     var s = SSEC[sec], pl = stPoly(s), sh = new T.Shape(pl.o.map(function (q) { return new T.Vector2(q[0] / 1000, q[1] / 1000); }));
     if (pl.hole) sh.holes.push(new T.Path(pl.hole.map(function (q) { return new T.Vector2(q[0] / 1000, q[1] / 1000); })));
     return (stGeoC[k] = new T.ExtrudeGeometry(sh, { depth: L, bevelEnabled: false }));
   }
+
+  function stEdges(sec, L, g) { var k = sec + '@' + L.toFixed(3); return stEdgeC[k] || (stEdgeC[k] = new T.EdgesGeometry(g, 30)); }
 
   // ---------- equipment footprints (any built-in or custom equipment): the box of what is drawn, turned about the vertical ----------
   var stBoxC = {};
@@ -1269,7 +1271,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
       if (L < 0.05) warns.push('Steel member ' + (i + 1) + ' is shorter than 50 mm.');
       if (seen[k] !== undefined) warns.push('Steel members ' + (seen[k] + 1) + ' and ' + (i + 1) + ' are the same member twice.'); else seen[k] = i;
     });
-    var ls = stLoose(), n = Object.keys(ls).length;
+    var ls = stLs || stLoose(), n = Object.keys(ls).length; stLs = null;
     if (n) warns.push(n + ' steel member' + (n > 1 ? 's' : '') + ' with an end resting on nothing (red): connect it to the floor or to another member.');
     E.forEach(function (a, i) {
       var fa = stFoot(a, 0); if (!fa) return; var la = stTag(i), ca = stClear(a);
@@ -1297,14 +1299,14 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
 
   // ---------- 3D ----------
   function stBuild() {
-    var S = model.steel, anyCl = model.equip.some(function (e) { return stClear(e) > 0; });
+    var S = model.steel, anyCl = model.equip.some(function (e) { return stClear(e) > 0; }); stLs = null;
     if (!S.m.length && !S.pl.length && !anyCl) return;
-    var ls = stLoose(), mN = mat(0x6f95b0, 0.6), mL = mat(0xe5604d, 0.6), mS = mat(0xffb21f, 0.5), mP = mat(0x59636b, 0.6), edge = new T.LineBasicMaterial({ color: 0x0b1116 });
+    var ls = stLs = stLoose(), mN = mat(0x6f95b0, 0.6), mL = mat(0xe5604d, 0.6), mS = mat(0xffb21f, 0.5), mP = mat(0x59636b, 0.6), edge = new T.LineBasicMaterial({ color: 0x0b1116 });
     S.m.forEach(function (p, i) {
       var L = stLen(p); if (L < 0.001) return;
       var on = (sel && sel.kind === 'steel' && sel.i === i) || msel['steel:' + i], m = new T.Mesh(stGeo(p.s, L), on ? mS : ls[i] ? mL : mN), B = stBasis(p);
       m.matrixAutoUpdate = false; m.matrix.makeBasis(B.x, B.y, B.z); m.matrix.setPosition(V(p.a)); m.userData = { kind: 'steel', i: i }; world.add(m);
-      var ln = new T.LineSegments(new T.EdgesGeometry(m.geometry, 30), edge); ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrix); world.add(ln);
+      var ln = new T.LineSegments(stEdges(p.s, L, m.geometry), edge); ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrix); world.add(ln);
     });
     S.pl.forEach(function (q) { var m = new T.Mesh(new T.BoxGeometry(q.w, q.t, q.d), mP); m.position.set(q.p[0], q.p[1] + q.t / 2, q.p[2]); world.add(m); });
     model.equip.forEach(function (e) {                              // the maintenance clearance, a dashed box on the floor outline
