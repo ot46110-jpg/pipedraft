@@ -1210,7 +1210,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
   }
   function readBackups() { try { var l = JSON.parse(localStorage.getItem(BK) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
   function takeBackup(force) {                                      // a rolling set of snapshots, so a slip or a cleared project can be undone days later
-    if (!model.pipes.length && !model.equip.length) return;
+    if (!model.pipes.length && !model.equip.length && !model.steel.m.length && !model.steel.a.length && !model.steel.pl.length) return;
     var list = readBackups(), s = JSON.stringify(model);
     if (list[0] && list[0].json === s) return;
     if (!force && list[0] && Date.now() - list[0].t < BK_EVERY) return;
@@ -5885,7 +5885,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     $('specBtn').setAttribute('aria-pressed', String(!$('spec').hidden));
     $('moreBtn').setAttribute('aria-pressed', String(!$('more').hidden));
     $('sp-el').value = model.spec.elbow; $('sp-red').value = model.spec.reducer; $('sp-flat').value = model.spec.eccFlat || 'bottom'; $('sp-br').value = model.spec.branch; $('sp-olet').value = model.spec.olet; $('sp-small').value = model.spec.small; $('sp-gap').value = String(model.spec.gap || 0); $('sp-depth').value = String(model.spec.depth || 0); if (!$('sp-depth').value) $('sp-depth').value = '0'; $('sp-ffw').value = String(ffwAllow()); $('sp-std').value = model.spec.std; $('sp-size').value = model.spec.sizeMode;
-    curMark.visible = !!cursor && tool === 'pipe'; syncLevelViz();
+    curMark.visible = !!cursor && (tool === 'pipe' || tool === 'steel'); syncLevelViz();
     if (cursor) curMark.position.set(cursor[0], cursor[1], cursor[2]);
     var hints = {
       nav: 'Drag to orbit. Two fingers to pan and zoom.',
@@ -6665,7 +6665,7 @@ body { position: fixed; inset: 0; -webkit-touch-callout: none; -webkit-tap-highl
     var k = e.key.toLowerCase();
     if (e.metaKey || e.ctrlKey) { if (k === 'z' || k === 'Z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); } else if (k === 'y') { e.preventDefault(); $('redo').click(); } return; }
     var map = { b: 'branch', r: 'reduce', n: 'nav', s: 'sel', p: 'pipe', v: 'valve', f: 'flange', i: 'item', t: 'instr', u: 'support', c: 'cap', e: 'equip', m: 'measure', d: 'del', delete: 'del', backspace: 'del' };
-    if (k === 'backspace' && tool === 'pipe' && cursor) { e.preventDefault(); segUndo(); return; }
+    if (k === 'backspace' && (tool === 'pipe' || tool === 'steel') && cursor) { e.preventDefault(); segUndo(); return; }
     if ((k === 'backspace' || k === 'delete') && tool === 'sel' && mselCount()) { e.preventDefault(); deleteMsel(); return; }
     if (k === 'escape' || k === 'enter') { cursor = null; sel = null; msel = {}; multiMode = false; rotMode = false; mA = null; rebuild(); updateUi(); }
     else if (map[k]) setTool(map[k]);

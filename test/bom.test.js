@@ -2711,5 +2711,64 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('with nothing to draw the sheet is null', (PD.load({ pipes: [] }), ST.sheet('plan', true) === null));
 }
 
+// ---------- steel audit: bugs found by probing the generators, holes, joints and state ----------
+{
+  const ST = PD.steel, near1 = (a, b, tol) => Math.abs(a - b) <= tol;
+  PD.load({ pipes: [] });
+  ST.accAdd({ t: 'l', p: [0, 0, 0], dir: 0, h: 0.5, w: 0.5, cage: 'yes' });
+  check('a low ladder asked to have a cage never weighs less than nothing', ST.accParts(PD.model.steel.a[0]).every(q => !(q.kg < 0)) && ST.accKg(PD.model.steel.a[0]) > 0, String(ST.accKg(PD.model.steel.a[0])));
+
+  PD.load({ pipes: [] });
+  check('a platform on deep perimeter beams and shallow secondary beams has no member resting on nothing', ST.platform({ beam: 'H400x200', sec: 'C100x50', leg: 'H150x150' }) > 0 && Object.keys(ST.loose()).length === 0 && !PD.warns().some(w => /resting on nothing/.test(w)), PD.warns().join('; '));
+
+  PD.load({ pipes: [] });
+  check('a platform with a text position builds nothing', ST.platform({ x: 'abc' }) === 0 && PD.model.steel.m.length === 0);
+  check('a platform a million metres wide builds nothing', ST.platform({ w: 1e9 }) === 0 && PD.model.steel.m.length === 0);
+  check('a rack with a text bay count or start builds nothing', ST.rack({ bays: 'x' }) === 0 && ST.rack({ x: 'abc' }) === 0 && PD.model.steel.m.length === 0);
+  check('a rack with hundreds of tiers builds nothing', ST.rack({ bays: 60, tiers: Array.from({ length: 300 }, (_, i) => 1000 + i * 100).join(',') }) === 0 && PD.model.steel.m.length === 0);
+  PD.model.steel.m = Array.from({ length: 5990 }, (_, i) => ({ a: [i, 0, 50], b: [i, 3, 50], s: 'H200x200', r: 0, k: '' }));
+  check('a rack that would take the project past the 6000 members it can keep is refused', ST.rack({ bays: 4 }) === 0 && PD.model.steel.m.length === 5990);
+
+  // holes at the edge of a panel stay inside it
+  const inside = g => g.o.every(h => Math.abs(h.x) + (h.k === 'c' ? h.d : h.w) / 2 <= g.w / 2 + 1e-9 && Math.abs(h.z) + h.d / 2 <= g.d / 2 + 1e-9);
+  PD.load({ pipes: [{ a: [0.5, 0, 0], b: [0.5, 5, 0], n: 4 }] });
+  ST.accAdd({ t: 'g', p: [0, 3, 0], w: 1, d: 2, r: 0, s: 'G32x5' });
+  ST.cutHoles(0);
+  check('a pipe on the edge of a grating panel gets a hole cut back to the panel', PD.model.steel.a[0].o.length === 1 && inside(PD.model.steel.a[0]), JSON.stringify(PD.model.steel.a[0].o));
+  check('and the Check list is satisfied with it', !PD.warns().some(w => /with no hole/.test(w)), PD.warns().join('; '));
+  PD.load({ pipes: [], equip: [{ k: 'vessel', p: [1.2, 0, 0], r: 0 }] });
+  ST.accAdd({ t: 'g', p: [0, 1, 0], w: 1, d: 1, r: 37, s: 'G32x5' });
+  ST.cutHoles(0);
+  check('a vessel partly over a small turned panel cuts a hole that stays on it', PD.model.steel.a[0].o.length === 1 && inside(PD.model.steel.a[0]) && !PD.warns().some(w => /with no hole/.test(w)), JSON.stringify(PD.model.steel.a[0].o));
+  check('and the net weight takes only the part of the hole that is on the panel', ST.accParts(PD.model.steel.a[0])[0].kg > 0 && ST.accParts(PD.model.steel.a[0])[0].kg < 44 * 1.0);
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [0, 5, 0], n: 4 }] });
+  ST.accAdd({ t: 'g', p: [0, 3, 0], w: 1, d: 2, r: 0, s: 'G32x5' }); ST.cutHoles(0);
+  check('a pipe in the middle of a panel still gets its round hole', PD.model.steel.a[0].o.length === 1 && PD.model.steel.a[0].o[0].k === 'c');
+
+  // a column shorter than the trim under a deep beam is not shortened to nothing
+  PD.load({ pipes: [] });
+  ST.add([0, 0.2, 0], [0, 0.3, 0], 'H200x200'); ST.add([0, 0.3, 0], [3, 0.3, 0], 'H400x200');
+  check('a column shorter than the beam depth it meets keeps its drawn length', ST.ext()[0].a === 0 && ST.ext()[0].b === 0, JSON.stringify(ST.ext()));
+
+  // members that meet an end that moves are not carried under the floor
+  PD.load({ pipes: [] });
+  ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); ST.add([0, 3, 0], [3, 4, 0], 'L75x75x6'); ST.setCarry(true);
+  const before = JSON.stringify(PD.model.steel.m);
+  check('dragging an end down will not carry the column it stands on under the floor', ST.stretch(1, 'a', [0, 1, 0]) === -1 && JSON.stringify(PD.model.steel.m) === before);
+  check('nor will a typed length', ST.setLen(1, 6000, 'end') === false && JSON.stringify(PD.model.steel.m) === before);
+  ST.setCarry(false);
+
+  PD.load({ pipes: [{ a: [0, 0, 0], b: [2, 0, 0], n: 4 }], equip: [{ k: 'pump', p: [5, 0, 5], r: 0 }] });
+  check('a support frame set in further than the equipment is wide is refused', ST.frame(0, { finset: 5000 }) === 0 && PD.model.steel.m.length === 0);
+  PD.load({ pipes: [] });
+  check('a handrail with no length is not stored', ST.accAdd({ t: 'h', a: [1, 3, 1], b: [1, 3, 1], h: 1.1, post: 1.2, mid: 1, toe: true, rs: '42.4x2.6' }) === -1 && PD.model.steel.a.length === 0);
+
+  // a project of steel alone is backed up
+  memStore['pipedraft.backups.v1'] = '[]';
+  PD.load({ pipes: [] }); ST.add([0, 0, 0], [0, 3, 0], 'H200x200'); PD.backup(true);
+  check('a project with only steel in it gets a backup', PD.backups().length === 1, String(PD.backups().length));
+  memStore['pipedraft.backups.v1'] = '[]';
+}
+
 if (failed) { console.error('\n' + failed + ' check(s) failed'); process.exit(1); }
 console.log('\nall checks passed');

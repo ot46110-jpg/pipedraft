@@ -24,7 +24,7 @@
       return { t: 'g', p: p, w: gw, d: gd, r: ((Math.round(stNum(q.r, 0)) % 360) + 360) % 360, s: q.s, k: k, o: stCleanHoles(q.o, gw, gd) };
     }
     if (q.t === 'h') {
-      var a = stPt(q.a), b = stPt(q.b); if (!a || !b || !OWN(RAILS, q.rs)) return null;
+      var a = stPt(q.a), b = stPt(q.b); if (!a || !b || !OWN(RAILS, q.rs) || Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) < 0.01) return null;
       return { t: 'h', a: a, b: b, h: st3(stClamp(q.h, 0.9, 1.4, 1.1)), post: st3(stClamp(q.post, 0.5, 2, 1.2)), mid: [0, 1, 2].indexOf(q.mid) >= 0 ? q.mid : 1, toe: q.toe !== false, rs: q.rs, k: k };
     }
     if (q.t === 's') {
@@ -101,7 +101,7 @@
       if (stHasCage(a)) {
         var cr = 0.35, cx = a.p[0] - dd[0] * 0.4, cz = a.p[2] - dd[1] * 0.4;
         for (var hy = 2.2; hy <= h + 0.9 + 1e-9; hy += 0.9) { var yy = Math.min(hy, h + 0.9); out.push({ k: 'ring', c: [cx, a.p[1] + yy, cz], rad: cr, tube: 0.012, kg: 2 * Math.PI * cr * 0.05 * 0.005 * ST_RHO }); }
-        for (var v = 0; v < 5; v++) { var an = Math.PI * (0.15 + 0.7 * v / 4), vx = cx - dd[0] * cr * Math.sin(an) + lt[0] * cr * Math.cos(an), vz = cz - dd[1] * cr * Math.sin(an) + lt[1] * cr * Math.cos(an); out.push({ k: 'cyl', a: [vx, a.p[1] + 2.2, vz], b: [vx, a.p[1] + h + 0.9, vz], rad: 0.008, kg: (h - 1.3) * 0.04 * 0.005 * ST_RHO }); }
+        if (h + 0.9 > 2.2) for (var v = 0; v < 5; v++) { var an = Math.PI * (0.15 + 0.7 * v / 4), vx = cx - dd[0] * cr * Math.sin(an) + lt[0] * cr * Math.cos(an), vz = cz - dd[1] * cr * Math.sin(an) + lt[1] * cr * Math.cos(an); out.push({ k: 'cyl', a: [vx, a.p[1] + 2.2, vz], b: [vx, a.p[1] + h + 0.9, vz], rad: 0.008, kg: (h - 1.3) * 0.04 * 0.005 * ST_RHO }); }
       }
     }
     return out;
@@ -111,7 +111,7 @@
 
   // ---------- 3D ----------
   var stUC = null, stUB = null, stUR = {}, stPG = {}, stUTC = {};
-  function stUT(rad, h) { var k = rad.toFixed(4) + ':' + h; return stUTC[k] || (stUTC[k] = new T.CylinderGeometry(rad, rad, h, 24, 1, true)); }
+  function stUT(rad, h) { var k = rad.toFixed(4) + ':' + h; if (!stUTC[k] && Object.keys(stUTC).length > 100) stUTC = {}; return stUTC[k] || (stUTC[k] = new T.CylinderGeometry(rad, rad, h, 24, 1, true)); }
   function stPlateGeo(w, d, th, holes) {                            // a panel with holes: the outline and the holes in the x, z plane, extruded down by the thickness
     var key = [w, d, th, JSON.stringify(holes.map(function (o) { return [o.k, o.x, o.z, o.d, o.w, o.a]; }))].join('|');
     if (stPG[key]) return stPG[key]; if (Object.keys(stPG).length > 200) stPG = {};
@@ -147,6 +147,12 @@
 
   // ---------- holes for what goes through a grating ----------
   function stGratLocal(g, x, z) { var t = g.r * Math.PI / 180, dx = x - g.p[0], dz = z - g.p[2]; return [dx * Math.cos(t) - dz * Math.sin(t), dx * Math.sin(t) + dz * Math.cos(t)]; }
+  function stFitHole(g, h) {                                        // a hole that would reach past the panel edge is cut back to a rectangle 2 mm inside it, else the outline and the hole cross; null when almost none of it is on the panel
+    var hw = h.k === 'c' ? h.d : h.w, m = 0.002, X = g.w / 2 - m, Z = g.d / 2 - m;
+    if (Math.abs(h.x) + hw / 2 <= X && Math.abs(h.z) + h.d / 2 <= Z) return h;
+    var x0 = Math.max(-X, h.x - hw / 2), x1 = Math.min(X, h.x + hw / 2), z0 = Math.max(-Z, h.z - h.d / 2), z1 = Math.min(Z, h.z + h.d / 2);
+    return x1 - x0 < 0.02 || z1 - z0 < 0.02 ? null : { k: 'r', x: st3((x0 + x1) / 2), z: st3((z0 + z1) / 2), w: st3(x1 - x0), d: st3(z1 - z0), a: 0, what: h.what };
+  }
   function stNeedHoles(g) {                                         // the holes the pipes and equipment passing through panel g call for: [{k, x, z, d | w, d, a, what}]
     var out = [], top = g.p[1], clr = stD.hclr;
     model.pipes.forEach(function (p, i) {
@@ -165,7 +171,7 @@
       if (round) out.push({ k: 'c', x: st3((x0 + x1) / 2), z: st3((z0 + z1) / 2), d: st3(Math.max(x1 - x0, z1 - z0)), what: stTag(i) });
       else out.push({ k: 'r', x: st3((x0 + x1) / 2), z: st3((z0 + z1) / 2), w: st3(x1 - x0), d: st3(z1 - z0), a: 0, what: stTag(i) });
     });
-    return out;
+    return out.map(function (h) { return stFitHole(g, h); }).filter(Boolean);
   }
   function stHoleCovers(h, n) {                                     // does existing hole h take in the needed hole n
     var dx = n.x - h.x, dz = n.z - h.z, nw = n.k === 'c' ? n.d : n.w, nd = n.d;
@@ -260,7 +266,7 @@
   function stPlatform(o) {                                          // a framed deck: corner legs, perimeter beams, secondary beams, one grating panel, handrail round it
     o = Object.assign({ x: 0, y: 0, w: 3000, d: 2000, lvl: 3000, leg: 'H150x150', beam: 'H150x75', sec: 'C100x50', grat: 'G32x5', rail: 'all', brace: 'none', mk: 'PF1', pitch: 1000 }, o || {});
     var X = Number(o.x) / 1000, Z = Number(o.y) / 1000, w = Number(o.w) / 1000, d = Number(o.d) / 1000, tos = Number(o.lvl) / 1000, pitch = Math.max(0.4, Number(o.pitch) / 1000);
-    if (!(w >= 0.6 && d >= 0.6 && tos >= 0.3) || !OWN(SSEC, o.leg) || !OWN(SSEC, o.beam) || !OWN(SSEC, o.sec) || !OWN(GRAT, o.grat)) return 0;
+    if (!(w >= 0.6 && d >= 0.6 && w <= 60 && d <= 60 && tos >= 0.3 && tos <= 60) || !isFinite(X) || !isFinite(Z) || !OWN(SSEC, o.leg) || !OWN(SSEC, o.beam) || !OWN(SSEC, o.sec) || !OWN(GRAT, o.grat)) return 0;
     var mk = String(o.mk || 'PF').slice(0, 10), made = [], th = stGratTh(o.grat), zb = st3(tos - th - SSEC[o.beam].h / 2000), zs = st3(tos - th - SSEC[o.sec].h / 2000);
     var nx = Math.max(1, Math.ceil(w / 5 - 1e-9)), nz = Math.max(1, Math.ceil(d / 5 - 1e-9)), n = 0;
     var xs = [], zz = []; for (var i = 0; i <= nx; i++) xs.push(st3(X + w * i / nx)); for (var j = 0; j <= nz; j++) zz.push(st3(Z + d * j / nz));
@@ -272,12 +278,13 @@
     if (o.brace === 'x' && OWN(SSEC, 'L50x50x6')) [[xs[0], zz[0], xs[0], zz[nz]], [xs[nx], zz[0], xs[nx], zz[nz]]].forEach(function (e, q) { made.push({ a: [st3(e[0]), 0, st3(e[1])], b: [st3(e[2]), zb, st3(e[3])], s: 'L50x50x6', r: 0, k: mk + '-X' + (2 * q + 1) }, { a: [st3(e[2]), 0, st3(e[3])], b: [st3(e[0]), zb, st3(e[1])], s: 'L50x50x6', r: 0, k: mk + '-X' + (2 * q + 2) }); });
     var acc = [stCleanAcc({ t: 'g', p: [X + w / 2, tos, Z + d / 2], w: w, d: d, r: 0, s: o.grat, k: mk + '-G' })];
     if (o.rail === 'all') { var Pc = [[X, Z], [X + w, Z], [X + w, Z + d], [X, Z + d]]; for (var k = 0; k < 4; k++) acc.push(stCleanAcc({ t: 'h', a: [Pc[k][0], tos, Pc[k][1]], b: [Pc[(k + 1) % 4][0], tos, Pc[(k + 1) % 4][1]], h: stD.rh, post: stD.rpost, mid: stD.rmid, toe: stD.rtoe, rs: stD.rs, k: mk + '-R' + (k + 1) })); }
+    if (!stRoom(made.length)) return 0;
     pushHist(); made.forEach(function (m) { model.steel.m.push(m); }); acc.filter(Boolean).forEach(function (q) { model.steel.a.push(q); }); changed(); return made.length + acc.length;
   }
   function stStanchion(o) {                                         // a T support for pipes: one column and a head beam across, or two columns
     o = Object.assign({ x: 0, y: 0, lvl: 1000, width: 1500, dir: 'x', col: 'H150x150', beam: 'H100x50', two: 'no', mk: 'ST1' }, o || {});
     var X = Number(o.x) / 1000, Z = Number(o.y) / 1000, tos = Number(o.lvl) / 1000, w = Number(o.width) / 1000;
-    if (!(tos >= 0.3) || !(w >= 0.3) || !OWN(SSEC, o.col) || !OWN(SSEC, o.beam)) return 0;
+    if (!(tos >= 0.3) || !(w >= 0.3) || !isFinite(X) || !isFinite(Z) || !OWN(SSEC, o.col) || !OWN(SSEC, o.beam)) return 0;
     var u = o.dir === 'y' ? [0, 1] : [1, 0], zb = stCz(tos, o.beam), mk = String(o.mk || 'ST').slice(0, 10), made = [], pos = o.two === 'yes' ? [-w / 2, w / 2] : [0];
     pos.forEach(function (t, i) { var x = st3(X + u[0] * t), z = st3(Z + u[1] * t); made.push({ a: [x, 0, z], b: [x, zb, z], s: o.col, r: o.dir === 'y' ? 90 : 0, k: mk + '-C' + (i + 1) }); });
     made.push({ a: [st3(X - u[0] * w / 2), zb, st3(Z - u[1] * w / 2)], b: [st3(X + u[0] * w / 2), zb, st3(Z + u[1] * w / 2)], s: o.beam, r: 0, k: mk + '-B1' });

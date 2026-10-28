@@ -100,18 +100,19 @@
   function stClear(e) { var c = stNum(e.cl, 0); return c > 0 && c <= 20 ? c : 0; }
 
   // ---------- checks ----------
+  function stTouch(P) { return Math.max(0.15, SSEC[P.s].h / 2000 + 0.02); }   // how far from a member's centreline another member's end still rests on it: its body, not less than 150 mm
   function stLoose() {                                              // members with an end resting on nothing: not on the floor, nor on another member's end or body
     var out = {}, S = model.steel.m, lo = lowY();
     function near(q, j) {
       var P = S[j], a = P.a, b = P.b, u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2]; if (L2 < 1e-9) return false;
       var t = Math.max(0, Math.min(1, ((q[0] - a[0]) * u[0] + (q[1] - a[1]) * u[1] + (q[2] - a[2]) * u[2]) / L2));
-      return Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < 0.15;
+      return Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < stTouch(P);
     }
     function propped(i) {                                           // the end of another member sits on this one part way along: a T beam on its column
       var P = S[i], a = P.a, b = P.b, u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2]; if (L2 < 1e-9) return false;
       for (var j = 0; j < S.length; j++) if (j !== i) for (var e = 0; e < 2; e++) {
         var q = e ? S[j].b : S[j].a, t = ((q[0] - a[0]) * u[0] + (q[1] - a[1]) * u[1] + (q[2] - a[2]) * u[2]) / L2; if (t < 0.1 || t > 0.9) continue;
-        if (Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < 0.15) return true;
+        if (Math.hypot(a[0] + u[0] * t - q[0], a[1] + u[1] * t - q[1], a[2] + u[2] * t - q[2]) < stTouch(P)) return true;
       }
       return false;
     }
@@ -224,7 +225,7 @@
           if (Math.hypot(r.a[0] + ux * t - q2[0], r.a[2] + uz * t - q2[2]) > 0.015) return;
           var y = r.a[1] + (r.b[1] - r.a[1]) * t; if (Math.abs(y - q2[1]) > 0.2) return; if (y - g.h < low) low = y - g.h;
         });
-        if (isFinite(low)) { var tr = q2[1] - low; if (tr > 0.005 && tr < 0.5) ext[i][w2] = -tr; }
+        if (isFinite(low)) { var tr = q2[1] - low; if (tr > 0.005 && tr < 0.5 && tr < stLen(p) - 0.01) ext[i][w2] = -tr; }   // a stub shorter than the trim is left as it is
       }
     });
     return ext;
@@ -276,6 +277,7 @@
 
   // ---------- editing ----------
   var stk = 'col', stSec = 'H200x200', stColH = 4, stCarry = false, stLenKeep = 'start';   // a beam or rail run uses the pipe tool's `cursor`, axis lock, typed length and take-back
+  function stRoom(n) { if (model.steel.m.length + n > 6000) { toast('That would be more than 6000 members, the most a project keeps'); return false; } return true; }   // stClean keeps 6000
   function stAdd(a, b, sec, roll, mark) {
     var p = { a: a.map(st3), b: b.map(st3), s: OWN(SSEC, sec) ? sec : stSec, r: roll || 0, k: mark || '' };
     if (Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]) < 0.001) return -1;
@@ -376,9 +378,14 @@
     return out;
   }
   function stSame(a, b) { return Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[1] - b[1]) < 0.02 && Math.abs(a[2] - b[2]) < 0.02; }
+  function stCarryLow(i, pts, ds) {                                 // would moving the members that meet pts[k] whole by ds[k] take one under the floor
+    var lo = lowY();
+    return model.steel.m.some(function (q, j) { return j !== i && pts.some(function (pt, k) { return (stSame(q.a, pt) || stSame(q.b, pt)) && Math.min(q.a[1], q.b[1]) + ds[k][1] < lo - 1e-9; }); });
+  }
   function stStretch(i, w, np) {                                    // move end w of member i to np; with stCarry the members that met it there are moved whole by the same amount
     var p = model.steel.m[i]; if (!p || (np[1] < lowY() - 1e-9)) return -1;
     var old = p[w].slice(), d = [np[0] - old[0], np[1] - old[1], np[2] - old[2]], moved = 0;
+    if (stCarry && stCarryLow(i, [old], [d])) { toast('That takes steel under the floor'); return -1; }
     pushHist();
     if (stCarry) model.steel.m.forEach(function (q, j) { if (j !== i && (stSame(q.a, old) || stSame(q.b, old))) { q.a = q.a.map(function (v, k) { return st3(v + d[k]); }); q.b = q.b.map(function (v, k) { return st3(v + d[k]); }); moved++; } });
     p[w] = np.map(st3); changed(); return moved;
@@ -390,6 +397,7 @@
     if (keep === 'end') na = add(p.b, -n); else if (keep === 'middle') { na = add(p.a, -(n - L) / 2); nb = add(p.b, (n - L) / 2); } else nb = add(p.a, n);
     if (Math.min(na[1], nb[1]) < lowY() - 1e-9) { toast('That goes below the floor'); return false; }
     var oa = p.a.slice(), ob = p.b.slice(), da = [na[0] - oa[0], na[1] - oa[1], na[2] - oa[2]], db = [nb[0] - ob[0], nb[1] - ob[1], nb[2] - ob[2]];
+    if (stCarry && stCarryLow(i, [oa, ob], [da, db])) { toast('That takes steel under the floor'); return false; }
     pushHist();
     if (stCarry) model.steel.m.forEach(function (q, j) {
       if (j === i) return; var sa = stSame(q.a, oa) || stSame(q.b, oa), sb = stSame(q.a, ob) || stSame(q.b, ob), dd = sa && (da[0] || da[1] || da[2]) ? da : sb && (db[0] || db[1] || db[2]) ? db : null;
@@ -427,7 +435,7 @@
     o = Object.assign({}, stP, o || {});
     var tiers = (Array.isArray(o.tiers) ? o.tiers : String(o.tiers).split(/[,; ]+/)).map(function (v) { return Number(v) / 1000; }).filter(function (v) { return v > 0.5 && v < 60; }).sort(function (a, b) { return a - b; });
     var bays = Math.max(1, Math.min(60, Math.round(Number(o.bays)))), bay = Number(o.bay) / 1000, w = Number(o.w) / 1000;
-    if (!tiers.length || !(bay > 0.5) || !(w > 0.5) || !OWN(SSEC, o.col) || !OWN(SSEC, o.beam) || !OWN(SSEC, o.strut)) return 0;
+    if (!tiers.length || tiers.length > 20 || !isFinite(bays) || !isFinite(Number(o.x)) || !isFinite(Number(o.y)) || !(bay > 0.5) || !(w > 0.5) || !OWN(SSEC, o.col) || !OWN(SSEC, o.beam) || !OWN(SSEC, o.strut)) return 0;
     var X = Number(o.x) / 1000, Z = Number(o.y) / 1000, u = o.dir === 'y' ? [0, 1] : [1, 0], v = o.dir === 'y' ? [1, 0] : [0, 1], lines = o.mid === 'yes' ? 3 : 2, mk = String(o.mk || 'PR').slice(0, 10);
     var P = function (i, j, y) { return [st3(X + u[0] * i * bay + v[0] * j * w / (lines - 1)), y, st3(Z + u[1] * i * bay + v[1] * j * w / (lines - 1))]; };
     var top = stCz(tiers[tiers.length - 1], o.beam), made = [], roll = o.dir === 'y' ? 90 : 0, nc = 0, nb = 0, ns = 0, nx = 0;
@@ -441,14 +449,16 @@
         [0, lines - 1].forEach(function (jj) { mm(P(k, jj, 0), P(k + 1, jj, top), o.brace, 0, 'X', ++nx); mm(P(k + 1, jj, 0), P(k, jj, top), o.brace, 0, 'X', ++nx); });
       }
     }
+    if (!stRoom(made.length)) return 0;
     pushHist(); made.forEach(function (m) { model.steel.m.push(m); }); changed(); return made.length;
   }
   function stFrame(ei, o) {                                         // four legs and a beam ring under equipment ei, and the equipment is set on top
     var E = model.equip[ei]; if (!E) return 0; o = Object.assign({}, stP, o || {});
-    var f = stFoot(E, 0), tos = Number(o.fh) / 1000, ins = Number(o.finset) / 1000; if (!f || !(tos > 0.2) || !OWN(SSEC, o.fleg) || !OWN(SSEC, o.fbeam)) return 0;
+    var f = stFoot(E, 0), tos = Number(o.fh) / 1000, ins = Number(o.finset) / 1000; if (!f || !(tos > 0.2) || !(ins >= 0) || !OWN(SSEC, o.fleg) || !OWN(SSEC, o.fbeam)) return 0;
     var bx = f.box, c = Math.cos(f.th), s = Math.sin(f.th), rot = function (x, z) { return [E.p[0] + x * c + z * s, E.p[2] - x * s + z * c]; };
     var C = [rot(bx.x0 + ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z0 + ins), rot(bx.x1 - ins, bx.z1 - ins), rot(bx.x0 + ins, bx.z1 - ins)], zb = stCz(tos, o.fbeam), made = [], roll = ((Math.round(-(E.r || 0) * 90) % 360) + 360) % 360, mk = stTag(ei).replace(/[^A-Za-z0-9]+/g, '').slice(0, 10) || 'EQ';
     var newY = st3(tos - bx.y0);
+    if (bx.x0 + ins > bx.x1 - ins - 0.1 || bx.z0 + ins > bx.z1 - ins - 0.1) { toast('Set in is more than this equipment allows'); return 0; }
     if (Math.abs(E.p[1] - newY) > 0.001 && eqNozEnds(ei) > 0) { toast('Pipes are tied to the nozzles. Move the equipment to ' + Math.round(tos * 1000) + ' mm first, or take the pipes off.'); return 0; }
     C.forEach(function (q, i) { made.push({ a: [st3(q[0]), 0, st3(q[1])], b: [st3(q[0]), zb, st3(q[1])], s: o.fleg, r: roll, k: mk + '-L' + (i + 1) }); });
     C.forEach(function (q, i) { var n = C[(i + 1) % 4]; made.push({ a: [st3(q[0]), zb, st3(q[1])], b: [st3(n[0]), zb, st3(n[1])], s: o.fbeam, r: 0, k: mk + '-B' + (i + 1) }); });
