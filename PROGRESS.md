@@ -130,3 +130,4 @@
 
 ## Steel in the same app (2026-10-28)
 Structural work now lives in this app: Parts, Steel (columns, beams), ⋯, Project, Steel (pipe rack, support frames under equipment, base plates, equipment layout with maintenance clearance, list), Sheets, Steel drawing (plan, elevations, sections). Pipes running into steel are reported in Check. Source in `src/steel.part.js` and `src/steel.ui.part.js`. Not verified on a real iPad. Not done: hidden lines, connection details, strength checks, steel on the iso sheets and P&ID.
+- (31 ต.ค.) เพิ่ม Plate heat exchanger (แบบปะเก็น, frame plate มี 4 หัวต่อ NPS 4 ด้านหน้า, plate pack, pressure plate, carrying/guide bar, เสาท้าย, สลักรัด) ใน Parts → Equipment ทั้ง 3D, iso, P&ID (E-x), BOM และ clash; ขนาดเป็นค่าทั่วไป ไม่ใช่รุ่นของผู้ผลิต

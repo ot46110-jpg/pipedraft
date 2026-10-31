@@ -1068,7 +1068,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('equipment: bad input is refused with a message and adds nothing', bad.every(f => { const r = C.add(Object.assign({}, base, f)); return r.err && !r.e; }) && PD.model.custom.length === 0, JSON.stringify(bad.map(f => C.validate(Object.assign({}, base, f)).err)));
   const r1 = C.add(box), id = r1.e && r1.e.id, key = E + id;
   check('equipment: add cleans fields (prefix upper case, integers, kind)', r1.e && r1.e.kind === 'equipment' && r1.e.prefix === 'SK' && r1.e.noz.length === 6 && r1.e.w === 2000 && r1.e.col === 2 && r1.e.wt === 800 && PD.model.custom.length === 1);
-  check('equipment: it is a chip in Parts > Equipment, not in Custom', C.eqParts().length === 6 && C.eqParts()[5][0] === key && C.eqParts()[5][1].includes('Skid A') && C.eqParts()[5][1].includes('Acme K-9') && C.parts().length === 0, JSON.stringify(C.eqParts()));
+  check('equipment: it is a chip in Parts > Equipment, not in Custom', C.eqParts().length === 7 && C.eqParts()[6][0] === key && C.eqParts()[6][1].includes('Skid A') && C.eqParts()[6][1].includes('Acme K-9') && C.parts().length === 0, JSON.stringify(C.eqParts()));
   check('equipment: an out-of-range nozzle is clamped to 500 mm outside the outline', C.update(id, { noz: [{ x: 9999, y: -9999, z: 99999, dir: '+X', n: 4 }] }).e && JSON.stringify(PD.model.custom[0].noz[0]) === JSON.stringify({ x: 1500, y: -1000, z: 2000, dir: '+X', n: 4 }), JSON.stringify(PD.model.custom[0].noz));
   C.update(id, { noz: six });
   check('equipment: a bad update leaves the entry unchanged', C.update(id, { h: 5 }).err && PD.model.custom[0].h === 1500 && C.update(id, { noz: [{ x: 1, y: 1, z: 1, dir: 'up', n: 4 }] }).err && PD.model.custom[0].noz.length === 6);
@@ -1200,7 +1200,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
   check('duplicate makes a separate equipment entry with the same nozzles', dd && dd.id !== d1.e.id && dd.kind === 'equipment' && dd.noz.length === 6 && dd.name === 'Skid A copy');
   const cuOpenCard = C.html();
   check('the panel list shows equipment size and nozzle count', cuOpenCard.includes('Equipment 2000×1000×1500 mm') && cuOpenCard.includes('6 nozzles'), cuOpenCard.slice(0, 600));
-  check('an inline add still works next to equipment and keeps the two kinds apart', C.add({ name: 'Inline Z', len: 100 }).e && C.parts().length === 1 && C.eqParts().length === 7);
+  check('an inline add still works next to equipment and keeps the two kinds apart', C.add({ name: 'Inline Z', len: 100 }).e && C.parts().length === 1 && C.eqParts().length === 8);
   // review fixes: a very long pipe must not stall the equipment clash walk, and an import must not reuse the id of a placed copy of the other kind
   PD.load({ pipes: [{ a: [-1e6, 0.3, 0], b: [1e6, 0.3, 0], n: 4 }], custom: [], equip: [{ k: 'pump', p: [3, 0, 0], r: 0 }, { k: 'vessel', p: [9, 0, 0], r: 0 }] });
   const t0 = Date.now(); const lc = PD.clashes();
@@ -1809,7 +1809,7 @@ check('a size outside the list is snapped to the nearest listed size and the mod
 
 // Built-in equipment: horizontal vessel, vertical in-line pump, shell and tube exchanger
 {
-  const kinds = { hvessel: ['Horizontal vessel', 3], vpump: ['Vertical in-line pump', 2], hx: ['Shell and tube heat exchanger', 4] };
+  const kinds = { hvessel: ['Horizontal vessel', 3], vpump: ['Vertical in-line pump', 2], hx: ['Shell and tube heat exchanger', 4], phe: ['Plate heat exchanger', 4] };
   for (const [k, [name, nn]] of Object.entries(kinds)) {
     PD.load({ pipes: [], equip: [{ k, p: [0, 0, 0], r: 0 }] });
     const nz = PD.nozzles().filter(z => z.e === 0);
@@ -1820,11 +1820,11 @@ check('a size outside the list is snapped to the nearest listed size and the mod
     check(name + ': pipes on every nozzle raise no warning', PD.warns().length === 0, PD.warns().join('\n'));
     const iso = PD.iso('', 'auto');
     check(name + ': drawn on the iso sheet and listed', !!iso && iso.includes(name), '');
-    check(name + ': on the P&ID with its tag', PD.pid().includes(k === 'hx' ? 'E-1' : k === 'vpump' ? 'P-1' : 'V-1'));
+    check(name + ': on the P&ID with its tag', PD.pid().includes(k === 'hx' || k === 'phe' ? 'E-1' : k === 'vpump' ? 'P-1' : 'V-1'));
     PD.load({ pipes: pipes.concat([{ a: [-3, 0.8, 0.05], b: [3, 0.8, 0.05], n: 2 }]), equip: [{ k, p: [0, 0, 0], r: 1 }] });
     check(name + ': a pipe straight through the body is a clash, turned too', PD.warns().some(w => /equipment|through|inside/i.test(w)), PD.warns().join('\n'));
   }
-  check('the symbol sheet lists the new equipment', ['Horizontal vessel', 'Vertical in-line pump', 'Shell and tube heat exchanger'].every(n => PD.legend().includes(n)));
+  check('the symbol sheet lists the new equipment', ['Horizontal vessel', 'Vertical in-line pump', 'Shell and tube heat exchanger', 'Plate heat exchanger'].every(n => PD.legend().includes(n)));
   PD.load({ pipes: [] });
 }
 
